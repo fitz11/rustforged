@@ -1,4 +1,4 @@
-# Rustforged2
+# Rustforged
 
 A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17 and bevy_egui.
 
@@ -16,7 +16,7 @@ A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17 and bevy_egui.
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd rustforged2
+cd rustforged
 
 # Run the application
 cargo run
