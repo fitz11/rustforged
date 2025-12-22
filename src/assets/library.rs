@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{AssetCategory, RefreshAssetLibrary};
 
@@ -12,13 +12,13 @@ pub struct AssetLibrary {
 #[derive(Debug, Clone)]
 pub struct LibraryAsset {
     pub name: String,
-    pub path: PathBuf,
     pub relative_path: String,
     pub category: AssetCategory,
-    pub handle: Option<Handle<Image>>,
 }
 
-pub fn scan_asset_library(mut library: ResMut<AssetLibrary>, asset_server: Res<AssetServer>) {
+/// Currently scans from hard coded asset libary location. Eventually plan to add support for
+/// setting custom asset folder locations.
+pub fn scan_asset_library(mut library: ResMut<AssetLibrary>) {
     let library_path = PathBuf::from("assets/library");
     library.library_path = library_path.clone();
 
@@ -52,14 +52,10 @@ pub fn scan_asset_library(mut library: ResMut<AssetLibrary>, asset_server: Res<A
                     path.file_name().unwrap().to_str().unwrap()
                 );
 
-                let handle: Handle<Image> = asset_server.load(&relative_path);
-
                 library.assets.push(LibraryAsset {
                     name,
-                    path: path.clone(),
                     relative_path,
                     category: *category,
-                    handle: Some(handle),
                 });
             }
         }
@@ -68,7 +64,7 @@ pub fn scan_asset_library(mut library: ResMut<AssetLibrary>, asset_server: Res<A
     info!("Loaded {} assets from library", library.assets.len());
 }
 
-fn is_image_file(path: &PathBuf) -> bool {
+fn is_image_file(path: &Path) -> bool {
     let extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"];
 
     path.extension()
@@ -80,7 +76,6 @@ fn is_image_file(path: &PathBuf) -> bool {
 pub fn refresh_asset_library(
     mut events: MessageReader<RefreshAssetLibrary>,
     mut library: ResMut<AssetLibrary>,
-    asset_server: Res<AssetServer>,
 ) {
     for _ in events.read() {
         // Clear existing assets
@@ -119,14 +114,10 @@ pub fn refresh_asset_library(
                         path.file_name().unwrap().to_str().unwrap()
                     );
 
-                    let handle: Handle<Image> = asset_server.load(&relative_path);
-
                     library.assets.push(LibraryAsset {
                         name,
-                        path: path.clone(),
                         relative_path,
                         category: *category,
-                        handle: Some(handle),
                     });
                 }
             }

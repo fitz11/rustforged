@@ -17,7 +17,10 @@ impl Plugin for AssetLibraryPlugin {
             .init_resource::<SelectedAsset>()
             .add_message::<RefreshAssetLibrary>()
             .add_systems(Startup, library::scan_asset_library)
-            .add_systems(Update, library::refresh_asset_library);
+            .add_systems(
+                Update,
+                library::refresh_asset_library.run_if(on_message::<RefreshAssetLibrary>),
+            );
     }
 }
 
