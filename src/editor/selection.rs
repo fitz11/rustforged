@@ -197,11 +197,12 @@ pub fn handle_box_select(
     current_tool: Res<CurrentTool>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
-    items_query: Query<(Entity, &Transform, &Sprite), With<PlacedItem>>,
+    items_query: Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     selected_query: Query<Entity, With<Selected>>,
     mut box_select_state: ResMut<BoxSelectState>,
     mut contexts: EguiContexts,
     images: Res<Assets<Image>>,
+    map_data: Res<MapData>,
 ) {
     if current_tool.tool != EditorTool::Select {
         box_select_state.is_selecting = false;
@@ -261,7 +262,20 @@ pub fn handle_box_select(
         }
 
         // Select all items that overlap with the selection rectangle
-        for (entity, transform, sprite) in items_query.iter() {
+        // Filter by visible and unlocked layers
+        for (entity, transform, sprite, placed_item) in items_query.iter() {
+            // Check if layer is visible and unlocked
+            let layer_selectable = map_data
+                .layers
+                .iter()
+                .find(|ld| ld.layer_type == placed_item.layer)
+                .map(|ld| ld.visible && !ld.locked)
+                .unwrap_or(true);
+
+            if !layer_selectable {
+                continue;
+            }
+
             if item_overlaps_rect(rect_min, rect_max, transform, sprite, &images) {
                 if ctrl_held && selected_query.contains(entity) {
                     // Ctrl + box select: toggle (deselect if already selected)

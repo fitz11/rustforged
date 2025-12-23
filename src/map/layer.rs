@@ -52,3 +52,90 @@ impl Layer {
         matches!(self, Layer::Play)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_z_base_ordering() {
+        // Z-values should be in ascending order for proper rendering
+        assert!(Layer::Background.z_base() < Layer::Terrain.z_base());
+        assert!(Layer::Terrain.z_base() < Layer::Doodad.z_base());
+        assert!(Layer::Doodad.z_base() < Layer::Token.z_base());
+        assert!(Layer::Token.z_base() < Layer::Annotation.z_base());
+        assert!(Layer::Annotation.z_base() < Layer::Play.z_base());
+    }
+
+    #[test]
+    fn test_z_base_values() {
+        assert_eq!(Layer::Background.z_base(), 0.0);
+        assert_eq!(Layer::Terrain.z_base(), 100.0);
+        assert_eq!(Layer::Doodad.z_base(), 200.0);
+        assert_eq!(Layer::Token.z_base(), 300.0);
+        assert_eq!(Layer::Annotation.z_base(), 350.0);
+        assert_eq!(Layer::Play.z_base(), 400.0);
+    }
+
+    #[test]
+    fn test_display_names() {
+        assert_eq!(Layer::Background.display_name(), "Background");
+        assert_eq!(Layer::Terrain.display_name(), "Terrain");
+        assert_eq!(Layer::Doodad.display_name(), "Doodads");
+        assert_eq!(Layer::Token.display_name(), "Tokens");
+        assert_eq!(Layer::Annotation.display_name(), "Annotations");
+        assert_eq!(Layer::Play.display_name(), "Play");
+    }
+
+    #[test]
+    fn test_all_excludes_play_layer() {
+        let all_layers = Layer::all();
+        assert!(!all_layers.contains(&Layer::Play));
+    }
+
+    #[test]
+    fn test_all_contains_editing_layers() {
+        let all_layers = Layer::all();
+        assert!(all_layers.contains(&Layer::Background));
+        assert!(all_layers.contains(&Layer::Terrain));
+        assert!(all_layers.contains(&Layer::Doodad));
+        assert!(all_layers.contains(&Layer::Token));
+        assert!(all_layers.contains(&Layer::Annotation));
+    }
+
+    #[test]
+    fn test_all_has_correct_count() {
+        assert_eq!(Layer::all().len(), 5);
+    }
+
+    #[test]
+    fn test_is_editor_only() {
+        assert!(!Layer::Background.is_editor_only());
+        assert!(!Layer::Terrain.is_editor_only());
+        assert!(!Layer::Doodad.is_editor_only());
+        assert!(!Layer::Token.is_editor_only());
+        assert!(!Layer::Annotation.is_editor_only());
+        assert!(Layer::Play.is_editor_only());
+    }
+
+    #[test]
+    fn test_default_is_terrain() {
+        assert_eq!(Layer::default(), Layer::Terrain);
+    }
+
+    #[test]
+    fn test_serialization_roundtrip() {
+        for layer in [
+            Layer::Background,
+            Layer::Terrain,
+            Layer::Doodad,
+            Layer::Token,
+            Layer::Annotation,
+            Layer::Play,
+        ] {
+            let json = serde_json::to_string(&layer).unwrap();
+            let deserialized: Layer = serde_json::from_str(&json).unwrap();
+            assert_eq!(layer, deserialized);
+        }
+    }
+}

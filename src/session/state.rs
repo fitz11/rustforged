@@ -107,3 +107,253 @@ pub struct MonitorSelectionDialog {
     pub is_open: bool,
     pub available_monitors: Vec<MonitorInfo>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    fn create_test_monitor(width: u32, height: u32) -> MonitorInfo {
+        MonitorInfo {
+            name: "Test Monitor".to_string(),
+            physical_size: UVec2::new(width, height),
+            scale_factor: 1.0,
+            position: IVec2::ZERO,
+            index: 0,
+        }
+    }
+
+    // MonitorInfo tests
+    #[test]
+    fn test_monitor_aspect_ratio_16_9() {
+        let monitor = create_test_monitor(1920, 1080);
+        let aspect = monitor.aspect_ratio();
+        assert!((aspect - 16.0 / 9.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_monitor_aspect_ratio_4_3() {
+        let monitor = create_test_monitor(1024, 768);
+        let aspect = monitor.aspect_ratio();
+        assert!((aspect - 4.0 / 3.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_monitor_aspect_ratio_ultrawide() {
+        let monitor = create_test_monitor(3440, 1440);
+        let aspect = monitor.aspect_ratio();
+        assert!((aspect - 3440.0 / 1440.0).abs() < 0.01);
+    }
+
+    // LiveSessionState tests
+    #[test]
+    fn test_default_state() {
+        let state = LiveSessionState::default();
+        assert!(!state.is_active);
+        assert!(state.selected_monitor.is_none());
+        assert_eq!(state.viewport_center, Vec2::ZERO);
+        assert_eq!(state.viewport_size, Vec2::ZERO);
+        assert_eq!(state.rotation_degrees, 0);
+    }
+
+    #[test]
+    fn test_monitor_aspect_ratio_defaults_to_16_9() {
+        let state = LiveSessionState::default();
+        let aspect = state.monitor_aspect_ratio();
+        assert!((aspect - 16.0 / 9.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_monitor_aspect_ratio_uses_selected_monitor() {
+        let mut state = LiveSessionState::default();
+        state.selected_monitor = Some(create_test_monitor(1024, 768));
+        let aspect = state.monitor_aspect_ratio();
+        assert!((aspect - 4.0 / 3.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_viewport_bounds() {
+        let mut state = LiveSessionState::default();
+        state.viewport_center = Vec2::new(100.0, 50.0);
+        state.viewport_size = Vec2::new(200.0, 100.0);
+
+        let (min, max) = state.viewport_bounds();
+        assert_eq!(min, Vec2::new(0.0, 0.0));
+        assert_eq!(max, Vec2::new(200.0, 100.0));
+    }
+
+    #[test]
+    fn test_viewport_bounds_at_origin() {
+        let mut state = LiveSessionState::default();
+        state.viewport_center = Vec2::ZERO;
+        state.viewport_size = Vec2::new(100.0, 100.0);
+
+        let (min, max) = state.viewport_bounds();
+        assert_eq!(min, Vec2::new(-50.0, -50.0));
+        assert_eq!(max, Vec2::new(50.0, 50.0));
+    }
+
+    #[test]
+    fn test_rotation_radians_0() {
+        let state = LiveSessionState::default();
+        assert_eq!(state.rotation_radians(), 0.0);
+    }
+
+    #[test]
+    fn test_rotation_radians_90() {
+        let mut state = LiveSessionState::default();
+        state.rotation_degrees = 90;
+        assert!((state.rotation_radians() - PI / 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotation_radians_180() {
+        let mut state = LiveSessionState::default();
+        state.rotation_degrees = 180;
+        assert!((state.rotation_radians() - PI).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotation_radians_270() {
+        let mut state = LiveSessionState::default();
+        state.rotation_degrees = 270;
+        assert!((state.rotation_radians() - 3.0 * PI / 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotate_cw_from_0() {
+        let mut state = LiveSessionState::default();
+        state.rotate_cw();
+        assert_eq!(state.rotation_degrees, 90);
+    }
+
+    #[test]
+    fn test_rotate_cw_wraps_around() {
+        let mut state = LiveSessionState::default();
+        state.rotation_degrees = 270;
+        state.rotate_cw();
+        assert_eq!(state.rotation_degrees, 0);
+    }
+
+    #[test]
+    fn test_rotate_cw_full_cycle() {
+        let mut state = LiveSessionState::default();
+        state.rotate_cw();
+        assert_eq!(state.rotation_degrees, 90);
+        state.rotate_cw();
+        assert_eq!(state.rotation_degrees, 180);
+        state.rotate_cw();
+        assert_eq!(state.rotation_degrees, 270);
+        state.rotate_cw();
+        assert_eq!(state.rotation_degrees, 0);
+    }
+
+    #[test]
+    fn test_rotate_ccw_from_0() {
+        let mut state = LiveSessionState::default();
+        state.rotate_ccw();
+        assert_eq!(state.rotation_degrees, 270);
+    }
+
+    #[test]
+    fn test_rotate_ccw_from_90() {
+        let mut state = LiveSessionState::default();
+        state.rotation_degrees = 90;
+        state.rotate_ccw();
+        assert_eq!(state.rotation_degrees, 0);
+    }
+
+    #[test]
+    fn test_rotate_ccw_full_cycle() {
+        let mut state = LiveSessionState::default();
+        state.rotate_ccw();
+        assert_eq!(state.rotation_degrees, 270);
+        state.rotate_ccw();
+        assert_eq!(state.rotation_degrees, 180);
+        state.rotate_ccw();
+        assert_eq!(state.rotation_degrees, 90);
+        state.rotate_ccw();
+        assert_eq!(state.rotation_degrees, 0);
+    }
+
+    #[test]
+    fn test_is_portrait() {
+        let mut state = LiveSessionState::default();
+
+        state.rotation_degrees = 0;
+        assert!(!state.is_portrait());
+
+        state.rotation_degrees = 90;
+        assert!(state.is_portrait());
+
+        state.rotation_degrees = 180;
+        assert!(!state.is_portrait());
+
+        state.rotation_degrees = 270;
+        assert!(state.is_portrait());
+    }
+
+    #[test]
+    fn test_effective_viewport_size_landscape() {
+        let mut state = LiveSessionState::default();
+        state.viewport_size = Vec2::new(1920.0, 1080.0);
+        state.rotation_degrees = 0;
+
+        let effective = state.effective_viewport_size();
+        assert_eq!(effective, Vec2::new(1920.0, 1080.0));
+    }
+
+    #[test]
+    fn test_effective_viewport_size_portrait_90() {
+        let mut state = LiveSessionState::default();
+        state.viewport_size = Vec2::new(1920.0, 1080.0);
+        state.rotation_degrees = 90;
+
+        let effective = state.effective_viewport_size();
+        assert_eq!(effective, Vec2::new(1080.0, 1920.0));
+    }
+
+    #[test]
+    fn test_effective_viewport_size_180() {
+        let mut state = LiveSessionState::default();
+        state.viewport_size = Vec2::new(1920.0, 1080.0);
+        state.rotation_degrees = 180;
+
+        let effective = state.effective_viewport_size();
+        assert_eq!(effective, Vec2::new(1920.0, 1080.0));
+    }
+
+    #[test]
+    fn test_effective_viewport_size_portrait_270() {
+        let mut state = LiveSessionState::default();
+        state.viewport_size = Vec2::new(1920.0, 1080.0);
+        state.rotation_degrees = 270;
+
+        let effective = state.effective_viewport_size();
+        assert_eq!(effective, Vec2::new(1080.0, 1920.0));
+    }
+
+    // ViewportDragMode tests
+    #[test]
+    fn test_viewport_drag_mode_default() {
+        assert_eq!(ViewportDragMode::default(), ViewportDragMode::None);
+    }
+
+    // ViewportDragState tests
+    #[test]
+    fn test_viewport_drag_state_default() {
+        let state = ViewportDragState::default();
+        assert_eq!(state.mode, ViewportDragMode::None);
+        assert_eq!(state.drag_start_world, Vec2::ZERO);
+        assert_eq!(state.original_center, Vec2::ZERO);
+        assert_eq!(state.original_size, Vec2::ZERO);
+    }
+
+    // MonitorSelectionDialog tests
+    #[test]
+    fn test_monitor_selection_dialog_default() {
+        let dialog = MonitorSelectionDialog::default();
+        assert!(!dialog.is_open);
+        assert!(dialog.available_monitors.is_empty());
+    }
+}

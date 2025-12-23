@@ -15,6 +15,33 @@ pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 
 use bevy::prelude::*;
 
+use crate::map::{MapData, PlacedItem};
+
+/// Update sprite visibility based on layer visibility settings
+fn update_layer_visibility(
+    map_data: Res<MapData>,
+    mut items_query: Query<(&PlacedItem, &mut Visibility)>,
+) {
+    for (item, mut visibility) in items_query.iter_mut() {
+        let layer_visible = map_data
+            .layers
+            .iter()
+            .find(|ld| ld.layer_type == item.layer)
+            .map(|ld| ld.visible)
+            .unwrap_or(true);
+
+        let new_visibility = if layer_visible {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+
+        if *visibility != new_visibility {
+            *visibility = new_visibility;
+        }
+    }
+}
+
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
@@ -39,6 +66,7 @@ impl Plugin for EditorPlugin {
                     tools::handle_tool_shortcuts,
                     tools::update_cursor_icon,
                     placement::handle_placement,
+                    update_layer_visibility,
                 ),
             )
             .add_systems(

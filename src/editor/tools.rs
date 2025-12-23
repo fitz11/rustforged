@@ -118,3 +118,104 @@ pub fn update_cursor_icon(
 
     commands.entity(entity).insert(current_tool.tool.cursor_icon());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_display_names() {
+        assert_eq!(EditorTool::Select.display_name(), "Select (V)");
+        assert_eq!(EditorTool::Place.display_name(), "Place (B)");
+        assert_eq!(EditorTool::Erase.display_name(), "Erase (X)");
+        assert_eq!(EditorTool::Draw.display_name(), "Draw (D)");
+        assert_eq!(EditorTool::Line.display_name(), "Line (L)");
+        assert_eq!(EditorTool::Text.display_name(), "Text (T)");
+    }
+
+    #[test]
+    fn test_display_names_contain_shortcuts() {
+        // Each display name should contain its keyboard shortcut in parentheses
+        for tool in EditorTool::all() {
+            let name = tool.display_name();
+            assert!(name.contains('('), "Display name should contain shortcut: {}", name);
+            assert!(name.contains(')'), "Display name should contain shortcut: {}", name);
+        }
+    }
+
+    #[test]
+    fn test_all_returns_all_tools() {
+        let all = EditorTool::all();
+        assert_eq!(all.len(), 6);
+        assert!(all.contains(&EditorTool::Select));
+        assert!(all.contains(&EditorTool::Place));
+        assert!(all.contains(&EditorTool::Erase));
+        assert!(all.contains(&EditorTool::Draw));
+        assert!(all.contains(&EditorTool::Line));
+        assert!(all.contains(&EditorTool::Text));
+    }
+
+    #[test]
+    fn test_is_annotation_tool() {
+        // Non-annotation tools
+        assert!(!EditorTool::Select.is_annotation_tool());
+        assert!(!EditorTool::Place.is_annotation_tool());
+        assert!(!EditorTool::Erase.is_annotation_tool());
+
+        // Annotation tools
+        assert!(EditorTool::Draw.is_annotation_tool());
+        assert!(EditorTool::Line.is_annotation_tool());
+        assert!(EditorTool::Text.is_annotation_tool());
+    }
+
+    #[test]
+    fn test_default_tool_is_select() {
+        assert_eq!(EditorTool::default(), EditorTool::Select);
+    }
+
+    #[test]
+    fn test_current_tool_default() {
+        let current = CurrentTool::default();
+        assert_eq!(current.tool, EditorTool::Select);
+    }
+
+    #[test]
+    fn test_selected_layer_default() {
+        let selected = SelectedLayer::default();
+        assert_eq!(selected.layer, Layer::Token);
+    }
+
+    #[test]
+    fn test_cursor_icons_are_system_cursors() {
+        // All tools should return system cursor icons
+        for tool in EditorTool::all() {
+            let icon = tool.cursor_icon();
+            assert!(matches!(icon, CursorIcon::System(_)));
+        }
+    }
+
+    #[test]
+    fn test_drawing_tools_have_crosshair() {
+        // Place, Draw, and Line tools should use crosshair
+        assert_eq!(
+            EditorTool::Place.cursor_icon(),
+            CursorIcon::System(SystemCursorIcon::Crosshair)
+        );
+        assert_eq!(
+            EditorTool::Draw.cursor_icon(),
+            CursorIcon::System(SystemCursorIcon::Crosshair)
+        );
+        assert_eq!(
+            EditorTool::Line.cursor_icon(),
+            CursorIcon::System(SystemCursorIcon::Crosshair)
+        );
+    }
+
+    #[test]
+    fn test_text_tool_has_text_cursor() {
+        assert_eq!(
+            EditorTool::Text.cursor_icon(),
+            CursorIcon::System(SystemCursorIcon::Text)
+        );
+    }
+}

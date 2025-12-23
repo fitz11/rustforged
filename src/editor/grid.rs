@@ -73,3 +73,112 @@ pub fn draw_grid(
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // GridSettings tests
+    #[test]
+    fn test_grid_settings_default() {
+        let settings = GridSettings::default();
+        assert!(settings.snap_enabled);
+    }
+
+    // snap_to_grid tests
+    #[test]
+    fn test_snap_disabled_returns_original() {
+        let pos = Vec2::new(33.0, 47.0);
+        let result = snap_to_grid(pos, 70.0, false);
+        assert_eq!(result, pos);
+    }
+
+    #[test]
+    fn test_snap_to_grid_center_of_cell() {
+        // With grid_size 70, cell centers are at 35, 105, 175, etc.
+        let pos = Vec2::new(10.0, 10.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(35.0, 35.0));
+    }
+
+    #[test]
+    fn test_snap_at_origin() {
+        let pos = Vec2::new(0.0, 0.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(35.0, 35.0));
+    }
+
+    #[test]
+    fn test_snap_already_at_center() {
+        let pos = Vec2::new(35.0, 35.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(35.0, 35.0));
+    }
+
+    #[test]
+    fn test_snap_edge_of_cell() {
+        // Position at the edge (70, 70) should snap to next cell center (105, 105)
+        let pos = Vec2::new(70.0, 70.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(105.0, 105.0));
+    }
+
+    #[test]
+    fn test_snap_negative_coordinates() {
+        // Negative positions should also snap correctly
+        let pos = Vec2::new(-10.0, -10.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(-35.0, -35.0));
+    }
+
+    #[test]
+    fn test_snap_large_negative() {
+        let pos = Vec2::new(-100.0, -100.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(-105.0, -105.0));
+    }
+
+    #[test]
+    fn test_snap_different_grid_size() {
+        // With grid_size 100, centers are at 50, 150, 250, etc.
+        let pos = Vec2::new(75.0, 75.0);
+        let result = snap_to_grid(pos, 100.0, true);
+        assert_eq!(result, Vec2::new(50.0, 50.0));
+    }
+
+    #[test]
+    fn test_snap_small_grid() {
+        // With grid_size 10, centers are at 5, 15, 25, etc.
+        let pos = Vec2::new(17.0, 22.0);
+        let result = snap_to_grid(pos, 10.0, true);
+        assert_eq!(result, Vec2::new(15.0, 25.0));
+    }
+
+    #[test]
+    fn test_snap_asymmetric_position() {
+        // Test with different X and Y cell positions
+        let pos = Vec2::new(80.0, 150.0);
+        let result = snap_to_grid(pos, 70.0, true);
+        assert_eq!(result, Vec2::new(105.0, 175.0));
+    }
+
+    #[test]
+    fn test_snap_preserves_cell() {
+        // Multiple positions within the same cell should snap to the same center
+        let grid_size = 70.0;
+        let center = Vec2::new(35.0, 35.0);
+
+        let positions = [
+            Vec2::new(1.0, 1.0),
+            Vec2::new(35.0, 35.0),
+            Vec2::new(69.0, 69.0),
+            Vec2::new(0.0, 69.0),
+            Vec2::new(69.0, 0.0),
+        ];
+
+        for pos in positions {
+            let result = snap_to_grid(pos, grid_size, true);
+            assert_eq!(result, center, "Position {:?} should snap to {:?}", pos, center);
+        }
+    }
+}

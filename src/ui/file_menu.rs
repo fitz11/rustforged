@@ -2,9 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use std::path::PathBuf;
 
-use crate::map::{LoadMapRequest, MapData, MapLoadError, NewMapRequest, SaveMapRequest};
-
-use super::asset_import::AssetImportDialog;
+use crate::map::{MapLoadError, NewMapRequest, SaveMapRequest};
 
 #[derive(Resource, Default)]
 pub struct FileMenuState {
@@ -13,55 +11,14 @@ pub struct FileMenuState {
     pub save_filename: String,
 }
 
+/// Renders the dialog windows for file operations (triggered from asset_browser menu)
 pub fn file_menu_ui(
     mut contexts: EguiContexts,
     mut menu_state: ResMut<FileMenuState>,
     mut save_events: MessageWriter<SaveMapRequest>,
-    mut load_events: MessageWriter<LoadMapRequest>,
     mut new_events: MessageWriter<NewMapRequest>,
-    mut import_dialog: ResMut<AssetImportDialog>,
-    map_data: Res<MapData>,
     load_error: Res<MapLoadError>,
 ) -> Result {
-    egui::TopBottomPanel::top("menu_bar").show(contexts.ctx_mut()?, |ui| {
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("New Map").clicked() {
-                    menu_state.show_new_confirmation = true;
-                    ui.close();
-                }
-
-                ui.separator();
-
-                if ui.button("Save Map...").clicked() {
-                    menu_state.save_filename = map_data.name.clone();
-                    menu_state.show_save_name_dialog = true;
-                    ui.close();
-                }
-
-                if ui.button("Load Map...").clicked() {
-                    let maps_dir = PathBuf::from("assets/maps");
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Map Files", &["json"])
-                        .set_directory(&maps_dir)
-                        .set_title("Load Map")
-                        .pick_file()
-                    {
-                        load_events.write(LoadMapRequest { path });
-                    }
-                    ui.close();
-                }
-            });
-
-            ui.menu_button("Assets", |ui| {
-                if ui.button("Import Assets...").clicked() {
-                    import_dialog.is_open = true;
-                    ui.close();
-                }
-            });
-        });
-    });
-
     // New map confirmation dialog
     if menu_state.show_new_confirmation {
         egui::Window::new("New Map")

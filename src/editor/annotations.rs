@@ -1,3 +1,4 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
@@ -43,19 +44,10 @@ pub struct EditingText;
 // State Resources
 // ============================================================================
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct DrawState {
     pub is_drawing: bool,
     pub current_points: Vec<Vec2>,
-}
-
-impl Default for DrawState {
-    fn default() -> Self {
-        Self {
-            is_drawing: false,
-            current_points: Vec::new(),
-        }
-    }
 }
 
 #[derive(Resource, Default)]
@@ -87,34 +79,39 @@ impl Default for AnnotationSettings {
     }
 }
 
+#[derive(SystemParam)]
+pub(crate) struct AnnotationResources<'w> {
+    mouse_button: Res<'w, ButtonInput<MouseButton>>,
+    current_tool: Res<'w, CurrentTool>,
+    draw_state: ResMut<'w, DrawState>,
+    settings: Res<'w, AnnotationSettings>,
+}
+
 // ============================================================================
 // Systems
 // ============================================================================
 
 pub fn handle_draw(
     mut commands: Commands,
-    mouse_button: Res<ButtonInput<MouseButton>>,
-    current_tool: Res<CurrentTool>,
-    mut draw_state: ResMut<DrawState>,
-    settings: Res<AnnotationSettings>,
+    mut res: AnnotationResources,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
     mut contexts: EguiContexts,
 ) {
-    if current_tool.tool != EditorTool::Draw {
+    if res.current_tool.tool != EditorTool::Draw {
         // If we were drawing but switched tools, finalize
-        if draw_state.is_drawing && draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(&mut commands, &draw_state, &settings);
+        if res.draw_state.is_drawing && res.draw_state.current_points.len() >= 2 {
+            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings);
         }
-        draw_state.is_drawing = false;
-        draw_state.current_points.clear();
+        res.draw_state.is_drawing = false;
+        res.draw_state.current_points.clear();
         return;
     }
 
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {
@@ -133,27 +130,31 @@ pub fn handle_draw(
         return;
     };
 
-    if mouse_button.just_pressed(MouseButton::Left) {
-        draw_state.is_drawing = true;
-        draw_state.current_points.clear();
-        draw_state.current_points.push(world_pos);
-    } else if mouse_button.pressed(MouseButton::Left) && draw_state.is_drawing {
+    if res.mouse_button.just_pressed(MouseButton::Left) {
+        res.draw_state.is_drawing = true;
+        res.draw_state.current_points.clear();
+        res.draw_state.current_points.push(world_pos);
+    } else if res.mouse_button.pressed(MouseButton::Left) && res.draw_state.is_drawing {
         // Add point if it's far enough from the last one (reduces point count)
-        if let Some(last) = draw_state.current_points.last() {
+        if let Some(last) = res.draw_state.current_points.last() {
             if world_pos.distance(*last) > 2.0 {
-                draw_state.current_points.push(world_pos);
+                res.draw_state.current_points.push(world_pos);
             }
         }
-    } else if mouse_button.just_released(MouseButton::Left) && draw_state.is_drawing {
-        draw_state.is_drawing = false;
-        if draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(&mut commands, &draw_state, &settings);
+    } else if res.mouse_button.just_released(MouseButton::Left) && res.draw_state.is_drawing {
+        res.draw_state.is_drawing = false;
+        if res.draw_state.current_points.len() >= 2 {
+            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings);
         }
-        draw_state.current_points.clear();
+        res.draw_state.current_points.clear();
     }
 }
 
-fn spawn_drawn_path(commands: &mut Commands, draw_state: &DrawState, settings: &AnnotationSettings) {
+fn spawn_drawn_path(
+    commands: &mut Commands,
+    draw_state: &DrawState,
+    settings: &AnnotationSettings,
+) {
     let z = Layer::Annotation.z_base();
     commands.spawn((
         Transform::from_translation(Vec3::new(0.0, 0.0, z)),
@@ -406,10 +407,7 @@ pub fn render_draw_preview(
     }
 }
 
-pub fn render_text_annotations(
-    mut gizmos: Gizmos,
-    texts: Query<(&Transform, &TextAnnotation)>,
-) {
+pub fn render_text_annotations(mut gizmos: Gizmos, texts: Query<(&Transform, &TextAnnotation)>) {
     for (transform, text) in texts.iter() {
         let pos = transform.translation.truncate();
 

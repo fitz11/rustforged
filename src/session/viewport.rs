@@ -9,8 +9,12 @@ use crate::editor::EditorCamera;
 use super::state::{LiveSessionState, ViewportDragMode, ViewportDragState};
 
 const HANDLE_SIZE: f32 = 8.0;
+const MOVE_HANDLE_WIDTH: f32 = 60.0;
+const MOVE_HANDLE_HEIGHT: f32 = 16.0;
+const MOVE_HANDLE_OFFSET: f32 = 12.0; // Distance above top edge
 const VIEWPORT_COLOR: Color = Color::srgba(1.0, 0.7, 0.2, 0.9);
 const VIEWPORT_FILL_COLOR: Color = Color::srgba(1.0, 0.7, 0.2, 0.1);
+const MOVE_HANDLE_COLOR: Color = Color::srgba(1.0, 0.7, 0.2, 1.0);
 
 /// Custom gizmo group for viewport indicator (editor-only rendering)
 #[derive(Default, Reflect, GizmoConfigGroup)]
@@ -98,15 +102,42 @@ pub fn draw_viewport_indicator(
         );
     }
 
-    // Draw rotation indicator (small arrow or line at top)
-    let top_center = rotate_point(center + Vec2::new(0.0, half.y + 20.0), center, rotation);
-    let arrow_left = rotate_point(center + Vec2::new(-10.0, half.y + 10.0), center, rotation);
-    let arrow_right = rotate_point(center + Vec2::new(10.0, half.y + 10.0), center, rotation);
-    let arrow_base = rotate_point(center + Vec2::new(0.0, half.y), center, rotation);
+    // Draw move handle (small tab above top edge)
+    let move_handle_center =
+        rotate_point(center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET), center, rotation);
 
-    gizmos.line_2d(arrow_base, top_center, VIEWPORT_COLOR);
-    gizmos.line_2d(top_center, arrow_left, VIEWPORT_COLOR);
-    gizmos.line_2d(top_center, arrow_right, VIEWPORT_COLOR);
+    // Draw move handle rectangle
+    gizmos.rect_2d(
+        Isometry2d::new(move_handle_center, Rot2::radians(rotation)),
+        Vec2::new(MOVE_HANDLE_WIDTH, MOVE_HANDLE_HEIGHT),
+        MOVE_HANDLE_COLOR,
+    );
+
+    // Draw filled appearance with horizontal lines
+    let handle_half_h = MOVE_HANDLE_HEIGHT / 2.0;
+    let handle_half_w = MOVE_HANDLE_WIDTH / 2.0;
+    for i in [-4.0, 0.0, 4.0] {
+        let line_start = rotate_point(
+            center + Vec2::new(-handle_half_w + 8.0, half.y + MOVE_HANDLE_OFFSET + i),
+            center,
+            rotation,
+        );
+        let line_end = rotate_point(
+            center + Vec2::new(handle_half_w - 8.0, half.y + MOVE_HANDLE_OFFSET + i),
+            center,
+            rotation,
+        );
+        gizmos.line_2d(line_start, line_end, MOVE_HANDLE_COLOR);
+    }
+
+    // Draw connector line from viewport to move handle
+    let connector_top = rotate_point(
+        center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET - handle_half_h),
+        center,
+        rotation,
+    );
+    let connector_bottom = rotate_point(center + Vec2::new(0.0, half.y), center, rotation);
+    gizmos.line_2d(connector_bottom, connector_top, VIEWPORT_COLOR);
 
     // Draw fill lines for visibility (rotated)
     let step = 40.0;
@@ -127,11 +158,34 @@ fn get_handle_at_position(
 ) -> ViewportDragMode {
     let (min, max) = session_state.viewport_bounds();
     let center = session_state.viewport_center;
+    let half = session_state.viewport_size / 2.0;
+    let rotation = session_state.rotation_radians();
 
     // Adjust handle hit area based on camera zoom
     let hit_size = HANDLE_SIZE * camera_scale * 1.5;
 
-    // Check corners first (higher priority)
+    // Check move handle first (highest priority - the tab above the viewport)
+    let move_handle_center =
+        rotate_point(center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET), center, rotation);
+    let move_handle_hit_width = MOVE_HANDLE_WIDTH * camera_scale * 0.6;
+    let move_handle_hit_height = MOVE_HANDLE_HEIGHT * camera_scale * 0.8;
+
+    // Transform world_pos to move handle's local space (accounting for rotation)
+    let to_handle = world_pos - move_handle_center;
+    let cos_r = (-rotation).cos();
+    let sin_r = (-rotation).sin();
+    let local_pos = Vec2::new(
+        to_handle.x * cos_r - to_handle.y * sin_r,
+        to_handle.x * sin_r + to_handle.y * cos_r,
+    );
+
+    if local_pos.x.abs() < move_handle_hit_width / 2.0
+        && local_pos.y.abs() < move_handle_hit_height / 2.0
+    {
+        return ViewportDragMode::Move;
+    }
+
+    // Check corners (higher priority than edges)
     let corners = [
         (min, ViewportDragMode::ResizeSW),
         (Vec2::new(max.x, min.y), ViewportDragMode::ResizeSE),
@@ -159,12 +213,7 @@ fn get_handle_at_position(
         }
     }
 
-    // Check if inside viewport (for move)
-    if world_pos.x >= min.x && world_pos.x <= max.x && world_pos.y >= min.y && world_pos.y <= max.y
-    {
-        return ViewportDragMode::Move;
-    }
-
+    // Interior is no longer selectable - only handles work
     ViewportDragMode::None
 }
 
@@ -269,6 +318,122 @@ pub fn handle_viewport_interaction(
                 session_state.viewport_size.y = new_width / aspect_ratio;
             }
             ViewportDragMode::None => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    // rotate_point tests
+    #[test]
+    fn test_rotate_point_no_rotation() {
+        let point = Vec2::new(100.0, 0.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, 0.0);
+        assert!((result.x - 100.0).abs() < 0.001);
+        assert!(result.y.abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotate_point_90_degrees() {
+        let point = Vec2::new(100.0, 0.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, PI / 2.0);
+        // (100, 0) rotated 90° CCW around origin becomes approximately (0, 100)
+        assert!(result.x.abs() < 0.001, "x should be ~0, was {}", result.x);
+        assert!((result.y - 100.0).abs() < 0.001, "y should be ~100, was {}", result.y);
+    }
+
+    #[test]
+    fn test_rotate_point_180_degrees() {
+        let point = Vec2::new(100.0, 0.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, PI);
+        // (100, 0) rotated 180° around origin becomes (-100, 0)
+        assert!((result.x + 100.0).abs() < 0.001, "x should be ~-100, was {}", result.x);
+        assert!(result.y.abs() < 0.001, "y should be ~0, was {}", result.y);
+    }
+
+    #[test]
+    fn test_rotate_point_270_degrees() {
+        let point = Vec2::new(100.0, 0.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, 3.0 * PI / 2.0);
+        // (100, 0) rotated 270° CCW around origin becomes approximately (0, -100)
+        assert!(result.x.abs() < 0.001, "x should be ~0, was {}", result.x);
+        assert!((result.y + 100.0).abs() < 0.001, "y should be ~-100, was {}", result.y);
+    }
+
+    #[test]
+    fn test_rotate_point_full_rotation() {
+        let point = Vec2::new(100.0, 50.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, 2.0 * PI);
+        // Full rotation should return to original position
+        assert!((result.x - 100.0).abs() < 0.001);
+        assert!((result.y - 50.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotate_point_around_non_origin_center() {
+        let point = Vec2::new(200.0, 100.0);
+        let center = Vec2::new(100.0, 100.0);
+        let result = rotate_point(point, center, PI / 2.0);
+        // Point is 100 units to the right of center
+        // After 90° CCW rotation, it should be 100 units above center
+        assert!((result.x - 100.0).abs() < 0.001, "x should be ~100, was {}", result.x);
+        assert!((result.y - 200.0).abs() < 0.001, "y should be ~200, was {}", result.y);
+    }
+
+    #[test]
+    fn test_rotate_point_at_center() {
+        // Point at center shouldn't move regardless of rotation
+        let center = Vec2::new(50.0, 50.0);
+        let point = center;
+        let result = rotate_point(point, center, PI / 3.0);
+        assert!((result.x - 50.0).abs() < 0.001);
+        assert!((result.y - 50.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotate_point_45_degrees() {
+        let point = Vec2::new(1.0, 0.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, PI / 4.0);
+        // (1, 0) rotated 45° should be approximately (0.707, 0.707)
+        let expected = 1.0 / 2.0_f32.sqrt();
+        assert!((result.x - expected).abs() < 0.001);
+        assert!((result.y - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rotate_point_negative_angle() {
+        let point = Vec2::new(100.0, 0.0);
+        let center = Vec2::ZERO;
+        let result = rotate_point(point, center, -PI / 2.0);
+        // (100, 0) rotated -90° (clockwise) around origin becomes approximately (0, -100)
+        assert!(result.x.abs() < 0.001, "x should be ~0, was {}", result.x);
+        assert!((result.y + 100.0).abs() < 0.001, "y should be ~-100, was {}", result.y);
+    }
+
+    #[test]
+    fn test_rotate_point_preserves_distance() {
+        let point = Vec2::new(100.0, 50.0);
+        let center = Vec2::new(20.0, 30.0);
+        let original_distance = (point - center).length();
+
+        // Test various rotation angles
+        for angle in [0.0, PI / 6.0, PI / 4.0, PI / 3.0, PI / 2.0, PI, 3.0 * PI / 2.0] {
+            let result = rotate_point(point, center, angle);
+            let new_distance = (result - center).length();
+            assert!(
+                (original_distance - new_distance).abs() < 0.001,
+                "Distance should be preserved at angle {}, was {} vs {}",
+                angle, new_distance, original_distance
+            );
         }
     }
 }
