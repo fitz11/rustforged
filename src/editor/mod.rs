@@ -6,14 +6,14 @@ mod selection;
 pub mod tools;
 
 pub use annotations::{
-    AnnotationMarker, AnnotationSettings, DrawState, DrawnLine, DrawnPath, LineDrawState,
-    TextAnnotation, TextEditState,
+    AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation,
 };
 pub use camera::EditorCamera;
 pub use grid::GridSettings;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 
 use bevy::prelude::*;
+use bevy_egui::EguiPrimaryContextPass;
 
 use crate::map::{MapData, PlacedItem};
 
@@ -55,7 +55,15 @@ impl Plugin for EditorPlugin {
             .init_resource::<annotations::LineDrawState>()
             .init_resource::<annotations::TextEditState>()
             .init_resource::<annotations::AnnotationSettings>()
-            .add_systems(Startup, camera::spawn_camera)
+            // Register annotation gizmo group for editor-only rendering
+            .init_gizmo_group::<annotations::AnnotationGizmoGroup>()
+            .add_systems(
+                Startup,
+                (
+                    camera::spawn_camera,
+                    annotations::configure_annotation_gizmos,
+                ),
+            )
             .add_systems(
                 Update,
                 (
@@ -91,6 +99,12 @@ impl Plugin for EditorPlugin {
                     annotations::render_drawn_lines,
                     annotations::render_line_preview,
                     annotations::render_draw_preview,
+                ),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                (
+                    annotations::text_annotation_input_ui,
                     annotations::render_text_annotations,
                 ),
             );
