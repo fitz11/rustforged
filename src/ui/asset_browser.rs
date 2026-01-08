@@ -3,8 +3,8 @@ use bevy_egui::{egui, EguiContexts};
 use std::path::PathBuf;
 
 use crate::assets::{
-    create_and_open_library, open_library_directory, AssetCategory, AssetLibrary, LibraryAsset,
-    SelectedAsset,
+    create_and_open_library, get_image_dimensions, open_library_directory, AssetCategory,
+    AssetLibrary, LibraryAsset, SelectedAsset,
 };
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::{LoadMapRequest, MapData};
@@ -17,6 +17,10 @@ pub struct AssetBrowserState {
     pub selected_category: AssetCategory,
     /// Whether the library info section is expanded
     pub library_expanded: bool,
+    /// Cached dimensions for the selected asset
+    pub selected_dimensions: Option<(u32, u32)>,
+    /// Path of the asset for which dimensions are cached
+    pub cached_dimensions_path: Option<PathBuf>,
 }
 
 pub fn asset_browser_ui(
@@ -31,7 +35,7 @@ pub fn asset_browser_ui(
     map_data: Res<MapData>,
 ) -> Result {
     egui::SidePanel::left("asset_browser")
-        .default_width(200.0)
+        .default_width(220.0)
         .show(contexts.ctx_mut()?, |ui| {
             // =========================================
             // FILE/ASSETS MENU SECTION
@@ -169,21 +173,106 @@ pub fn asset_browser_ui(
                             .map(|a| a.relative_path == asset.relative_path)
                             .unwrap_or(false);
 
-                        if ui.selectable_label(is_selected, &asset.name).clicked() {
-                            selected_asset.asset = Some(asset.clone());
-                            current_tool.tool = EditorTool::Place;
-                        }
+                        // Asset row with preview indicator
+                        ui.horizontal(|ui| {
+                            // Small colored preview square based on file type
+                            let preview_color = extension_color(&asset.extension);
+                            let (rect, _response) = ui.allocate_exact_size(
+                                egui::vec2(15.0, 15.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().rect_filled(rect, 2.0, preview_color);
+
+                            // Extension label inside the square
+                            let ext_short = asset.extension.chars().take(3).collect::<String>().to_uppercase();
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                &ext_short,
+                                egui::FontId::proportional(8.0),
+                                egui::Color32::WHITE,
+                            );
+
+                            // Asset name
+                            if ui
+                                .selectable_label(is_selected, &asset.name)
+                                .clicked()
+                            {
+                                // Clear cached dimensions when selecting a new asset
+                                browser_state.selected_dimensions = None;
+                                browser_state.cached_dimensions_path = None;
+                                selected_asset.asset = Some(asset.clone());
+                                current_tool.tool = EditorTool::Place;
+                            }
+                        });
                     }
                 });
             }
 
             ui.separator();
 
+            // =========================================
+            // SELECTED ASSET METADATA SECTION
+            // =========================================
             if let Some(ref asset) = selected_asset.asset {
-                ui.label(format!("Selected: {}", asset.name));
+                ui.label(egui::RichText::new("Selected Asset").strong());
+                ui.add_space(4.0);
+
+                // Asset name
+                ui.label(&asset.name);
+
+                ui.add_space(4.0);
+
+                // Metadata in a subtle style
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Type:").small().weak());
+                    ui.label(
+                        egui::RichText::new(asset.extension.to_uppercase())
+                            .small()
+                            .strong(),
+                    );
+                });
+
+                // Get/cache dimensions
+                let needs_dimension_load = browser_state
+                    .cached_dimensions_path
+                    .as_ref()
+                    .map(|p| p != &asset.full_path)
+                    .unwrap_or(true);
+
+                if needs_dimension_load {
+                    browser_state.selected_dimensions = get_image_dimensions(&asset.full_path);
+                    browser_state.cached_dimensions_path = Some(asset.full_path.clone());
+                }
+
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Size:").small().weak());
+                    if let Some((width, height)) = browser_state.selected_dimensions {
+                        ui.label(
+                            egui::RichText::new(format!("{}x{}", width, height))
+                                .small()
+                                .strong(),
+                        );
+                    } else {
+                        ui.label(egui::RichText::new("Unknown").small().weak());
+                    }
+                });
             } else {
-                ui.label("No asset selected");
+                ui.label(egui::RichText::new("No asset selected").weak());
             }
         });
     Ok(())
+}
+
+/// Get a color for the preview square based on file extension
+fn extension_color(ext: &str) -> egui::Color32 {
+    match ext {
+        "png" => egui::Color32::from_rgb(80, 140, 200),   // Blue
+        "jpg" | "jpeg" => egui::Color32::from_rgb(200, 140, 80), // Orange
+        "webp" => egui::Color32::from_rgb(140, 200, 80),  // Green
+        "gif" => egui::Color32::from_rgb(200, 80, 140),   // Pink
+        "bmp" => egui::Color32::from_rgb(140, 80, 200),   // Purple
+        "tiff" | "tif" => egui::Color32::from_rgb(80, 200, 140), // Teal
+        _ => egui::Color32::from_rgb(128, 128, 128),      // Gray
+    }
 }

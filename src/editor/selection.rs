@@ -1,6 +1,6 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
+use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::EguiContexts;
 
 use crate::map::{MapData, PlacedItem, Selected};
@@ -22,12 +22,56 @@ pub enum AnnotationDragData {
     Text { original_position: Vec2 },
 }
 
+/// Drag mode for selection interaction (move or resize)
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SelectionDragMode {
+    #[default]
+    None,
+    Move,
+    ResizeN,
+    ResizeS,
+    ResizeE,
+    ResizeW,
+    ResizeNE,
+    ResizeNW,
+    ResizeSE,
+    ResizeSW,
+}
+
+impl SelectionDragMode {
+    /// Get the appropriate cursor icon for this drag mode
+    pub fn cursor_icon(&self) -> Option<CursorIcon> {
+        match self {
+            SelectionDragMode::None => None,
+            SelectionDragMode::Move => Some(CursorIcon::System(SystemCursorIcon::Move)),
+            SelectionDragMode::ResizeN | SelectionDragMode::ResizeS => {
+                Some(CursorIcon::System(SystemCursorIcon::NsResize))
+            }
+            SelectionDragMode::ResizeE | SelectionDragMode::ResizeW => {
+                Some(CursorIcon::System(SystemCursorIcon::EwResize))
+            }
+            SelectionDragMode::ResizeNE | SelectionDragMode::ResizeSW => {
+                Some(CursorIcon::System(SystemCursorIcon::NeswResize))
+            }
+            SelectionDragMode::ResizeNW | SelectionDragMode::ResizeSE => {
+                Some(CursorIcon::System(SystemCursorIcon::NwseResize))
+            }
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct DragState {
     pub is_dragging: bool,
     pub drag_start_world: Vec2,
+    /// The current drag mode (move or resize direction)
+    pub mode: SelectionDragMode,
+    /// Original selection bounds when resize started (min, max)
+    pub original_bounds: Option<(Vec2, Vec2)>,
     /// Maps entity to its starting position when drag began (for PlacedItems)
     pub entity_start_positions: Vec<(Entity, Vec2)>,
+    /// Maps entity to its original scale when drag began (for resizing)
+    pub entity_start_scales: Vec<(Entity, Vec3)>,
     /// Maps entity to its annotation drag data when drag began
     pub annotation_drag_data: Vec<(Entity, AnnotationDragData)>,
 }
@@ -101,6 +145,85 @@ fn item_overlaps_rect(
         && rect_max.y > item_min.y
 }
 
+/// Handle size for resize handles (in world units, will be scaled by camera)
+const HANDLE_SIZE: f32 = 8.0;
+
+/// Compute the combined bounding box for all selected placed items
+pub fn compute_selection_bounds(
+    selected_query: &Query<(&Transform, &Sprite), With<Selected>>,
+    images: &Assets<Image>,
+) -> Option<(Vec2, Vec2)> {
+    let mut min = Vec2::splat(f32::MAX);
+    let mut max = Vec2::splat(f32::MIN);
+    let mut found_any = false;
+
+    for (transform, sprite) in selected_query.iter() {
+        let pos = transform.translation.truncate();
+        let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
+        let item_min = pos - half_size;
+        let item_max = pos + half_size;
+
+        min = min.min(item_min);
+        max = max.max(item_max);
+        found_any = true;
+    }
+
+    if found_any {
+        Some((min, max))
+    } else {
+        None
+    }
+}
+
+/// Determine which handle (if any) is under the cursor for selected items
+pub fn get_selection_handle_at_position(
+    world_pos: Vec2,
+    bounds: (Vec2, Vec2),
+    camera_scale: f32,
+) -> SelectionDragMode {
+    let (min, max) = bounds;
+    let center = (min + max) / 2.0;
+
+    // Adjust handle hit area based on camera zoom
+    let hit_size = HANDLE_SIZE * camera_scale * 1.5;
+
+    // Check corners first (higher priority)
+    let corners = [
+        (Vec2::new(min.x, min.y), SelectionDragMode::ResizeSW),
+        (Vec2::new(max.x, min.y), SelectionDragMode::ResizeSE),
+        (Vec2::new(max.x, max.y), SelectionDragMode::ResizeNE),
+        (Vec2::new(min.x, max.y), SelectionDragMode::ResizeNW),
+    ];
+
+    for (corner, mode) in corners {
+        if (world_pos - corner).length() < hit_size {
+            return mode;
+        }
+    }
+
+    // Check edge handles
+    let edges = [
+        (Vec2::new(center.x, min.y), SelectionDragMode::ResizeS),
+        (Vec2::new(center.x, max.y), SelectionDragMode::ResizeN),
+        (Vec2::new(min.x, center.y), SelectionDragMode::ResizeW),
+        (Vec2::new(max.x, center.y), SelectionDragMode::ResizeE),
+    ];
+
+    for (edge, mode) in edges {
+        if (world_pos - edge).length() < hit_size {
+            return mode;
+        }
+    }
+
+    // Check if inside the selection rectangle (for move/grab)
+    if world_pos.x >= min.x && world_pos.x <= max.x && world_pos.y >= min.y && world_pos.y <= max.y
+    {
+        return SelectionDragMode::Move;
+    }
+
+    SelectionDragMode::None
+}
+
 pub fn handle_selection(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
@@ -110,6 +233,7 @@ pub fn handle_selection(
     camera_query: Query<(&Camera, &GlobalTransform, &Projection), With<EditorCamera>>,
     items_query: Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     selected_query: Query<Entity, With<Selected>>,
+    selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
     mut drag_state: ResMut<DragState>,
     mut box_select_state: ResMut<BoxSelectState>,
     mut contexts: EguiContexts,
@@ -145,7 +269,7 @@ pub fn handle_selection(
         return;
     };
 
-    // Get camera scale for viewport handle detection
+    // Get camera scale for handle detection
     let camera_scale = match projection {
         Projection::Orthographic(ortho) => ortho.scale,
         _ => 1.0,
@@ -155,6 +279,28 @@ pub fn handle_selection(
         keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
 
     if mouse_button.just_pressed(MouseButton::Left) {
+        // First, check if we clicked on a selection handle or inside the selection bounds
+        // This takes priority over clicking on individual items
+        if let Some(bounds) = compute_selection_bounds(&selected_sprites_query, &images) {
+            let handle_mode = get_selection_handle_at_position(world_pos, bounds, camera_scale);
+
+            if handle_mode != SelectionDragMode::None && !ctrl_held {
+                // Start resize or move operation
+                start_selection_drag(
+                    &mut drag_state,
+                    world_pos,
+                    handle_mode,
+                    Some(bounds),
+                    &selected_query,
+                    &items_query,
+                    &annotations.paths,
+                    &annotations.lines,
+                    &annotations.texts,
+                );
+                return;
+            }
+        }
+
         // Find what item (if any) we clicked on
         // Filter by visible and unlocked layers
         let mut items: Vec<_> = items_query
@@ -198,9 +344,11 @@ pub fn handle_selection(
                 }
             } else if is_selected {
                 // Clicked on already selected annotation: start dragging all selected
-                start_drag_for_selected(
+                start_selection_drag(
                     &mut drag_state,
                     world_pos,
+                    SelectionDragMode::Move,
+                    None,
                     &selected_query,
                     &items_query,
                     &annotations.paths,
@@ -237,9 +385,11 @@ pub fn handle_selection(
                 }
             } else if is_selected {
                 // Clicked on already selected item: start dragging all selected items
-                start_drag_for_selected(
+                start_selection_drag(
                     &mut drag_state,
                     world_pos,
+                    SelectionDragMode::Move,
+                    None,
                     &selected_query,
                     &items_query,
                     &annotations.paths,
@@ -255,9 +405,11 @@ pub fn handle_selection(
 
                 // Start dragging this item
                 drag_state.is_dragging = true;
+                drag_state.mode = SelectionDragMode::Move;
                 drag_state.drag_start_world = world_pos;
                 drag_state.entity_start_positions =
                     vec![(entity, transform.translation.truncate())];
+                drag_state.entity_start_scales = vec![(entity, transform.scale)];
                 drag_state.annotation_drag_data.clear();
             }
         } else {
@@ -316,10 +468,12 @@ fn find_clicked_annotation(
     None
 }
 
-/// Start dragging all selected entities
-fn start_drag_for_selected(
+/// Start dragging/resizing all selected entities
+fn start_selection_drag(
     drag_state: &mut ResMut<DragState>,
     world_pos: Vec2,
+    mode: SelectionDragMode,
+    bounds: Option<(Vec2, Vec2)>,
     selected_query: &Query<Entity, With<Selected>>,
     items_query: &Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     paths_query: &Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
@@ -327,8 +481,11 @@ fn start_drag_for_selected(
     texts_query: &Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
 ) {
     drag_state.is_dragging = true;
+    drag_state.mode = mode;
     drag_state.drag_start_world = world_pos;
+    drag_state.original_bounds = bounds;
     drag_state.entity_start_positions.clear();
+    drag_state.entity_start_scales.clear();
     drag_state.annotation_drag_data.clear();
 
     for entity in selected_query.iter() {
@@ -337,6 +494,7 @@ fn start_drag_for_selected(
             drag_state
                 .entity_start_positions
                 .push((entity, t.translation.truncate()));
+            drag_state.entity_start_scales.push((entity, t.scale));
         }
         // Check if it's a path
         else if let Ok((_, path)) = paths_query.get(entity) {
@@ -380,8 +538,10 @@ fn start_drag_for_entity(
     texts_query: &Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
 ) {
     drag_state.is_dragging = true;
+    drag_state.mode = SelectionDragMode::Move;
     drag_state.drag_start_world = world_pos;
     drag_state.entity_start_positions.clear();
+    drag_state.entity_start_scales.clear();
     drag_state.annotation_drag_data.clear();
 
     // Check if it's a placed item
@@ -389,6 +549,7 @@ fn start_drag_for_entity(
         drag_state
             .entity_start_positions
             .push((entity, t.translation.truncate()));
+        drag_state.entity_start_scales.push((entity, t.scale));
     }
     // Check if it's a path
     else if let Ok((_, path)) = paths_query.get(entity) {
@@ -581,12 +742,16 @@ pub fn handle_drag(
 ) {
     if current_tool.tool != EditorTool::Select {
         drag_state.is_dragging = false;
+        drag_state.mode = SelectionDragMode::None;
+        drag_state.original_bounds = None;
         return;
     }
 
     // Stop dragging on mouse release
     if mouse_button.just_released(MouseButton::Left) {
         drag_state.is_dragging = false;
+        drag_state.mode = SelectionDragMode::None;
+        drag_state.original_bounds = None;
         return;
     }
 
@@ -620,47 +785,140 @@ pub fn handle_drag(
     // Calculate drag offset
     let mut drag_offset = world_pos - drag_state.drag_start_world;
 
-    // Shift = snap the offset to grid increments
-    if keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight) {
+    // Shift = snap the offset to grid increments (for move mode)
+    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    if shift_held && drag_state.mode == SelectionDragMode::Move {
         drag_offset.x = (drag_offset.x / map_data.grid_size).round() * map_data.grid_size;
         drag_offset.y = (drag_offset.y / map_data.grid_size).round() * map_data.grid_size;
     }
 
-    // Apply offset to each placed item, maintaining relative positions
-    for (entity, start_pos) in &drag_state.entity_start_positions {
-        if let Ok(mut transform) = items_query.get_mut(*entity) {
-            let new_pos = *start_pos + drag_offset;
-            transform.translation.x = new_pos.x;
-            transform.translation.y = new_pos.y;
-        }
-    }
-
-    // Apply offset to annotations
-    for (entity, drag_data) in &drag_state.annotation_drag_data {
-        match drag_data {
-            AnnotationDragData::Path { original_points } => {
-                if let Ok(mut path) = paths_query.get_mut(*entity) {
-                    // Move all points by the drag offset
-                    path.points = original_points.iter().map(|p| *p + drag_offset).collect();
-                }
-            }
-            AnnotationDragData::Line {
-                original_start,
-                original_end,
-            } => {
-                if let Ok(mut line) = lines_query.get_mut(*entity) {
-                    line.start = *original_start + drag_offset;
-                    line.end = *original_end + drag_offset;
-                }
-            }
-            AnnotationDragData::Text { original_position } => {
-                if let Ok(mut transform) = text_transforms_query.get_mut(*entity) {
-                    let new_pos = *original_position + drag_offset;
+    match drag_state.mode {
+        SelectionDragMode::Move => {
+            // Apply offset to each placed item, maintaining relative positions
+            for (entity, start_pos) in &drag_state.entity_start_positions {
+                if let Ok(mut transform) = items_query.get_mut(*entity) {
+                    let new_pos = *start_pos + drag_offset;
                     transform.translation.x = new_pos.x;
                     transform.translation.y = new_pos.y;
                 }
             }
+
+            // Apply offset to annotations
+            for (entity, drag_data) in &drag_state.annotation_drag_data {
+                match drag_data {
+                    AnnotationDragData::Path { original_points } => {
+                        if let Ok(mut path) = paths_query.get_mut(*entity) {
+                            path.points = original_points.iter().map(|p| *p + drag_offset).collect();
+                        }
+                    }
+                    AnnotationDragData::Line {
+                        original_start,
+                        original_end,
+                    } => {
+                        if let Ok(mut line) = lines_query.get_mut(*entity) {
+                            line.start = *original_start + drag_offset;
+                            line.end = *original_end + drag_offset;
+                        }
+                    }
+                    AnnotationDragData::Text { original_position } => {
+                        if let Ok(mut transform) = text_transforms_query.get_mut(*entity) {
+                            let new_pos = *original_position + drag_offset;
+                            transform.translation.x = new_pos.x;
+                            transform.translation.y = new_pos.y;
+                        }
+                    }
+                }
+            }
         }
+        SelectionDragMode::ResizeN
+        | SelectionDragMode::ResizeS
+        | SelectionDragMode::ResizeE
+        | SelectionDragMode::ResizeW
+        | SelectionDragMode::ResizeNE
+        | SelectionDragMode::ResizeNW
+        | SelectionDragMode::ResizeSE
+        | SelectionDragMode::ResizeSW => {
+            // Get original bounds - required for resize
+            let Some((orig_min, orig_max)) = drag_state.original_bounds else {
+                return;
+            };
+
+            let orig_size = orig_max - orig_min;
+            let orig_center = (orig_min + orig_max) / 2.0;
+
+            // Calculate new bounds based on which edge is being dragged to mouse position
+            let (new_min, new_max) = match drag_state.mode {
+                SelectionDragMode::ResizeE => (orig_min, Vec2::new(world_pos.x, orig_max.y)),
+                SelectionDragMode::ResizeW => (Vec2::new(world_pos.x, orig_min.y), orig_max),
+                SelectionDragMode::ResizeN => (orig_min, Vec2::new(orig_max.x, world_pos.y)),
+                SelectionDragMode::ResizeS => (Vec2::new(orig_min.x, world_pos.y), orig_max),
+                SelectionDragMode::ResizeNE => (orig_min, world_pos),
+                SelectionDragMode::ResizeSW => (world_pos, orig_max),
+                SelectionDragMode::ResizeNW => {
+                    (Vec2::new(world_pos.x, orig_min.y), Vec2::new(orig_max.x, world_pos.y))
+                }
+                SelectionDragMode::ResizeSE => {
+                    (Vec2::new(orig_min.x, world_pos.y), Vec2::new(world_pos.x, orig_max.y))
+                }
+                _ => (orig_min, orig_max),
+            };
+
+            // Calculate new size and center
+            let new_size = new_max - new_min;
+            let new_center = (new_min + new_max) / 2.0;
+
+            // Calculate scale factors (avoid division by zero)
+            let scale_x = if orig_size.x.abs() > 0.001 {
+                (new_size.x / orig_size.x).abs().max(0.01)
+            } else {
+                1.0
+            };
+            let scale_y = if orig_size.y.abs() > 0.001 {
+                (new_size.y / orig_size.y).abs().max(0.01)
+            } else {
+                1.0
+            };
+
+            // Hold shift for uniform scaling on edge handles
+            let (final_scale_x, final_scale_y) = if shift_held
+                && matches!(
+                    drag_state.mode,
+                    SelectionDragMode::ResizeN
+                        | SelectionDragMode::ResizeS
+                        | SelectionDragMode::ResizeE
+                        | SelectionDragMode::ResizeW
+                )
+            {
+                let uniform = scale_x.max(scale_y);
+                (uniform, uniform)
+            } else {
+                (scale_x, scale_y)
+            };
+
+            // Calculate center offset
+            let center_offset = new_center - orig_center;
+
+            // Apply scale and position to each placed item
+            for ((entity, orig_pos), (_, orig_scale)) in drag_state
+                .entity_start_positions
+                .iter()
+                .zip(drag_state.entity_start_scales.iter())
+            {
+                if let Ok(mut transform) = items_query.get_mut(*entity) {
+                    // Scale relative to original center
+                    let rel_pos = *orig_pos - orig_center;
+                    let scaled_rel_pos =
+                        Vec2::new(rel_pos.x * final_scale_x, rel_pos.y * final_scale_y);
+                    let new_pos = orig_center + scaled_rel_pos + center_offset;
+
+                    transform.translation.x = new_pos.x;
+                    transform.translation.y = new_pos.y;
+                    transform.scale.x = orig_scale.x * final_scale_x;
+                    transform.scale.y = orig_scale.y * final_scale_y;
+                }
+            }
+        }
+        SelectionDragMode::None => {}
     }
 }
 
@@ -694,8 +952,8 @@ pub fn draw_selection_indicators(
             selection_color,
         );
 
-        // Draw corner handles
-        let handle_size = 4.0;
+        // Draw corner handles (larger)
+        let corner_handle_size = 4.0;
         let corners = [
             pos + Vec2::new(-scaled_half.x, -scaled_half.y),
             pos + Vec2::new(scaled_half.x, -scaled_half.y),
@@ -706,7 +964,24 @@ pub fn draw_selection_indicators(
         for corner in corners {
             gizmos.rect_2d(
                 Isometry2d::from_translation(corner),
-                Vec2::splat(handle_size * 2.0),
+                Vec2::splat(corner_handle_size * 2.0),
+                selection_color,
+            );
+        }
+
+        // Draw edge handles (smaller)
+        let edge_handle_size = 3.0;
+        let edges = [
+            pos + Vec2::new(0.0, -scaled_half.y), // S
+            pos + Vec2::new(0.0, scaled_half.y),  // N
+            pos + Vec2::new(-scaled_half.x, 0.0), // W
+            pos + Vec2::new(scaled_half.x, 0.0),  // E
+        ];
+
+        for edge in edges {
+            gizmos.rect_2d(
+                Isometry2d::from_translation(edge),
+                Vec2::splat(edge_handle_size * 2.0),
                 selection_color,
             );
         }
@@ -879,4 +1154,76 @@ pub fn handle_deletion(
             commands.entity(entity).despawn();
         }
     }
+}
+
+/// Update cursor icon based on hover over selection handles
+pub fn update_selection_cursor(
+    current_tool: Res<CurrentTool>,
+    window_query: Query<(Entity, &Window), With<PrimaryWindow>>,
+    camera_query: Query<(&Camera, &GlobalTransform, &Projection), With<EditorCamera>>,
+    selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
+    drag_state: Res<DragState>,
+    images: Res<Assets<Image>>,
+    mut commands: Commands,
+    mut contexts: EguiContexts,
+) {
+    // Only apply for select tool
+    if current_tool.tool != EditorTool::Select {
+        return;
+    }
+
+    let Ok((window_entity, window)) = window_query.single() else {
+        return;
+    };
+
+    // Use default cursor over UI
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        commands
+            .entity(window_entity)
+            .insert(CursorIcon::System(SystemCursorIcon::Default));
+        return;
+    }
+
+    let Ok((camera, camera_transform, projection)) = camera_query.single() else {
+        return;
+    };
+
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+        return;
+    };
+
+    // Get camera scale for handle detection
+    let camera_scale = match projection {
+        Projection::Orthographic(ortho) => ortho.scale,
+        _ => 1.0,
+    };
+
+    // If we're actively dragging, use the drag mode's cursor
+    if drag_state.is_dragging
+        && let Some(cursor) = drag_state.mode.cursor_icon()
+    {
+        commands.entity(window_entity).insert(cursor);
+        return;
+    }
+
+    // Check if hovering over a selection handle
+    if let Some(bounds) = compute_selection_bounds(&selected_sprites_query, &images) {
+        let hover_mode = get_selection_handle_at_position(world_pos, bounds, camera_scale);
+
+        if let Some(cursor) = hover_mode.cursor_icon() {
+            commands.entity(window_entity).insert(cursor);
+            return;
+        }
+    }
+
+    // Default to the tool's cursor
+    commands
+        .entity(window_entity)
+        .insert(current_tool.tool.cursor_icon());
 }

@@ -89,6 +89,7 @@ impl Plugin for EditorPlugin {
                     selection::draw_box_select_rect,
                     selection::handle_fit_to_grid,
                     selection::handle_deletion,
+                    selection::update_selection_cursor,
                     clipboard::handle_copy,
                     clipboard::handle_cut,
                     clipboard::handle_paste,

@@ -15,15 +15,36 @@ impl Plugin for UiPlugin {
         app.init_resource::<asset_browser::AssetBrowserState>()
             .init_resource::<asset_import::AssetImportDialog>()
             .init_resource::<file_menu::FileMenuState>()
+            // Side panels must render first so top panels fit between them
+            // Use chain() to enforce ordering
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    file_menu::file_menu_ui,
-                    toolbar::toolbar_ui,
+                    // First: side panels
                     asset_browser::asset_browser_ui,
                     layers_panel::layers_panel_ui,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                (
+                    // Second: top panels (after side panels)
+                    toolbar::toolbar_ui,
+                    toolbar::tool_settings_ui,
+                )
+                    .chain()
+                    .after(asset_browser::asset_browser_ui)
+                    .after(layers_panel::layers_panel_ui),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                (
+                    // Last: dialogs/overlays
+                    file_menu::file_menu_ui,
                     asset_import::asset_import_ui,
-                ),
+                )
+                    .after(toolbar::toolbar_ui),
             )
             .add_systems(
                 EguiPrimaryContextPass,

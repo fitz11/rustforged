@@ -3,7 +3,8 @@ mod library;
 
 pub use asset_type::AssetCategory;
 pub use library::{
-    create_and_open_library, open_library_directory, AssetLibrary, LibraryAsset,
+    create_and_open_library, get_image_dimensions, open_library_directory, AssetLibrary,
+    LibraryAsset,
 };
 
 use bevy::prelude::*;

@@ -105,16 +105,19 @@ pub fn update_cursor_icon(
     mut commands: Commands,
     mut contexts: EguiContexts,
 ) {
-    // Don't change cursor if over UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
-        return;
-    }
-
     let Ok((entity, _window)) = window_query.single_mut() else {
         return;
     };
+
+    // Use default cursor over UI, tool cursor in editor space
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        commands
+            .entity(entity)
+            .insert(CursorIcon::System(SystemCursorIcon::Default));
+        return;
+    }
 
     commands.entity(entity).insert(current_tool.tool.cursor_icon());
 }

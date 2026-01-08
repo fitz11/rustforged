@@ -11,7 +11,8 @@ A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17 and bevy_egui.
 - **Grid system** - 70px grid with snap-to-grid placement (hold Shift for free placement)
 - **Map persistence** - Save and load maps as JSON files
 - **Live session mode** - Display player view on a secondary monitor with configurable viewport
-- **Consolidated UI** - File menu, properties panel, and session controls integrated into side panels
+- **Selection with resize handles** - Resize items using edge and corner handles with direct mouse tracking
+- **Context-sensitive toolbars** - Tool-specific settings appear in a secondary toolbar
 
 ## Installation
 
@@ -54,7 +55,9 @@ cargo build --release
 | Select item | Left-click |
 | Toggle selection | Ctrl + click |
 | Box select | Drag on empty space |
-| Move selected | Drag selected item |
+| Move selected | Drag selected item or click inside selection |
+| Resize selected | Drag edge or corner handles |
+| Uniform resize (edges) | Hold Shift while resizing |
 | Snap while dragging | Hold Shift |
 | Fit to grid | G |
 | Delete selected | Delete or Backspace |
@@ -66,6 +69,44 @@ cargo build --release
 | Draw | Click and drag to draw freehand paths |
 | Line | Click start point, then click end point (right-click to cancel) |
 | Text | Click to place text box |
+
+## User Interface
+
+### Main Toolbar
+
+The top toolbar displays between the side panels and includes:
+- **Tool buttons** with keyboard shortcut hints (e.g., "Select [V]", "Place [B]")
+- **Grid toggle** checkbox
+- **Live Session** controls (Start Session button or LIVE indicator)
+
+### Tool Settings Bar
+
+A secondary toolbar appears below the main toolbar for tools with settings:
+- **Place tool**: Layer selection dropdown
+- **Draw/Line tools**: Color swatches (8 colors) and stroke width
+- **Text tool**: Color swatches and font size
+
+### Asset Browser (Left Panel)
+
+- **File/Assets menus** for map and asset operations
+- **Asset Library** section with expandable library management
+- **Category tabs** (Unsorted, Terrain, Doodads, Tokens)
+- **Asset list** with color-coded file type indicators (15x15 preview squares)
+- **Selected Asset** section showing:
+  - Asset name
+  - File type (PNG, JPG, etc.)
+  - Native image resolution (e.g., 512x512)
+
+### Layers Panel (Right Panel)
+
+- **Layers** section with visibility and lock controls
+- **Properties** section for selected item editing
+- **Live Session** controls when session is active
+
+### Cursor Behavior
+
+- **Over UI elements**: Default pointer cursor
+- **In editor space**: Tool-specific cursor (crosshair for Place, resize cursors on handles, etc.)
 
 ## Project Structure
 
@@ -87,7 +128,7 @@ src/
 │   ├── camera.rs        # Pan/zoom camera
 │   ├── grid.rs          # Grid rendering & snap logic
 │   ├── placement.rs     # Asset placement on click
-│   ├── selection.rs     # Select/drag/delete items
+│   ├── selection.rs     # Select/drag/resize/delete items
 │   ├── tools.rs         # EditorTool enum, CurrentTool resource
 │   └── annotations.rs   # Drawing, lines, text annotations
 ├── session/             # Live session / player view
@@ -99,7 +140,7 @@ src/
     ├── mod.rs           # UiPlugin
     ├── asset_browser.rs # Left panel - File/Assets menu, library browser
     ├── layers_panel.rs  # Right panel - layers, properties, session controls
-    ├── toolbar.rs       # Top toolbar - tools, colors, settings
+    ├── toolbar.rs       # Top toolbars - tools and tool settings
     ├── file_menu.rs     # File operation dialogs
     ├── asset_import.rs  # Asset import dialog
     └── session_controls.rs # Monitor selection dialog
@@ -149,7 +190,7 @@ In the right panel under "Layers":
 
 ## Live Session Mode
 
-1. Click "Start Live Session" in the toolbar
+1. Click "Start Session" in the toolbar
 2. Select which monitor to display the player view
 3. Use the **move handle** (tab above the viewport) to drag the viewport
 4. Resize using corner and edge handles (maintains aspect ratio)
@@ -159,7 +200,7 @@ The player window displays a fullscreen view of the selected viewport area. The 
 
 ## Testing
 
-The project includes 100 unit tests covering core functionality:
+The project includes unit tests covering core functionality:
 
 ```bash
 # Run all tests
@@ -192,6 +233,7 @@ cargo clippy
 
 - Bevy 0.17.3 - Game engine
 - bevy_egui 0.38 - Immediate-mode UI
+- image 0.25 - Image metadata reading
 - serde / serde_json - Serialization
 - rfd - Native file dialogs
 

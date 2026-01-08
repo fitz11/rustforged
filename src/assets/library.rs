@@ -84,6 +84,10 @@ pub struct LibraryAsset {
     pub name: String,
     pub relative_path: String,
     pub category: AssetCategory,
+    /// File extension (e.g., "png", "jpg")
+    pub extension: String,
+    /// Full filesystem path for reading metadata
+    pub full_path: PathBuf,
 }
 
 /// Scans assets from a library directory into the AssetLibrary resource
@@ -112,6 +116,12 @@ fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
                     .unwrap_or("unknown")
                     .to_string();
 
+                let extension = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+
                 // For assets outside the default location, store absolute path
                 let relative_path = if library_path.starts_with("assets/library") {
                     format!(
@@ -128,6 +138,8 @@ fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
                     name,
                     relative_path,
                     category: *category,
+                    extension,
+                    full_path: path,
                 });
             }
         }
@@ -156,6 +168,12 @@ fn is_image_file(path: &Path) -> bool {
         .and_then(|ext| ext.to_str())
         .map(|ext| extensions.contains(&ext.to_lowercase().as_str()))
         .unwrap_or(false)
+}
+
+/// Get the dimensions of an image file (width, height)
+pub fn get_image_dimensions(path: &Path) -> Option<(u32, u32)> {
+    // Use the image crate to read just the header for dimensions
+    image::image_dimensions(path).ok()
 }
 
 pub fn refresh_asset_library(
