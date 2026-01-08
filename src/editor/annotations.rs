@@ -301,10 +301,10 @@ pub fn handle_draw(
         res.draw_state.current_points.push(world_pos);
     } else if res.mouse_button.pressed(MouseButton::Left) && res.draw_state.is_drawing {
         // Add point if it's far enough from the last one (reduces point count)
-        if let Some(last) = res.draw_state.current_points.last() {
-            if world_pos.distance(*last) > 2.0 {
-                res.draw_state.current_points.push(world_pos);
-            }
+        if let Some(last) = res.draw_state.current_points.last()
+            && world_pos.distance(*last) > 2.0
+        {
+            res.draw_state.current_points.push(world_pos);
         }
     } else if res.mouse_button.just_released(MouseButton::Left) && res.draw_state.is_drawing {
         res.draw_state.is_drawing = false;
@@ -353,10 +353,10 @@ pub fn handle_line(
         return;
     }
 
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {
@@ -433,10 +433,10 @@ pub fn handle_text(
         return;
     }
 
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {

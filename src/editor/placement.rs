@@ -31,10 +31,10 @@ pub fn handle_placement(
     }
 
     // Don't place if clicking on UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Some(ref asset) = selected_asset.asset else {

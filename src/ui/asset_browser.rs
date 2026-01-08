@@ -2,7 +2,10 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use std::path::PathBuf;
 
-use crate::assets::{AssetCategory, AssetLibrary, LibraryAsset, SelectedAsset};
+use crate::assets::{
+    create_and_open_library, open_library_directory, AssetCategory, AssetLibrary, LibraryAsset,
+    SelectedAsset,
+};
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::{LoadMapRequest, MapData};
 
@@ -12,11 +15,13 @@ use super::file_menu::FileMenuState;
 #[derive(Resource, Default)]
 pub struct AssetBrowserState {
     pub selected_category: AssetCategory,
+    /// Whether the library info section is expanded
+    pub library_expanded: bool,
 }
 
 pub fn asset_browser_ui(
     mut contexts: EguiContexts,
-    library: Res<AssetLibrary>,
+    mut library: ResMut<AssetLibrary>,
     mut selected_asset: ResMut<SelectedAsset>,
     mut browser_state: ResMut<AssetBrowserState>,
     mut current_tool: ResMut<CurrentTool>,
@@ -71,9 +76,63 @@ pub fn asset_browser_ui(
             ui.separator();
 
             // =========================================
-            // ASSET LIBRARY SECTION
+            // ASSET LIBRARY DIRECTORY SECTION
             // =========================================
-            ui.heading("Asset Library");
+            ui.horizontal(|ui| {
+                let toggle_text = if browser_state.library_expanded {
+                    "▼"
+                } else {
+                    "▶"
+                };
+                if ui.small_button(toggle_text).clicked() {
+                    browser_state.library_expanded = !browser_state.library_expanded;
+                }
+                ui.heading("Asset Library");
+            });
+
+            // Show current library path (truncated if too long)
+            let path_str = library.library_path.to_string_lossy();
+            let display_path = if path_str.len() > 30 {
+                format!("...{}", &path_str[path_str.len() - 27..])
+            } else {
+                path_str.to_string()
+            };
+            ui.label(egui::RichText::new(display_path).small().weak())
+                .on_hover_text(path_str.as_ref());
+
+            // Show error if any
+            if let Some(ref error) = library.error {
+                ui.colored_label(egui::Color32::RED, egui::RichText::new(error).small());
+            }
+
+            // Library management buttons (shown when expanded)
+            if browser_state.library_expanded {
+                ui.add_space(4.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("Open...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .set_title("Open Asset Library")
+                            .pick_folder()
+                        && let Err(e) = open_library_directory(&mut library, path)
+                    {
+                        warn!("Failed to open library: {}", e);
+                    }
+
+                    if ui.button("New...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .set_title("Create New Asset Library")
+                            .pick_folder()
+                        && let Err(e) = create_and_open_library(&mut library, path)
+                    {
+                        warn!("Failed to create library: {}", e);
+                    }
+                });
+
+                ui.add_space(4.0);
+            }
+
+            ui.separator();
 
             ui.horizontal(|ui| {
                 for category in AssetCategory::all() {
@@ -97,10 +156,10 @@ pub fn asset_browser_ui(
 
             if filtered_assets.is_empty() {
                 ui.label("No assets found.");
-                ui.label(format!(
-                    "Add images to assets/library/{}/",
-                    browser_state.selected_category.folder_name()
-                ));
+                let folder_path = library
+                    .library_path
+                    .join(browser_state.selected_category.folder_name());
+                ui.label(format!("Add images to {}/", folder_path.display()));
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for asset in filtered_assets {

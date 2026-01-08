@@ -5,8 +5,6 @@ use bevy::prelude::*;
 pub struct MonitorInfo {
     pub name: String,
     pub physical_size: UVec2,
-    pub scale_factor: f64,
-    pub position: IVec2,
     pub index: usize,
 }
 
@@ -117,8 +115,6 @@ mod tests {
         MonitorInfo {
             name: "Test Monitor".to_string(),
             physical_size: UVec2::new(width, height),
-            scale_factor: 1.0,
-            position: IVec2::ZERO,
             index: 0,
         }
     }

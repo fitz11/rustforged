@@ -87,7 +87,7 @@ pub fn layers_panel_ui(
                     let asset_name = item
                         .asset_path
                         .split('/')
-                        .last()
+                        .next_back()
                         .unwrap_or(&item.asset_path);
                     ui.label(format!("Asset: {}", asset_name));
 

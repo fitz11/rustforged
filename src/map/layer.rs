@@ -46,11 +46,6 @@ impl Layer {
             Layer::Annotation,
         ]
     }
-
-    /// Returns true if this layer is editor-only (not visible in player view)
-    pub fn is_editor_only(&self) -> bool {
-        matches!(self, Layer::Play)
-    }
 }
 
 #[cfg(test)]
@@ -106,16 +101,6 @@ mod tests {
     #[test]
     fn test_all_has_correct_count() {
         assert_eq!(Layer::all().len(), 5);
-    }
-
-    #[test]
-    fn test_is_editor_only() {
-        assert!(!Layer::Background.is_editor_only());
-        assert!(!Layer::Terrain.is_editor_only());
-        assert!(!Layer::Doodad.is_editor_only());
-        assert!(!Layer::Token.is_editor_only());
-        assert!(!Layer::Annotation.is_editor_only());
-        assert!(Layer::Play.is_editor_only());
     }
 
     #[test]

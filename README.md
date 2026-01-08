@@ -6,7 +6,7 @@ A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17 and bevy_egui.
 
 - **Layer-based map editing** - Background, Terrain, Doodad, Token, and Annotation layers with proper z-ordering
 - **Layer visibility & locking** - Toggle layer visibility and lock layers to prevent accidental edits
-- **Asset library** - Organize terrain tiles, props, and tokens with import support
+- **Asset library** - Organize terrain tiles, props, and tokens with import support and custom library directories
 - **Drawing tools** - Freehand drawing, straight lines, and text annotations
 - **Grid system** - 70px grid with snap-to-grid placement (hold Shift for free placement)
 - **Map persistence** - Save and load maps as JSON files
@@ -52,7 +52,8 @@ cargo build --release
 | Action | Control |
 |--------|---------|
 | Select item | Left-click |
-| Multi-select | Shift + drag rectangle |
+| Toggle selection | Ctrl + click |
+| Box select | Drag on empty space |
 | Move selected | Drag selected item |
 | Snap while dragging | Hold Shift |
 | Fit to grid | G |
@@ -73,8 +74,8 @@ src/
 ├── main.rs              # App setup, plugin registration
 ├── assets/              # Asset library management
 │   ├── mod.rs           # AssetLibraryPlugin, SelectedAsset
-│   ├── asset_type.rs    # AssetCategory enum (Terrain, Doodad, Token)
-│   └── library.rs       # AssetLibrary resource, filesystem scanning
+│   ├── asset_type.rs    # AssetCategory enum (Unsorted, Terrain, Doodad, Token)
+│   └── library.rs       # AssetLibrary resource, directory management
 ├── map/                 # Map/scene data
 │   ├── mod.rs           # MapPlugin
 │   ├── layer.rs         # Layer enum with z-ordering
@@ -92,11 +93,11 @@ src/
 ├── session/             # Live session / player view
 │   ├── mod.rs           # LiveSessionPlugin
 │   ├── state.rs         # LiveSessionState, viewport config
-│   ├── viewport.rs      # Viewport indicator rendering
+│   ├── viewport.rs      # Viewport indicator rendering & interaction
 │   └── player_window.rs # Secondary window for players
 └── ui/                  # egui UI panels
     ├── mod.rs           # UiPlugin
-    ├── asset_browser.rs # Left panel - File/Assets menu, browse & select assets
+    ├── asset_browser.rs # Left panel - File/Assets menu, library browser
     ├── layers_panel.rs  # Right panel - layers, properties, session controls
     ├── toolbar.rs       # Top toolbar - tools, colors, settings
     ├── file_menu.rs     # File operation dialogs
@@ -106,11 +107,24 @@ src/
 
 ## Assets
 
-Place assets in `assets/library/` with subdirectories:
+### Default Library
 
+Assets are loaded from `assets/library/` by default, with subdirectories:
+
+- `unsorted/` - Uncategorized assets
 - `terrain/` - Ground tiles, floors, walls
 - `doodads/` - Props, furniture, decorations
 - `tokens/` - Player/NPC tokens
+
+### Custom Asset Libraries
+
+You can use any directory as an asset library:
+
+1. Click the arrow next to "Asset Library" in the left panel to expand options
+2. **Open...** - Select an existing folder with the required subdirectories
+3. **New...** - Select a folder to create a new library (subdirectories are created automatically)
+
+When opening an existing library, the folder must contain the required subdirectories (unsorted, terrain, doodads, tokens) or the operation will fail with an error message.
 
 Supported formats: PNG, JPG, JPEG, WebP, GIF, BMP, TIFF
 
@@ -141,11 +155,11 @@ In the right panel under "Layers":
 4. Resize using corner and edge handles (maintains aspect ratio)
 5. Rotate viewport with the rotation buttons in the right panel
 
-The player window displays a fullscreen view of the selected viewport area. The viewport indicator is only visible in the editor.
+The player window displays a fullscreen view of the selected viewport area. The viewport indicator and annotations are only visible in the editor.
 
 ## Testing
 
-The project includes 101 unit tests covering core functionality:
+The project includes 100 unit tests covering core functionality:
 
 ```bash
 # Run all tests
@@ -156,13 +170,16 @@ cargo test map::layer
 
 # Run with verbose output
 cargo test -- --nocapture
+
+# Run clippy linter
+cargo clippy
 ```
 
 ### Test Coverage
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
-| `map/layer.rs` | 9 | Layer z-ordering, display names, serialization |
+| `map/layer.rs` | 8 | Layer z-ordering, display names, serialization |
 | `assets/asset_type.rs` | 6 | AssetCategory methods, folder paths, serialization |
 | `editor/tools.rs` | 10 | EditorTool properties, cursor icons, defaults |
 | `session/state.rs` | 26 | Viewport rotation, aspect ratios, bounds calculation |

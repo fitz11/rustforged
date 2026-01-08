@@ -24,6 +24,3 @@ opt-level = 1
 # Enable a large amount of optimization in the dev profile for dependencies.
 [profile.dev.package."*"]
 opt-level = 3
-
-# Improve runtime performance by limiting trace logging levels at compile time.
-log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }

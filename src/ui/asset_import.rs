@@ -47,15 +47,14 @@ pub fn asset_import_ui(
 
             ui.separator();
 
-            if ui.button("Browse Files...").clicked() {
-                if let Some(paths) = rfd::FileDialog::new()
+            if ui.button("Browse Files...").clicked()
+                && let Some(paths) = rfd::FileDialog::new()
                     .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"])
                     .set_title("Select images to import")
                     .pick_files()
-                {
-                    dialog.files_to_import = paths;
-                    dialog.import_status = None;
-                }
+            {
+                dialog.files_to_import = paths;
+                dialog.import_status = None;
             }
 
             if !dialog.files_to_import.is_empty() {

@@ -1,5 +1,6 @@
 pub mod annotations;
 mod camera;
+mod clipboard;
 mod grid;
 mod placement;
 mod selection;
@@ -55,6 +56,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<annotations::LineDrawState>()
             .init_resource::<annotations::TextEditState>()
             .init_resource::<annotations::AnnotationSettings>()
+            .init_resource::<clipboard::Clipboard>()
             // Register annotation gizmo group for editor-only rendering
             .init_gizmo_group::<annotations::AnnotationGizmoGroup>()
             .add_systems(
@@ -87,6 +89,9 @@ impl Plugin for EditorPlugin {
                     selection::draw_box_select_rect,
                     selection::handle_fit_to_grid,
                     selection::handle_deletion,
+                    clipboard::handle_copy,
+                    clipboard::handle_cut,
+                    clipboard::handle_paste,
                 ),
             )
             .add_systems(

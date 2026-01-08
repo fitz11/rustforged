@@ -260,10 +260,10 @@ pub fn new_map_system(
 
 pub fn ensure_maps_directory() {
     let maps_dir = PathBuf::from("assets/maps");
-    if !maps_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&maps_dir) {
-            warn!("Failed to create maps directory: {}", e);
-        }
+    if !maps_dir.exists()
+        && let Err(e) = std::fs::create_dir_all(&maps_dir)
+    {
+        warn!("Failed to create maps directory: {}", e);
     }
 }
 

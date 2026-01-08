@@ -1,8 +1,10 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::map::{MapData, PlacedItem, Selected};
+use crate::session::{get_handle_at_position, LiveSessionState, ViewportDragMode};
 
 use super::annotations::{
     is_annotation_layer_locked, is_annotation_layer_visible, line_bounds, line_overlaps_rect,
@@ -35,6 +37,14 @@ pub struct BoxSelectState {
     pub is_selecting: bool,
     pub start_world: Vec2,
     pub current_world: Vec2,
+}
+
+/// Bundled annotation queries to reduce system parameter count
+#[derive(SystemParam)]
+pub struct AnnotationQueries<'w, 's> {
+    pub paths: Query<'w, 's, (Entity, &'static DrawnPath), With<AnnotationMarker>>,
+    pub lines: Query<'w, 's, (Entity, &'static DrawnLine), With<AnnotationMarker>>,
+    pub texts: Query<'w, 's, (Entity, &'static Transform, &'static TextAnnotation), With<AnnotationMarker>>,
 }
 
 /// Get the half-size of a sprite, accounting for custom_size or image dimensions
@@ -97,7 +107,7 @@ pub fn handle_selection(
     keyboard: Res<ButtonInput<KeyCode>>,
     current_tool: Res<CurrentTool>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    camera_query: Query<(&Camera, &GlobalTransform, &Projection), With<EditorCamera>>,
     items_query: Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     selected_query: Query<Entity, With<Selected>>,
     mut drag_state: ResMut<DragState>,
@@ -105,27 +115,25 @@ pub fn handle_selection(
     mut contexts: EguiContexts,
     images: Res<Assets<Image>>,
     map_data: Res<MapData>,
-    // Annotation queries
-    paths_query: Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
-    lines_query: Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
-    texts_query: Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
+    session_state: Res<LiveSessionState>,
+    annotations: AnnotationQueries,
 ) {
     if current_tool.tool != EditorTool::Select {
         return;
     }
 
     // Don't interact if over UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.single() else {
+    let Ok((camera, camera_transform, projection)) = camera_query.single() else {
         return;
     };
 
@@ -135,6 +143,12 @@ pub fn handle_selection(
 
     let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
         return;
+    };
+
+    // Get camera scale for viewport handle detection
+    let camera_scale = match projection {
+        Projection::Orthographic(ortho) => ortho.scale,
+        _ => 1.0,
     };
 
     let ctrl_held =
@@ -166,7 +180,7 @@ pub fn handle_selection(
             is_annotation_layer_visible(&map_data) && !is_annotation_layer_locked(&map_data);
 
         let clicked_annotation = if annotation_selectable {
-            find_clicked_annotation(world_pos, &paths_query, &lines_query, &texts_query)
+            find_clicked_annotation(world_pos, &annotations.paths, &annotations.lines, &annotations.texts)
         } else {
             None
         };
@@ -189,9 +203,9 @@ pub fn handle_selection(
                     world_pos,
                     &selected_query,
                     &items_query,
-                    &paths_query,
-                    &lines_query,
-                    &texts_query,
+                    &annotations.paths,
+                    &annotations.lines,
+                    &annotations.texts,
                 );
             } else {
                 // Clicked on unselected annotation: clear selection and select this one
@@ -206,9 +220,9 @@ pub fn handle_selection(
                     world_pos,
                     entity,
                     &items_query,
-                    &paths_query,
-                    &lines_query,
-                    &texts_query,
+                    &annotations.paths,
+                    &annotations.lines,
+                    &annotations.texts,
                 );
             }
         } else if let Some(&(entity, transform, _, _)) = clicked_item {
@@ -228,9 +242,9 @@ pub fn handle_selection(
                     world_pos,
                     &selected_query,
                     &items_query,
-                    &paths_query,
-                    &lines_query,
-                    &texts_query,
+                    &annotations.paths,
+                    &annotations.lines,
+                    &annotations.texts,
                 );
             } else {
                 // Clicked on unselected item: clear selection and select this one
@@ -247,7 +261,16 @@ pub fn handle_selection(
                 drag_state.annotation_drag_data.clear();
             }
         } else {
-            // Clicked on empty space
+            // Clicked on empty space - but check if we clicked on a viewport handle
+            let on_viewport_handle = session_state.is_active
+                && get_handle_at_position(world_pos, &session_state, camera_scale)
+                    != ViewportDragMode::None;
+
+            if on_viewport_handle {
+                // Don't start box selection if clicking on viewport handles
+                return;
+            }
+
             if !ctrl_held {
                 // Clear selection
                 for entity in selected_query.iter() {
@@ -425,10 +448,10 @@ pub fn handle_box_select(
     }
 
     // Don't update if over UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {
@@ -572,10 +595,10 @@ pub fn handle_drag(
     }
 
     // Don't drag if over UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {
@@ -808,10 +831,10 @@ pub fn handle_fit_to_grid(
     mut contexts: EguiContexts,
 ) {
     // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_keyboard_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
     }
 
     // G = fit to grid
@@ -842,10 +865,10 @@ pub fn handle_deletion(
     mut contexts: EguiContexts,
 ) {
     // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_keyboard_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
     }
 
     let should_delete =

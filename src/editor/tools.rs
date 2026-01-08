@@ -78,10 +78,10 @@ pub fn handle_tool_shortcuts(
     mut contexts: EguiContexts,
 ) {
     // Don't change tools if typing in a text field
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_keyboard_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
     }
 
     if keyboard.just_pressed(KeyCode::KeyV) || keyboard.just_pressed(KeyCode::KeyS) {
@@ -106,10 +106,10 @@ pub fn update_cursor_icon(
     mut contexts: EguiContexts,
 ) {
     // Don't change cursor if over UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok((entity, _window)) = window_query.single_mut() else {

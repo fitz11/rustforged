@@ -2,8 +2,8 @@ mod player_window;
 pub mod state;
 mod viewport;
 
-pub use player_window::{PlayerCamera, PlayerWindow};
-pub use state::{LiveSessionState, MonitorInfo, MonitorSelectionDialog, ViewportDragState};
+pub use state::{LiveSessionState, MonitorInfo, MonitorSelectionDialog, ViewportDragMode, ViewportDragState};
+pub use viewport::get_handle_at_position;
 
 use bevy::prelude::*;
 

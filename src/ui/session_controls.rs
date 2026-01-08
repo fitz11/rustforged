@@ -28,34 +28,27 @@ pub fn enumerate_monitors(
                 .clone()
                 .unwrap_or_else(|| format!("Monitor {}", index + 1)),
             physical_size: UVec2::new(monitor.physical_width, monitor.physical_height),
-            scale_factor: monitor.scale_factor,
-            position: monitor.physical_position,
             index,
         });
     }
 
     // Fallback: try WinitMonitors resource if no Monitor entities found
-    if new_monitors.is_empty() {
-        if let Some(winit_monitors) = winit_monitors {
-            for index in 0..10 {
-                if let Some(handle) = winit_monitors.nth(index) {
-                    let size = handle.size();
-                    let name = handle
-                        .name()
-                        .unwrap_or_else(|| format!("Monitor {}", index + 1));
-                    new_monitors.push(MonitorInfo {
-                        name,
-                        physical_size: UVec2::new(size.width, size.height),
-                        scale_factor: handle.scale_factor(),
-                        position: {
-                            let pos = handle.position();
-                            IVec2::new(pos.x, pos.y)
-                        },
-                        index,
-                    });
-                } else {
-                    break;
-                }
+    if new_monitors.is_empty()
+        && let Some(winit_monitors) = winit_monitors
+    {
+        for index in 0..10 {
+            if let Some(handle) = winit_monitors.nth(index) {
+                let size = handle.size();
+                let name = handle
+                    .name()
+                    .unwrap_or_else(|| format!("Monitor {}", index + 1));
+                new_monitors.push(MonitorInfo {
+                    name,
+                    physical_size: UVec2::new(size.width, size.height),
+                    index,
+                });
+            } else {
+                break;
             }
         }
     }

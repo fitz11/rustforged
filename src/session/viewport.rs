@@ -151,7 +151,7 @@ pub fn draw_viewport_indicator(
 }
 
 /// Determine which handle (if any) is under the cursor
-fn get_handle_at_position(
+pub fn get_handle_at_position(
     world_pos: Vec2,
     session_state: &LiveSessionState,
     camera_scale: f32,
@@ -232,10 +232,10 @@ pub fn handle_viewport_interaction(
     }
 
     // Don't interact if over UI
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.is_pointer_over_area() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.is_pointer_over_area()
+    {
+        return;
     }
 
     let Ok(window) = window_query.single() else {
