@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
-use crate::map::{Layer, MapData, PlacedItem, SavedLine, SavedPath, SavedPlacedItem, SavedTextBox, Selected};
+use crate::map::{
+    Layer, MapData, PlacedItem, SavedLine, SavedPath, SavedPlacedItem, SavedTextBox, Selected,
+};
 
 use super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use super::params::{CameraParams, SelectedAnnotationQueries};
@@ -176,7 +178,9 @@ pub fn handle_copy(
     for (item, transform) in selected_items.iter() {
         let saved = SavedPlacedItem::from_entity(item, transform);
         let offset = saved.position - centroid;
-        clipboard.placed_items.push(ClipboardPlacedItem { saved, offset });
+        clipboard
+            .placed_items
+            .push(ClipboardPlacedItem { saved, offset });
     }
 
     // Copy paths
@@ -278,7 +282,9 @@ pub fn handle_cut(
     for (entity, item, transform) in selected_items.iter() {
         let saved = SavedPlacedItem::from_entity(item, transform);
         let offset = saved.position - centroid;
-        clipboard.placed_items.push(ClipboardPlacedItem { saved, offset });
+        clipboard
+            .placed_items
+            .push(ClipboardPlacedItem { saved, offset });
         commands.entity(entity).despawn();
     }
 
@@ -688,10 +694,7 @@ mod tests {
     #[test]
     fn test_saved_path_center_multiple_points() {
         let saved = SavedPath {
-            points: vec![
-                Vec2::new(-50.0, -50.0),
-                Vec2::new(50.0, 50.0),
-            ],
+            points: vec![Vec2::new(-50.0, -50.0), Vec2::new(50.0, 50.0)],
             color: [1.0, 1.0, 1.0, 1.0],
             stroke_width: 1.0,
         };
@@ -719,7 +722,7 @@ mod tests {
     fn test_clipboard_preserves_relative_positions() {
         // Three items at (0,0), (100,0), (50,100)
         // Centroid = (50, 33.33...)
-        let positions = vec![
+        let positions = [
             Vec2::new(0.0, 0.0),
             Vec2::new(100.0, 0.0),
             Vec2::new(50.0, 100.0),
@@ -781,7 +784,11 @@ mod tests {
     fn test_clipboard_path_clone() {
         let path = ClipboardPath {
             saved: SavedPath {
-                points: vec![Vec2::new(0.0, 0.0), Vec2::new(50.0, 50.0), Vec2::new(100.0, 0.0)],
+                points: vec![
+                    Vec2::new(0.0, 0.0),
+                    Vec2::new(50.0, 50.0),
+                    Vec2::new(100.0, 0.0),
+                ],
                 color: [1.0, 0.0, 0.0, 1.0],
                 stroke_width: 3.0,
             },
