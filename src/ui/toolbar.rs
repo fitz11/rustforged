@@ -94,14 +94,13 @@ pub fn tool_settings_ui(
                         // Place tool settings
                         ui.label(
                             egui::RichText::new("Place Settings:")
-                                .small()
                                 .color(egui::Color32::LIGHT_GRAY),
                         );
 
                         ui.add_space(8.0);
 
                         // Layer selector
-                        ui.label(egui::RichText::new("Layer:").small());
+                        ui.label("Layer:");
                         egui::ComboBox::from_id_salt("place_layer_select")
                             .selected_text(selected_layer.layer.display_name())
                             .width(100.0)
@@ -127,14 +126,13 @@ pub fn tool_settings_ui(
                         };
                         ui.label(
                             egui::RichText::new(format!("{} Settings:", tool_name))
-                                .small()
                                 .color(egui::Color32::LIGHT_GRAY),
                         );
 
                         ui.add_space(8.0);
 
                         // Color selection
-                        ui.label(egui::RichText::new("Color:").small());
+                        ui.label("Color:");
 
                         let colors = [
                             (Color::srgb(1.0, 0.0, 0.0), "Red", egui::Color32::RED),
@@ -193,7 +191,7 @@ pub fn tool_settings_ui(
                         // Tool-specific settings
                         match current_tool.tool {
                             EditorTool::Draw | EditorTool::Line => {
-                                ui.label(egui::RichText::new("Width:").small());
+                                ui.label("Width:");
                                 ui.add(
                                     egui::DragValue::new(&mut annotation_settings.stroke_width)
                                         .range(1.0..=20.0)
@@ -202,7 +200,7 @@ pub fn tool_settings_ui(
                                 );
                             }
                             EditorTool::Text => {
-                                ui.label(egui::RichText::new("Font Size:").small());
+                                ui.label("Font Size:");
                                 ui.add(
                                     egui::DragValue::new(&mut annotation_settings.font_size)
                                         .range(8.0..=72.0)

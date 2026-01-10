@@ -2,6 +2,7 @@ pub mod annotations;
 mod camera;
 mod clipboard;
 mod grid;
+pub mod params;
 mod placement;
 mod selection;
 pub mod tools;

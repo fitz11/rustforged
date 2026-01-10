@@ -66,6 +66,7 @@ pub fn camera_zoom(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn apply_camera_zoom(
     mut camera_query: Query<(&CameraZoom, &mut Projection), (With<EditorCamera>, Changed<CameraZoom>)>,
 ) {

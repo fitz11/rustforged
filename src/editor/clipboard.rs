@@ -1,11 +1,10 @@
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::map::{Layer, MapData, PlacedItem, SavedLine, SavedPath, SavedPlacedItem, SavedTextBox, Selected};
 
 use super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use super::EditorCamera;
+use super::params::{CameraParams, SelectedAnnotationQueries};
 
 /// Clipboard data for a placed item with offset from selection centroid
 #[derive(Clone)]
@@ -90,6 +89,7 @@ fn saved_path_center(saved: &SavedPath) -> Vec2 {
 }
 
 /// Calculate the centroid of all selected items
+#[allow(clippy::type_complexity)]
 fn calculate_selection_centroid(
     placed_items: &Query<(&PlacedItem, &Transform), With<Selected>>,
     paths: &Query<&DrawnPath, (With<Selected>, With<AnnotationMarker>)>,
@@ -127,6 +127,7 @@ fn calculate_selection_centroid(
 }
 
 /// Copy selected items to clipboard (Ctrl+C)
+#[allow(clippy::type_complexity)]
 pub fn handle_copy(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut clipboard: ResMut<Clipboard>,
@@ -223,12 +224,8 @@ pub fn handle_cut(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut clipboard: ResMut<Clipboard>,
     mut contexts: EguiContexts,
-    // PlacedItem queries
     selected_items: Query<(Entity, &PlacedItem, &Transform), With<Selected>>,
-    // Annotation queries
-    selected_paths: Query<(Entity, &DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
-    selected_lines: Query<(Entity, &DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
-    selected_texts: Query<(Entity, &Transform, &TextAnnotation), (With<Selected>, With<AnnotationMarker>)>,
+    annotations: SelectedAnnotationQueries,
 ) {
     // Check for Ctrl+X
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
@@ -245,9 +242,9 @@ pub fn handle_cut(
 
     // Nothing selected? Do nothing
     if selected_items.is_empty()
-        && selected_paths.is_empty()
-        && selected_lines.is_empty()
-        && selected_texts.is_empty()
+        && annotations.paths.is_empty()
+        && annotations.lines.is_empty()
+        && annotations.texts.is_empty()
     {
         return;
     }
@@ -257,13 +254,13 @@ pub fn handle_cut(
     for (_, _, transform) in selected_items.iter() {
         positions.push(transform.translation.truncate());
     }
-    for (_, path) in selected_paths.iter() {
+    for (_, path) in annotations.paths.iter() {
         positions.push(path_center(path));
     }
-    for (_, line) in selected_lines.iter() {
+    for (_, line) in annotations.lines.iter() {
         positions.push((line.start + line.end) / 2.0);
     }
-    for (_, transform, _) in selected_texts.iter() {
+    for (_, transform, _) in annotations.texts.iter() {
         positions.push(transform.translation.truncate());
     }
 
@@ -286,7 +283,7 @@ pub fn handle_cut(
     }
 
     // Copy and delete paths
-    for (entity, path) in selected_paths.iter() {
+    for (entity, path) in annotations.paths.iter() {
         let center = path_center(path);
         let offset = center - centroid;
         let saved = SavedPath {
@@ -299,7 +296,7 @@ pub fn handle_cut(
     }
 
     // Copy and delete lines
-    for (entity, line) in selected_lines.iter() {
+    for (entity, line) in annotations.lines.iter() {
         let line_center = (line.start + line.end) / 2.0;
         let offset = line_center - centroid;
         let saved = SavedLine {
@@ -313,7 +310,7 @@ pub fn handle_cut(
     }
 
     // Copy and delete text annotations
-    for (entity, transform, text) in selected_texts.iter() {
+    for (entity, transform, text) in annotations.texts.iter() {
         let pos = transform.translation.truncate();
         let offset = pos - centroid;
         let saved = SavedTextBox {
@@ -328,17 +325,15 @@ pub fn handle_cut(
 }
 
 /// Paste clipboard items at cursor position (Ctrl+V)
+#[allow(clippy::too_many_arguments)]
 pub fn handle_paste(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     clipboard: Res<Clipboard>,
     mut contexts: EguiContexts,
     asset_server: Res<AssetServer>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
-    // For clearing selection
+    camera: CameraParams,
     selected_query: Query<Entity, With<Selected>>,
-    // For checking layer lock status
     map_data: Res<MapData>,
 ) {
     // Check for Ctrl+V
@@ -360,16 +355,7 @@ pub fn handle_paste(
     }
 
     // Get cursor world position
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-    let Ok(paste_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(paste_pos) = camera.cursor_world_pos() else {
         return;
     };
 

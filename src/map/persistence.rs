@@ -104,6 +104,7 @@ fn array_to_color(arr: [f32; 4]) -> Color {
     Color::srgba(arr[0], arr[1], arr[2], arr[3])
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn load_map_system(
     mut commands: Commands,
     mut events: MessageReader<LoadMapRequest>,

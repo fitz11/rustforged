@@ -1,16 +1,61 @@
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{egui, EguiContexts, EguiTextureHandle, EguiUserTextures};
 use std::path::PathBuf;
 
 use crate::assets::{
-    create_and_open_library, get_image_dimensions, open_library_directory, AssetCategory,
-    AssetLibrary, LibraryAsset, SelectedAsset,
+    create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
+    AssetCategory, AssetLibrary, LibraryAsset, SelectedAsset, ThumbnailCache, THUMBNAIL_SIZE,
 };
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::{LoadMapRequest, MapData};
 
 use super::asset_import::AssetImportDialog;
 use super::file_menu::FileMenuState;
+
+/// System that loads thumbnails and registers them with egui.
+/// Runs in Update before the egui pass to avoid timing issues.
+pub fn load_and_register_thumbnails(
+    library: Res<AssetLibrary>,
+    mut thumbnail_cache: ResMut<ThumbnailCache>,
+    mut images: ResMut<Assets<Image>>,
+    mut egui_textures: ResMut<EguiUserTextures>,
+) {
+    // Load up to 3 new thumbnails per frame
+    let assets_to_load: Vec<PathBuf> = library
+        .assets
+        .iter()
+        .filter(|a| {
+            !thumbnail_cache.thumbnails.contains_key(&a.full_path)
+                && !thumbnail_cache.has_failed(&a.full_path)
+        })
+        .take(3)
+        .map(|a| a.full_path.clone())
+        .collect();
+
+    for path in assets_to_load {
+        if let Some(thumb_image) = load_thumbnail(&path) {
+            let handle = images.add(thumb_image);
+            thumbnail_cache.thumbnails.insert(path, handle);
+        } else {
+            thumbnail_cache.failed.insert(path, ());
+        }
+    }
+
+    // Register any thumbnails that don't have texture IDs yet
+    let to_register: Vec<PathBuf> = thumbnail_cache
+        .thumbnails
+        .keys()
+        .filter(|path| !thumbnail_cache.texture_ids.contains_key(*path))
+        .cloned()
+        .collect();
+
+    for path in to_register {
+        if let Some(handle) = thumbnail_cache.thumbnails.get(&path) {
+            let texture_id = egui_textures.add_image(EguiTextureHandle::Weak(handle.id()));
+            thumbnail_cache.texture_ids.insert(path, texture_id);
+        }
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct AssetBrowserState {
@@ -21,8 +66,11 @@ pub struct AssetBrowserState {
     pub selected_dimensions: Option<(u32, u32)>,
     /// Path of the asset for which dimensions are cached
     pub cached_dimensions_path: Option<PathBuf>,
+    /// Last known library path (to detect changes and clear thumbnail cache)
+    pub last_library_path: Option<PathBuf>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn asset_browser_ui(
     mut contexts: EguiContexts,
     mut library: ResMut<AssetLibrary>,
@@ -33,54 +81,20 @@ pub fn asset_browser_ui(
     mut load_events: MessageWriter<LoadMapRequest>,
     mut import_dialog: ResMut<AssetImportDialog>,
     map_data: Res<MapData>,
+    mut thumbnail_cache: ResMut<ThumbnailCache>,
 ) -> Result {
+    // Clear thumbnail cache if library path changed
+    let current_path = library.library_path.clone();
+    if browser_state.last_library_path.as_ref() != Some(&current_path) {
+        thumbnail_cache.clear();
+        browser_state.last_library_path = Some(current_path);
+    }
+
     egui::SidePanel::left("asset_browser")
         .default_width(220.0)
         .show(contexts.ctx_mut()?, |ui| {
             // =========================================
-            // FILE/ASSETS MENU SECTION
-            // =========================================
-            ui.horizontal(|ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New Map").clicked() {
-                        menu_state.show_new_confirmation = true;
-                        ui.close();
-                    }
-
-                    ui.separator();
-
-                    if ui.button("Save Map...").clicked() {
-                        menu_state.save_filename = map_data.name.clone();
-                        menu_state.show_save_name_dialog = true;
-                        ui.close();
-                    }
-
-                    if ui.button("Load Map...").clicked() {
-                        let maps_dir = PathBuf::from("assets/maps");
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Map Files", &["json"])
-                            .set_directory(&maps_dir)
-                            .set_title("Load Map")
-                            .pick_file()
-                        {
-                            load_events.write(LoadMapRequest { path });
-                        }
-                        ui.close();
-                    }
-                });
-
-                ui.menu_button("Assets", |ui| {
-                    if ui.button("Import Assets...").clicked() {
-                        import_dialog.is_open = true;
-                        ui.close();
-                    }
-                });
-            });
-
-            ui.separator();
-
-            // =========================================
-            // ASSET LIBRARY DIRECTORY SECTION
+            // ASSET LIBRARY SECTION
             // =========================================
             ui.horizontal(|ui| {
                 let toggle_text = if browser_state.library_expanded {
@@ -109,10 +123,11 @@ pub fn asset_browser_ui(
                 ui.colored_label(egui::Color32::RED, egui::RichText::new(error).small());
             }
 
-            // Library management buttons (shown when expanded)
+            // Library management and subsections (shown when expanded)
             if browser_state.library_expanded {
                 ui.add_space(4.0);
 
+                // Library management buttons
                 ui.horizontal(|ui| {
                     if ui.button("Open...").clicked()
                         && let Some(path) = rfd::FileDialog::new()
@@ -130,6 +145,56 @@ pub fn asset_browser_ui(
                         && let Err(e) = create_and_open_library(&mut library, path)
                     {
                         warn!("Failed to create library: {}", e);
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // Maps subsection
+                ui.horizontal(|ui| {
+                    ui.separator();
+                    ui.label(egui::RichText::new("Maps").strong());
+                    ui.separator();
+                });
+
+                ui.horizontal(|ui| {
+                    if ui.button("New").clicked() {
+                        menu_state.show_new_confirmation = true;
+                    }
+                    if ui.button("Save").clicked() {
+                        menu_state.save_filename = map_data.name.clone();
+                        menu_state.show_save_name_dialog = true;
+                    }
+                    if ui.button("Load").clicked() {
+                        let maps_dir = library.library_path.join("maps");
+                        let maps_dir = if maps_dir.exists() {
+                            maps_dir
+                        } else {
+                            PathBuf::from("assets/maps")
+                        };
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Map Files", &["json"])
+                            .set_directory(&maps_dir)
+                            .set_title("Load Map")
+                            .pick_file()
+                        {
+                            load_events.write(LoadMapRequest { path });
+                        }
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // Assets subsection
+                ui.horizontal(|ui| {
+                    ui.separator();
+                    ui.label(egui::RichText::new("Assets").strong());
+                    ui.separator();
+                });
+
+                ui.horizontal(|ui| {
+                    if ui.button("Import...").clicked() {
+                        import_dialog.is_open = true;
                     }
                 });
 
@@ -173,37 +238,63 @@ pub fn asset_browser_ui(
                             .map(|a| a.relative_path == asset.relative_path)
                             .unwrap_or(false);
 
-                        // Asset row with preview indicator
+                        // Asset row with thumbnail preview
                         ui.horizontal(|ui| {
-                            // Small colored preview square based on file type
-                            let preview_color = extension_color(&asset.extension);
-                            let (rect, _response) = ui.allocate_exact_size(
-                                egui::vec2(15.0, 15.0),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().rect_filled(rect, 2.0, preview_color);
+                            let thumb_size = THUMBNAIL_SIZE as f32;
 
-                            // Extension label inside the square
-                            let ext_short = asset.extension.chars().take(3).collect::<String>().to_uppercase();
-                            ui.painter().text(
-                                rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                &ext_short,
-                                egui::FontId::proportional(8.0),
-                                egui::Color32::WHITE,
-                            );
+                            // Try to get cached thumbnail texture ID
+                            if let Some(texture_id) =
+                                thumbnail_cache.get_texture_id(&asset.full_path)
+                            {
+                                ui.add(
+                                    egui::Image::new(egui::load::SizedTexture::new(
+                                        texture_id,
+                                        egui::vec2(thumb_size, thumb_size),
+                                    ))
+                                    .fit_to_exact_size(egui::vec2(thumb_size, thumb_size))
+                                    .corner_radius(2.0),
+                                );
+                            } else {
+                                // Placeholder while loading
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(thumb_size, thumb_size),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    rect,
+                                    2.0,
+                                    egui::Color32::from_rgb(60, 60, 60),
+                                );
+                            }
 
-                            // Asset name
+                            // Asset name (selectable)
                             if ui
                                 .selectable_label(is_selected, &asset.name)
                                 .clicked()
                             {
-                                // Clear cached dimensions when selecting a new asset
                                 browser_state.selected_dimensions = None;
                                 browser_state.cached_dimensions_path = None;
                                 selected_asset.asset = Some(asset.clone());
                                 current_tool.tool = EditorTool::Place;
                             }
+
+                            // File type badge on the right
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let ext_short = asset
+                                        .extension
+                                        .chars()
+                                        .take(3)
+                                        .collect::<String>()
+                                        .to_uppercase();
+                                    ui.label(
+                                        egui::RichText::new(ext_short)
+                                            .small()
+                                            .color(extension_color(&asset.extension)),
+                                    );
+                                },
+                            );
                         });
                     }
                 });

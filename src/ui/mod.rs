@@ -15,6 +15,8 @@ impl Plugin for UiPlugin {
         app.init_resource::<asset_browser::AssetBrowserState>()
             .init_resource::<asset_import::AssetImportDialog>()
             .init_resource::<file_menu::FileMenuState>()
+            // Load thumbnails before egui pass
+            .add_systems(Update, asset_browser::load_and_register_thumbnails)
             // Side panels must render first so top panels fit between them
             // Use chain() to enforce ordering
             .add_systems(

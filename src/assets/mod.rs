@@ -3,8 +3,8 @@ mod library;
 
 pub use asset_type::AssetCategory;
 pub use library::{
-    create_and_open_library, get_image_dimensions, open_library_directory, AssetLibrary,
-    LibraryAsset,
+    create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
+    AssetLibrary, LibraryAsset, ThumbnailCache, THUMBNAIL_SIZE,
 };
 
 use bevy::prelude::*;
@@ -18,6 +18,7 @@ impl Plugin for AssetLibraryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AssetLibrary>()
             .init_resource::<SelectedAsset>()
+            .init_resource::<ThumbnailCache>()
             .add_message::<RefreshAssetLibrary>()
             .add_systems(Startup, library::scan_asset_library)
             .add_systems(

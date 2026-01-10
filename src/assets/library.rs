@@ -1,7 +1,12 @@
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::{AssetCategory, RefreshAssetLibrary};
+
+/// Size of thumbnail previews in pixels
+pub const THUMBNAIL_SIZE: u32 = 24;
 
 #[derive(Resource)]
 pub struct AssetLibrary {
@@ -174,6 +179,81 @@ fn is_image_file(path: &Path) -> bool {
 pub fn get_image_dimensions(path: &Path) -> Option<(u32, u32)> {
     // Use the image crate to read just the header for dimensions
     image::image_dimensions(path).ok()
+}
+
+/// Cache for asset thumbnail textures
+#[derive(Resource, Default)]
+pub struct ThumbnailCache {
+    /// Maps asset full_path to the loaded Bevy image handle
+    pub thumbnails: HashMap<PathBuf, Handle<Image>>,
+    /// Maps asset full_path to the egui texture ID (set after registration)
+    pub texture_ids: HashMap<PathBuf, bevy_egui::egui::TextureId>,
+    /// Tracks paths that failed to load (so we don't retry)
+    pub failed: HashMap<PathBuf, ()>,
+}
+
+impl ThumbnailCache {
+    /// Get the egui texture ID if already registered
+    pub fn get_texture_id(&self, path: &Path) -> Option<bevy_egui::egui::TextureId> {
+        self.texture_ids.get(path).copied()
+    }
+
+    /// Check if loading this thumbnail previously failed
+    pub fn has_failed(&self, path: &Path) -> bool {
+        self.failed.contains_key(path)
+    }
+
+    /// Clear the cache (call when switching libraries)
+    pub fn clear(&mut self) {
+        self.thumbnails.clear();
+        self.texture_ids.clear();
+        self.failed.clear();
+    }
+}
+
+/// Load a thumbnail image from a file path, returning a Bevy Image.
+/// For animated formats (GIF), only the first frame is loaded.
+/// The image is resized to THUMBNAIL_SIZE x THUMBNAIL_SIZE.
+pub fn load_thumbnail(path: &Path) -> Option<Image> {
+    use image::imageops::FilterType;
+    use image::{GenericImageView, ImageReader};
+
+    // Open and decode the image (for GIFs, this gets the first frame)
+    let img = ImageReader::open(path).ok()?.decode().ok()?;
+
+    // Calculate aspect-preserving resize dimensions
+    let (orig_w, orig_h) = img.dimensions();
+    let (thumb_w, thumb_h) = if orig_w > orig_h {
+        (
+            THUMBNAIL_SIZE,
+            (THUMBNAIL_SIZE as f32 * orig_h as f32 / orig_w as f32).max(1.0) as u32,
+        )
+    } else {
+        (
+            (THUMBNAIL_SIZE as f32 * orig_w as f32 / orig_h as f32).max(1.0) as u32,
+            THUMBNAIL_SIZE,
+        )
+    };
+
+    // Resize the image
+    let resized = img.resize(thumb_w, thumb_h, FilterType::Triangle);
+
+    // Convert to RGBA8
+    let rgba = resized.to_rgba8();
+    let (width, height) = rgba.dimensions();
+
+    // Create Bevy Image
+    Some(Image::new(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba.into_raw(),
+        TextureFormat::Rgba8UnormSrgb,
+        default(),
+    ))
 }
 
 pub fn refresh_asset_library(

@@ -7,6 +7,7 @@ use bevy_egui::EguiContexts;
 use serde::{Deserialize, Serialize};
 
 use super::camera::EditorCamera;
+use super::params::{is_cursor_over_ui, CameraParams};
 use super::tools::{CurrentTool, EditorTool};
 use crate::map::{Layer, MapData};
 
@@ -332,6 +333,7 @@ fn spawn_drawn_path(
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_line(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
@@ -339,8 +341,7 @@ pub fn handle_line(
     mut line_state: ResMut<LineDrawState>,
     settings: Res<AnnotationSettings>,
     map_data: Res<MapData>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    camera: CameraParams,
     mut contexts: EguiContexts,
 ) {
     if current_tool.tool != EditorTool::Line {
@@ -353,25 +354,11 @@ pub fn handle_line(
         return;
     }
 
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
+    if is_cursor_over_ui(&mut contexts) {
         return;
     }
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(world_pos) = camera.cursor_world_pos() else {
         return;
     };
 
@@ -402,6 +389,7 @@ pub fn handle_line(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_text(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
@@ -409,8 +397,7 @@ pub fn handle_text(
     mut text_state: ResMut<TextEditState>,
     settings: Res<AnnotationSettings>,
     map_data: Res<MapData>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    camera: CameraParams,
     mut contexts: EguiContexts,
     text_query: Query<(Entity, &Transform, &TextAnnotation), Without<EditingText>>,
     mut editing_query: Query<(Entity, &mut TextAnnotation), With<EditingText>>,
@@ -433,25 +420,11 @@ pub fn handle_text(
         return;
     }
 
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
+    if is_cursor_over_ui(&mut contexts) {
         return;
     }
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(world_pos) = camera.cursor_world_pos() else {
         return;
     };
 

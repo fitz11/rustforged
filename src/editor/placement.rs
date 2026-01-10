@@ -1,13 +1,14 @@
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::assets::SelectedAsset;
 use crate::map::{MapData, PlacedItem};
 
+use super::params::{is_cursor_over_ui, CameraParams};
 use super::tools::{CurrentTool, EditorTool, SelectedLayer};
-use super::{EditorCamera, GridSettings};
+use super::GridSettings;
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_placement(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
@@ -18,8 +19,7 @@ pub fn handle_placement(
     grid_settings: Res<GridSettings>,
     map_data: Res<MapData>,
     asset_server: Res<AssetServer>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    camera: CameraParams,
     mut contexts: EguiContexts,
 ) {
     if current_tool.tool != EditorTool::Place {
@@ -31,9 +31,7 @@ pub fn handle_placement(
     }
 
     // Don't place if clicking on UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
+    if is_cursor_over_ui(&mut contexts) {
         return;
     }
 
@@ -41,19 +39,7 @@ pub fn handle_placement(
         return;
     };
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(world_pos) = camera.cursor_world_pos() else {
         return;
     };
 

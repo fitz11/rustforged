@@ -1,4 +1,3 @@
-use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::EguiContexts;
@@ -11,6 +10,7 @@ use super::annotations::{
     path_bounds, path_overlaps_rect, point_in_text, point_near_line, point_near_path, text_bounds,
     text_overlaps_rect, AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation,
 };
+use super::params::{is_cursor_over_ui, AnnotationQueries, CameraParams, CameraWithProjection};
 use super::tools::{CurrentTool, EditorTool};
 use super::EditorCamera;
 
@@ -81,14 +81,6 @@ pub struct BoxSelectState {
     pub is_selecting: bool,
     pub start_world: Vec2,
     pub current_world: Vec2,
-}
-
-/// Bundled annotation queries to reduce system parameter count
-#[derive(SystemParam)]
-pub struct AnnotationQueries<'w, 's> {
-    pub paths: Query<'w, 's, (Entity, &'static DrawnPath), With<AnnotationMarker>>,
-    pub lines: Query<'w, 's, (Entity, &'static DrawnLine), With<AnnotationMarker>>,
-    pub texts: Query<'w, 's, (Entity, &'static Transform, &'static TextAnnotation), With<AnnotationMarker>>,
 }
 
 /// Get the half-size of a sprite, accounting for custom_size or image dimensions
@@ -224,13 +216,13 @@ pub fn get_selection_handle_at_position(
     SelectionDragMode::None
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_selection(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     current_tool: Res<CurrentTool>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform, &Projection), With<EditorCamera>>,
+    camera: CameraWithProjection,
     items_query: Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     selected_query: Query<Entity, With<Selected>>,
     selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
@@ -247,33 +239,16 @@ pub fn handle_selection(
     }
 
     // Don't interact if over UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
+    if is_cursor_over_ui(&mut contexts) {
         return;
     }
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform, projection)) = camera_query.single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(world_pos) = camera.cursor_world_pos() else {
         return;
     };
 
     // Get camera scale for handle detection
-    let camera_scale = match projection {
-        Projection::Orthographic(ortho) => ortho.scale,
-        _ => 1.0,
-    };
+    let camera_scale = camera.zoom_scale();
 
     let ctrl_held =
         keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
@@ -469,6 +444,7 @@ fn find_clicked_annotation(
 }
 
 /// Start dragging/resizing all selected entities
+#[allow(clippy::too_many_arguments)]
 fn start_selection_drag(
     drag_state: &mut ResMut<DragState>,
     world_pos: Vec2,
@@ -581,23 +557,20 @@ fn start_drag_for_entity(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_box_select(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     current_tool: Res<CurrentTool>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    camera: CameraParams,
     items_query: Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     selected_query: Query<Entity, With<Selected>>,
     mut box_select_state: ResMut<BoxSelectState>,
     mut contexts: EguiContexts,
     images: Res<Assets<Image>>,
     map_data: Res<MapData>,
-    // Annotation queries
-    paths_query: Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
-    lines_query: Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
-    texts_query: Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
+    annotations: AnnotationQueries,
 ) {
     if current_tool.tool != EditorTool::Select {
         box_select_state.is_selecting = false;
@@ -609,25 +582,11 @@ pub fn handle_box_select(
     }
 
     // Don't update if over UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
+    if is_cursor_over_ui(&mut contexts) {
         return;
     }
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(world_pos) = camera.cursor_world_pos() else {
         return;
     };
 
@@ -689,7 +648,7 @@ pub fn handle_box_select(
             is_annotation_layer_visible(&map_data) && !is_annotation_layer_locked(&map_data);
 
         if annotation_selectable {
-            for (entity, path) in paths_query.iter() {
+            for (entity, path) in annotations.paths.iter() {
                 if path_overlaps_rect(rect_min, rect_max, path) {
                     if ctrl_held && selected_query.contains(entity) {
                         commands.entity(entity).remove::<Selected>();
@@ -699,7 +658,7 @@ pub fn handle_box_select(
                 }
             }
 
-            for (entity, line) in lines_query.iter() {
+            for (entity, line) in annotations.lines.iter() {
                 if line_overlaps_rect(rect_min, rect_max, line) {
                     if ctrl_held && selected_query.contains(entity) {
                         commands.entity(entity).remove::<Selected>();
@@ -709,7 +668,7 @@ pub fn handle_box_select(
                 }
             }
 
-            for (entity, transform, text) in texts_query.iter() {
+            for (entity, transform, text) in annotations.texts.iter() {
                 if text_overlaps_rect(rect_min, rect_max, transform, text) {
                     if ctrl_held && selected_query.contains(entity) {
                         commands.entity(entity).remove::<Selected>();
@@ -722,17 +681,17 @@ pub fn handle_box_select(
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn handle_drag(
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     current_tool: Res<CurrentTool>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    camera: CameraParams,
     mut items_query: Query<&mut Transform, With<PlacedItem>>,
     mut drag_state: ResMut<DragState>,
     map_data: Res<MapData>,
     mut contexts: EguiContexts,
-    // Annotation queries for moving
+    // Mutable annotation queries for moving
     mut paths_query: Query<&mut DrawnPath, With<AnnotationMarker>>,
     mut lines_query: Query<&mut DrawnLine, With<AnnotationMarker>>,
     mut text_transforms_query: Query<
@@ -760,25 +719,11 @@ pub fn handle_drag(
     }
 
     // Don't drag if over UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
-    {
+    if is_cursor_over_ui(&mut contexts) {
         return;
     }
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+    let Some(world_pos) = camera.cursor_world_pos() else {
         return;
     };
 
@@ -922,6 +867,7 @@ pub fn handle_drag(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn draw_selection_indicators(
     mut gizmos: Gizmos,
     selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
@@ -1157,6 +1103,7 @@ pub fn handle_deletion(
 }
 
 /// Update cursor icon based on hover over selection handles
+#[allow(clippy::too_many_arguments)]
 pub fn update_selection_cursor(
     current_tool: Res<CurrentTool>,
     window_query: Query<(Entity, &Window), With<PrimaryWindow>>,
