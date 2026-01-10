@@ -3,6 +3,7 @@ mod editor;
 mod map;
 mod session;
 mod ui;
+mod update;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
@@ -23,5 +24,6 @@ fn main() {
         .add_plugins(map::MapPlugin)
         .add_plugins(session::LiveSessionPlugin)
         .add_plugins(ui::UiPlugin)
+        .add_plugins(update::UpdateCheckerPlugin)
         .run();
 }

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Rustforged
+Comment=D&D 5E Virtual Tabletop map editor
+Exec=rustforged
+Icon=rustforged
+Terminal=false
+Type=Application
+Categories=Game;Graphics;
+Keywords=vtt;dnd;tabletop;rpg;map;editor;
+StartupWMClass=rustforged

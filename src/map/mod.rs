@@ -25,9 +25,9 @@ impl Plugin for MapPlugin {
             .add_systems(
                 Update,
                 (
-                    persistence::save_map_system,
-                    persistence::load_map_system,
-                    persistence::new_map_system,
+                    persistence::save_map_system.run_if(on_message::<SaveMapRequest>),
+                    persistence::load_map_system.run_if(on_message::<LoadMapRequest>),
+                    persistence::new_map_system.run_if(on_message::<NewMapRequest>),
                 ),
             );
     }

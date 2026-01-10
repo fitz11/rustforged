@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Rustforged v${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+
+  build-linux:
+    name: Build Linux
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --no-default-features
+
+      - name: Package
+        run: |
+          mkdir -p dist/rustforged-linux
+          cp target/release/rustforged dist/rustforged-linux/
+          cp -r assets dist/rustforged-linux/
+          cp README.md dist/rustforged-linux/
+          cd dist && tar -czvf rustforged-${{ needs.create-release.outputs.version }}-linux-x86_64.tar.gz rustforged-linux
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/rustforged-${{ needs.create-release.outputs.version }}-linux-x86_64.tar.gz
+
+  build-windows:
+    name: Build Windows
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --no-default-features
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/rustforged-windows
+          Copy-Item target/release/rustforged.exe dist/rustforged-windows/
+          Copy-Item -Recurse assets dist/rustforged-windows/
+          Copy-Item README.md dist/rustforged-windows/
+          Compress-Archive -Path dist/rustforged-windows -DestinationPath dist/rustforged-${{ needs.create-release.outputs.version }}-windows-x86_64.zip
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/rustforged-${{ needs.create-release.outputs.version }}-windows-x86_64.zip
+
+  build-macos:
+    name: Build macOS
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --no-default-features
+
+      - name: Package
+        run: |
+          mkdir -p dist/rustforged-macos
+          cp target/release/rustforged dist/rustforged-macos/
+          cp -r assets dist/rustforged-macos/
+          cp README.md dist/rustforged-macos/
+          cd dist && tar -czvf rustforged-${{ needs.create-release.outputs.version }}-macos-x86_64.tar.gz rustforged-macos
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/rustforged-${{ needs.create-release.outputs.version }}-macos-x86_64.tar.gz
+
+  build-macos-arm:
+    name: Build macOS (ARM)
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --no-default-features --target aarch64-apple-darwin
+
+      - name: Package
+        run: |
+          mkdir -p dist/rustforged-macos-arm
+          cp target/aarch64-apple-darwin/release/rustforged dist/rustforged-macos-arm/
+          cp -r assets dist/rustforged-macos-arm/
+          cp README.md dist/rustforged-macos-arm/
+          cd dist && tar -czvf rustforged-${{ needs.create-release.outputs.version }}-macos-aarch64.tar.gz rustforged-macos-arm
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/rustforged-${{ needs.create-release.outputs.version }}-macos-aarch64.tar.gz

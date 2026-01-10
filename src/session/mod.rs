@@ -7,6 +7,8 @@ pub use viewport::get_handle_at_position;
 
 use bevy::prelude::*;
 
+use crate::editor::session_is_active;
+
 pub struct LiveSessionPlugin;
 
 impl Plugin for LiveSessionPlugin {
@@ -19,12 +21,12 @@ impl Plugin for LiveSessionPlugin {
             .add_systems(
                 Update,
                 (
-                    viewport::draw_viewport_indicator,
-                    viewport::handle_viewport_interaction,
-                    player_window::create_player_window,
+                    viewport::draw_viewport_indicator.run_if(session_is_active),
+                    viewport::handle_viewport_interaction.run_if(session_is_active),
+                    player_window::create_player_window.run_if(resource_changed::<LiveSessionState>),
                     player_window::setup_player_camera,
-                    player_window::sync_player_camera,
-                    player_window::handle_player_window_close,
+                    player_window::sync_player_camera.run_if(session_is_active),
+                    player_window::handle_player_window_close.run_if(session_is_active),
                 ),
             );
     }

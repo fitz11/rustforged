@@ -1,6 +1,7 @@
 pub mod annotations;
 mod camera;
 mod clipboard;
+pub mod conditions;
 mod grid;
 pub mod params;
 mod placement;
@@ -11,9 +12,12 @@ pub use annotations::{
     AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation,
 };
 pub use camera::EditorCamera;
+pub use conditions::{session_is_active, tool_is};
 pub use grid::GridSettings;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 
+use bevy::input::common_conditions::{input_just_pressed, input_pressed};
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
 
@@ -70,27 +74,33 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    camera::camera_pan,
-                    camera::camera_zoom,
+                    camera::camera_pan.run_if(input_pressed(MouseButton::Middle)),
+                    camera::camera_zoom.run_if(on_message::<MouseWheel>),
                     camera::apply_camera_zoom,
                     grid::draw_grid,
                     tools::handle_tool_shortcuts,
                     tools::update_cursor_icon,
-                    placement::handle_placement,
+                    placement::handle_placement.run_if(tool_is(EditorTool::Place)),
                     update_layer_visibility,
                 ),
             )
             .add_systems(
                 Update,
                 (
-                    selection::handle_selection,
-                    selection::handle_box_select,
-                    selection::handle_drag,
+                    selection::handle_selection.run_if(tool_is(EditorTool::Select)),
+                    selection::handle_box_select.run_if(tool_is(EditorTool::Select)),
+                    selection::handle_drag.run_if(tool_is(EditorTool::Select)),
                     selection::draw_selection_indicators,
                     selection::draw_box_select_rect,
-                    selection::handle_fit_to_grid,
-                    selection::handle_deletion,
-                    selection::update_selection_cursor,
+                    selection::handle_fit_to_grid.run_if(
+                        input_just_pressed(KeyCode::KeyG)
+                            .and(tool_is(EditorTool::Select)),
+                    ),
+                    selection::handle_deletion.run_if(
+                        input_just_pressed(KeyCode::Delete)
+                            .or(input_just_pressed(KeyCode::Backspace)),
+                    ),
+                    selection::update_selection_cursor.run_if(tool_is(EditorTool::Select)),
                     clipboard::handle_copy,
                     clipboard::handle_cut,
                     clipboard::handle_paste,
@@ -99,13 +109,13 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    annotations::handle_draw,
-                    annotations::handle_line,
-                    annotations::handle_text,
+                    annotations::handle_draw.run_if(tool_is(EditorTool::Draw)),
+                    annotations::handle_line.run_if(tool_is(EditorTool::Line)),
+                    annotations::handle_text.run_if(tool_is(EditorTool::Text)),
                     annotations::render_drawn_paths,
                     annotations::render_drawn_lines,
-                    annotations::render_line_preview,
-                    annotations::render_draw_preview,
+                    annotations::render_line_preview.run_if(tool_is(EditorTool::Line)),
+                    annotations::render_draw_preview.run_if(tool_is(EditorTool::Draw)),
                 ),
             )
             .add_systems(
