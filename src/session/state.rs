@@ -34,15 +34,6 @@ impl LiveSessionState {
             .unwrap_or(16.0 / 9.0)
     }
 
-    /// Get the viewport bounds as (min, max) corners (unrotated)
-    pub fn viewport_bounds(&self) -> (Vec2, Vec2) {
-        let half_size = self.viewport_size / 2.0;
-        (
-            self.viewport_center - half_size,
-            self.viewport_center + half_size,
-        )
-    }
-
     /// Get rotation in radians
     pub fn rotation_radians(&self) -> f32 {
         (self.rotation_degrees as f32).to_radians()
@@ -167,32 +158,6 @@ mod tests {
         };
         let aspect = state.monitor_aspect_ratio();
         assert!((aspect - 4.0 / 3.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_viewport_bounds() {
-        let state = LiveSessionState {
-            viewport_center: Vec2::new(100.0, 50.0),
-            viewport_size: Vec2::new(200.0, 100.0),
-            ..Default::default()
-        };
-
-        let (min, max) = state.viewport_bounds();
-        assert_eq!(min, Vec2::new(0.0, 0.0));
-        assert_eq!(max, Vec2::new(200.0, 100.0));
-    }
-
-    #[test]
-    fn test_viewport_bounds_at_origin() {
-        let state = LiveSessionState {
-            viewport_center: Vec2::ZERO,
-            viewport_size: Vec2::new(100.0, 100.0),
-            ..Default::default()
-        };
-
-        let (min, max) = state.viewport_bounds();
-        assert_eq!(min, Vec2::new(-50.0, -50.0));
-        assert_eq!(max, Vec2::new(50.0, 50.0));
     }
 
     #[test]
