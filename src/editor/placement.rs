@@ -1,3 +1,4 @@
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
@@ -53,6 +54,13 @@ pub fn handle_placement(
 
     let texture: Handle<Image> = asset_server.load(&asset.relative_path);
 
+    // Items on non-player-visible layers (GM, FogOfWar) go to render layer 1 (editor-only)
+    let render_layer = if layer.is_player_visible() {
+        RenderLayers::layer(0)
+    } else {
+        RenderLayers::layer(1)
+    };
+
     commands.spawn((
         Sprite::from_image(texture),
         Transform::from_translation(final_pos.extend(z)),
@@ -61,5 +69,6 @@ pub fn handle_placement(
             layer,
             z_index: 0,
         },
+        render_layer,
     ));
 }

@@ -1,3 +1,4 @@
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
@@ -13,7 +14,10 @@ pub struct HelpWindowState {
 pub fn layers_panel_ui(
     mut contexts: EguiContexts,
     mut map_data: ResMut<MapData>,
-    mut selected_query: Query<(Entity, &mut PlacedItem, &mut Transform, &Sprite), With<Selected>>,
+    mut selected_query: Query<
+        (Entity, &mut PlacedItem, &mut Transform, &Sprite, &mut RenderLayers),
+        With<Selected>,
+    >,
     images: Res<Assets<Image>>,
     mut session_state: ResMut<LiveSessionState>,
     mut help_state: ResMut<HelpWindowState>,
@@ -36,18 +40,41 @@ pub fn layers_panel_ui(
                     .iter_mut()
                     .find(|l| l.layer_type == *layer)
                 {
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut layer_data.visible, "");
-                        ui.label(egui::RichText::new(layer.display_name()).size(14.0));
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(4, 4))
+                        .show(ui, |ui| {
+                            let is_available = layer.is_available();
 
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let lock_text = if layer_data.locked { "🔒" } else { "🔓" };
-                            if ui.button(egui::RichText::new(lock_text).size(14.0)).clicked() {
-                                layer_data.locked = !layer_data.locked;
-                            }
+                            ui.add_enabled_ui(is_available, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.checkbox(&mut layer_data.visible, "");
+                                    ui.label(egui::RichText::new(layer.display_name()).size(14.0));
+
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if !is_available {
+                                                ui.label(
+                                                    egui::RichText::new("Soon")
+                                                        .size(10.0)
+                                                        .weak()
+                                                        .italics(),
+                                                );
+                                            } else {
+                                                let lock_text =
+                                                    if layer_data.locked { "🔒" } else { "🔓" };
+                                                if ui
+                                                    .button(egui::RichText::new(lock_text).size(14.0))
+                                                    .clicked()
+                                                {
+                                                    layer_data.locked = !layer_data.locked;
+                                                }
+                                            }
+                                        },
+                                    );
+                                });
+                            });
                         });
-                    });
-                    ui.add_space(2.0);
                 }
             }
 
@@ -73,7 +100,9 @@ pub fn layers_panel_ui(
 
                 // Multi-selection: show fit-to-grid and center-to-grid buttons
                 if ui.add_sized([140.0, 26.0], egui::Button::new("Fit to Grid (G)")).clicked() {
-                    for (_entity, _item, mut transform, sprite) in selected_query.iter_mut() {
+                    for (_entity, _item, mut transform, sprite, _render_layers) in
+                        selected_query.iter_mut()
+                    {
                         let original_size = if let Some(custom_size) = sprite.custom_size {
                             custom_size
                         } else if let Some(image) = images.get(&sprite.image) {
@@ -96,7 +125,9 @@ pub fn layers_panel_ui(
                 if ui.add_sized([140.0, 26.0], egui::Button::new("Center to Grid (C)")).clicked() {
                     let grid_size = map_data.grid_size;
                     let half = grid_size / 2.0;
-                    for (_entity, _item, mut transform, _sprite) in selected_query.iter_mut() {
+                    for (_entity, _item, mut transform, _sprite, _render_layers) in
+                        selected_query.iter_mut()
+                    {
                         let pos = transform.translation.truncate();
                         let snapped = Vec2::new(
                             (pos.x / grid_size).floor() * grid_size + half,
@@ -108,8 +139,13 @@ pub fn layers_panel_ui(
                 }
 
                 ui.add_space(4.0);
-                if ui.add_sized([140.0, 26.0], egui::Button::new("Restore Aspect Ratio (A)")).clicked() {
-                    for (_entity, _item, mut transform, _sprite) in selected_query.iter_mut() {
+                if ui
+                    .add_sized([140.0, 26.0], egui::Button::new("Restore Aspect Ratio (A)"))
+                    .clicked()
+                {
+                    for (_entity, _item, mut transform, _sprite, _render_layers) in
+                        selected_query.iter_mut()
+                    {
                         let uniform_scale = transform.scale.x.abs().max(transform.scale.y.abs());
                         transform.scale.x = uniform_scale;
                         transform.scale.y = uniform_scale;
@@ -117,7 +153,9 @@ pub fn layers_panel_ui(
                 }
             } else {
                 // Single selection - show full properties
-                if let Ok((_entity, mut item, mut transform, sprite)) = selected_query.single_mut() {
+                if let Ok((_entity, mut item, mut transform, sprite, mut render_layers)) =
+                    selected_query.single_mut()
+                {
                     // Asset path (truncated if too long)
                     let asset_name = item
                         .asset_path
@@ -135,6 +173,10 @@ pub fn layers_panel_ui(
                             .selected_text(item.layer.display_name())
                             .show_ui(ui, |ui| {
                                 for layer in Layer::all() {
+                                    // Skip unavailable layers (like FogOfWar)
+                                    if !layer.is_available() {
+                                        continue;
+                                    }
                                     let is_selected = item.layer == *layer;
                                     if ui
                                         .selectable_label(is_selected, layer.display_name())
@@ -144,9 +186,41 @@ pub fn layers_panel_ui(
                                         // Update z position to match new layer
                                         transform.translation.z =
                                             layer.z_base() + item.z_index as f32;
+                                        // Update render layer for player visibility
+                                        *render_layers = if layer.is_player_visible() {
+                                            RenderLayers::layer(0)
+                                        } else {
+                                            RenderLayers::layer(1)
+                                        };
                                     }
                                 }
                             });
+                    });
+
+                    ui.add_space(4.0);
+
+                    // Z-Index property
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Z-Index:").size(14.0));
+                        ui.label(egui::RichText::new(format!("{}", item.z_index)).size(14.0));
+
+                        let max_z = Layer::max_z_index();
+
+                        ui.add_enabled_ui(item.z_index < max_z, |ui| {
+                            if ui.small_button("+").clicked() {
+                                item.z_index += 1;
+                                transform.translation.z =
+                                    item.layer.z_base() + item.z_index as f32;
+                            }
+                        });
+
+                        ui.add_enabled_ui(item.z_index > 0, |ui| {
+                            if ui.small_button("-").clicked() {
+                                item.z_index -= 1;
+                                transform.translation.z =
+                                    item.layer.z_base() + item.z_index as f32;
+                            }
+                        });
                     });
 
                     ui.add_space(8.0);

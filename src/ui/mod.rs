@@ -46,11 +46,13 @@ impl Plugin for UiPlugin {
                     // Last: dialogs/overlays
                     file_menu::file_menu_ui,
                     file_menu::missing_map_warning_ui,
+                    file_menu::unsaved_changes_dialog_ui,
                     asset_import::asset_import_ui,
                     layers_panel::help_popup_ui,
                 )
                     .after(toolbar::toolbar_ui),
             )
+            .add_systems(Update, file_menu::handle_window_close)
             .add_systems(
                 EguiPrimaryContextPass,
                 session_controls::monitor_selection_dialog,

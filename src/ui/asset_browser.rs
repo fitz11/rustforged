@@ -6,12 +6,43 @@ use crate::assets::{
     create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
     AssetCategory, AssetLibrary, LibraryAsset, SelectedAsset, ThumbnailCache, THUMBNAIL_SIZE,
 };
-use crate::config::{AppConfig, MissingMapWarning, SetDefaultLibrary};
+use crate::config::{AppConfig, SetDefaultLibrary};
 use crate::editor::{CurrentTool, EditorTool};
-use crate::map::{LoadMapRequest, MapData};
+use crate::map::{CurrentMapFile, LoadMapRequest, MapData, MapDirtyState, OpenMaps, SwitchMapRequest};
 
 use super::asset_import::AssetImportDialog;
 use super::file_menu::FileMenuState;
+
+/// Scan the maps directory and return sorted list of map names (without extension)
+fn scan_maps_directory(maps_dir: &std::path::Path) -> Vec<(String, PathBuf)> {
+    if !maps_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut maps: Vec<(String, PathBuf)> = std::fs::read_dir(maps_dir)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+                })
+                .map(|e| {
+                    let path = e.path();
+                    let name = path
+                        .file_stem()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    (name, path)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    maps.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    maps
+}
 
 /// System that loads thumbnails and registers them with egui.
 /// Runs in Update before the egui pass to avoid timing issues.
@@ -75,6 +106,10 @@ pub struct AssetBrowserState {
     pub set_default_dialog_path: Option<PathBuf>,
     /// Checkbox state for "set as default" dialog
     pub set_as_default_checked: bool,
+    /// Cached list of available maps in the library
+    pub cached_maps: Vec<(String, PathBuf)>,
+    /// Last path used for map scanning (to detect changes)
+    pub last_maps_scan_path: Option<PathBuf>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -90,8 +125,11 @@ pub fn asset_browser_ui(
     map_data: Res<MapData>,
     mut thumbnail_cache: ResMut<ThumbnailCache>,
     config: Res<AppConfig>,
-    missing_map_warning: Res<MissingMapWarning>,
     mut set_default_events: MessageWriter<SetDefaultLibrary>,
+    current_map_file: Res<CurrentMapFile>,
+    dirty_state: Res<MapDirtyState>,
+    open_maps: Res<OpenMaps>,
+    mut switch_events: MessageWriter<SwitchMapRequest>,
 ) -> Result {
     // Clear thumbnail cache if library path changed
     let current_path = library.library_path.clone();
@@ -109,9 +147,9 @@ pub fn asset_browser_ui(
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let toggle_text = if browser_state.library_expanded {
-                    "▼"
+                    "v"
                 } else {
-                    "▶"
+                    ">"
                 };
                 if ui.button(toggle_text).clicked() {
                     browser_state.library_expanded = !browser_state.library_expanded;
@@ -212,6 +250,91 @@ pub fn asset_browser_ui(
                 });
                 ui.add_space(4.0);
 
+                // Show open maps with unsaved indicators
+                let mut map_to_switch: Option<u64> = None;
+
+                if !open_maps.maps.is_empty() {
+                    ui.label(egui::RichText::new("Open:").size(12.0).weak());
+
+                    // Sort maps by ID to maintain consistent order
+                    let mut sorted_maps: Vec<_> = open_maps.maps.values().collect();
+                    sorted_maps.sort_by_key(|m| m.id);
+
+                    for map in sorted_maps {
+                        let is_active = open_maps.active_map_id == Some(map.id);
+                        let display_name = if map.is_dirty {
+                            format!("{}*", map.name)
+                        } else {
+                            map.name.clone()
+                        };
+
+                        ui.horizontal(|ui| {
+                            if is_active {
+                                ui.label(egui::RichText::new(">").size(10.0));
+                            } else {
+                                ui.add_space(12.0);
+                            }
+
+                            let text = if is_active {
+                                egui::RichText::new(&display_name).size(12.0).strong()
+                            } else {
+                                egui::RichText::new(&display_name).size(12.0)
+                            };
+
+                            // Make non-active maps clickable
+                            if is_active {
+                                ui.label(text);
+                            } else if ui
+                                .add(egui::Button::new(text).frame(false))
+                                .on_hover_text("Click to switch to this map")
+                                .clicked()
+                            {
+                                map_to_switch = Some(map.id);
+                            }
+
+                            // Show path hint if saved
+                            if map.path.is_some() && map.is_dirty {
+                                ui.label(egui::RichText::new("(modified)").size(10.0).weak().italics());
+                            } else if map.path.is_none() {
+                                ui.label(egui::RichText::new("(new)").size(10.0).weak().italics());
+                            }
+                        });
+                    }
+                    ui.add_space(4.0);
+                } else {
+                    // Fallback to showing current map indicator
+                    if let Some(ref current_path) = current_map_file.path {
+                        let current_name = current_path
+                            .file_stem()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("Unknown");
+                        let dirty_indicator = if dirty_state.is_dirty { "*" } else { "" };
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Current:").size(12.0).weak());
+                            ui.label(
+                                egui::RichText::new(format!("{}{}", current_name, dirty_indicator))
+                                    .size(12.0)
+                                    .strong(),
+                            );
+                        });
+                        ui.add_space(4.0);
+                    } else {
+                        let dirty_indicator = if dirty_state.is_dirty { "*" } else { "" };
+                        ui.label(
+                            egui::RichText::new(format!("(unsaved map){}", dirty_indicator))
+                                .size(12.0)
+                                .weak()
+                                .italics(),
+                        );
+                        ui.add_space(4.0);
+                    }
+                }
+
+                // Switch to selected map if requested
+                if let Some(target_id) = map_to_switch {
+                    switch_events.write(SwitchMapRequest { map_id: target_id });
+                }
+
                 ui.horizontal(|ui| {
                     if ui.add_sized([50.0, 24.0], egui::Button::new("New")).clicked() {
                         menu_state.show_new_confirmation = true;
@@ -236,26 +359,71 @@ pub fn asset_browser_ui(
                             load_events.write(LoadMapRequest { path });
                         }
                     }
-                    // Recent map button - only show if we have a last map and it exists
-                    if let Some(ref last_map) = config.data.last_map_path
-                        && !missing_map_warning.show
-                        && last_map.exists()
-                    {
-                        let filename = last_map
-                            .file_stem()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Recent");
-                        if ui
-                            .button("Recent")
-                            .on_hover_text(format!("Open: {}", filename))
-                            .clicked()
-                        {
-                            load_events.write(LoadMapRequest {
-                                path: last_map.clone(),
-                            });
-                        }
-                    }
                 });
+
+                // Scan maps directory and show available maps
+                let maps_dir = library.library_path.join("maps");
+                let fallback_maps_dir = PathBuf::from("assets/maps");
+                let effective_maps_dir = if maps_dir.exists() {
+                    maps_dir
+                } else {
+                    fallback_maps_dir
+                };
+
+                // Refresh cached maps if directory changed
+                if browser_state.last_maps_scan_path.as_ref() != Some(&effective_maps_dir) {
+                    browser_state.cached_maps = scan_maps_directory(&effective_maps_dir);
+                    browser_state.last_maps_scan_path = Some(effective_maps_dir.clone());
+                }
+
+                if !browser_state.cached_maps.is_empty() {
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Available:").size(12.0).weak());
+                        if ui.small_button("R").on_hover_text("Refresh map list").clicked() {
+                            browser_state.cached_maps = scan_maps_directory(&effective_maps_dir);
+                        }
+                    });
+
+                    // Show map buttons in a scrollable area
+                    egui::ScrollArea::vertical()
+                        .id_salt("maps_scroll")
+                        .max_height(120.0)
+                        .show(ui, |ui| {
+                            for (map_name, map_path) in &browser_state.cached_maps {
+                                let is_current = current_map_file
+                                    .path
+                                    .as_ref()
+                                    .map(|p| p == map_path)
+                                    .unwrap_or(false);
+
+                                ui.horizontal(|ui| {
+                                    if is_current {
+                                        ui.label(egui::RichText::new(">").size(10.0));
+                                    } else {
+                                        ui.add_space(12.0);
+                                    }
+
+                                    let button_text = if is_current {
+                                        egui::RichText::new(map_name).size(12.0).strong()
+                                    } else {
+                                        egui::RichText::new(map_name).size(12.0)
+                                    };
+
+                                    if ui
+                                        .add(egui::Button::new(button_text).frame(false))
+                                        .on_hover_text(map_path.to_string_lossy().as_ref())
+                                        .clicked()
+                                        && !is_current
+                                    {
+                                        load_events.write(LoadMapRequest {
+                                            path: map_path.clone(),
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                }
 
                 ui.add_space(10.0);
 
