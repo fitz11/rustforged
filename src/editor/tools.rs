@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::EguiContexts;
 
-use crate::map::Layer;
+use crate::map::{Layer, Selected};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EditorTool {
@@ -73,8 +73,10 @@ impl Default for SelectedLayer {
 }
 
 pub fn handle_tool_shortcuts(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut current_tool: ResMut<CurrentTool>,
+    selected_query: Query<Entity, With<Selected>>,
     mut contexts: EguiContexts,
 ) {
     // Don't change tools if typing in a text field
@@ -84,18 +86,30 @@ pub fn handle_tool_shortcuts(
         return;
     }
 
-    if keyboard.just_pressed(KeyCode::KeyV) || keyboard.just_pressed(KeyCode::KeyS) {
-        current_tool.tool = EditorTool::Select;
+    let new_tool = if keyboard.just_pressed(KeyCode::KeyV) || keyboard.just_pressed(KeyCode::KeyS) {
+        Some(EditorTool::Select)
     } else if keyboard.just_pressed(KeyCode::KeyB) || keyboard.just_pressed(KeyCode::KeyP) {
-        current_tool.tool = EditorTool::Place;
+        Some(EditorTool::Place)
     } else if keyboard.just_pressed(KeyCode::KeyX) || keyboard.just_pressed(KeyCode::KeyE) {
-        current_tool.tool = EditorTool::Erase;
+        Some(EditorTool::Erase)
     } else if keyboard.just_pressed(KeyCode::KeyD) {
-        current_tool.tool = EditorTool::Draw;
+        Some(EditorTool::Draw)
     } else if keyboard.just_pressed(KeyCode::KeyL) {
-        current_tool.tool = EditorTool::Line;
+        Some(EditorTool::Line)
     } else if keyboard.just_pressed(KeyCode::KeyT) {
-        current_tool.tool = EditorTool::Text;
+        Some(EditorTool::Text)
+    } else {
+        None
+    };
+
+    if let Some(tool) = new_tool {
+        // Clear selection when switching tools
+        if tool != current_tool.tool {
+            for entity in selected_query.iter() {
+                commands.entity(entity).remove::<Selected>();
+            }
+        }
+        current_tool.tool = tool;
     }
 }
 

@@ -96,10 +96,16 @@ impl Plugin for EditorPlugin {
                         input_just_pressed(KeyCode::KeyG)
                             .and(tool_is(EditorTool::Select)),
                     ),
+                    selection::handle_rotate_90.run_if(
+                        input_just_pressed(KeyCode::KeyR)
+                            .and(tool_is(EditorTool::Select)),
+                    ),
                     selection::handle_deletion.run_if(
                         input_just_pressed(KeyCode::Delete)
                             .or(input_just_pressed(KeyCode::Backspace)),
                     ),
+                    selection::handle_escape_clear_selection
+                        .run_if(input_just_pressed(KeyCode::Escape)),
                     selection::update_selection_cursor.run_if(tool_is(EditorTool::Select)),
                     clipboard::handle_copy,
                     clipboard::handle_cut,

@@ -130,7 +130,8 @@ pub fn layers_panel_ui(
                     ui.add_space(5.0);
 
                     // Rotation
-                    let (_, rotation, _) = transform.rotation.to_euler(EulerRot::ZYX);
+                    // EulerRot::ZYX returns (z, y, x) - we want the Z rotation (first component)
+                    let (rotation, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
                     let mut rotation_deg = rotation.to_degrees();
                     ui.horizontal(|ui| {
                         ui.label("Rotation:");

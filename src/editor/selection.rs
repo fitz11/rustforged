@@ -14,6 +14,24 @@ use super::params::{is_cursor_over_ui, AnnotationQueries, CameraParams, CameraWi
 use super::tools::{CurrentTool, EditorTool};
 use super::EditorCamera;
 
+/// Distance above selection bounds for the rotation handle (in world units)
+const ROTATION_HANDLE_OFFSET: f32 = 25.0;
+/// Radius of the rotation handle circle (in world units)
+const ROTATION_HANDLE_RADIUS: f32 = 6.0;
+/// Snap increment for rotation when holding Shift (in degrees)
+const ROTATION_SNAP_INCREMENT: f32 = 15.0;
+
+/// Rotate a point around a center by the given angle (in radians)
+fn rotate_point(point: Vec2, center: Vec2, angle: f32) -> Vec2 {
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    let translated = point - center;
+    Vec2::new(
+        translated.x * cos_a - translated.y * sin_a,
+        translated.x * sin_a + translated.y * cos_a,
+    ) + center
+}
+
 /// Information about an annotation's original state when dragging started
 #[derive(Clone)]
 pub enum AnnotationDragData {
@@ -22,12 +40,13 @@ pub enum AnnotationDragData {
     Text { original_position: Vec2 },
 }
 
-/// Drag mode for selection interaction (move or resize)
+/// Drag mode for selection interaction (move, resize, or rotate)
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SelectionDragMode {
     #[default]
     None,
     Move,
+    Rotate,
     ResizeN,
     ResizeS,
     ResizeE,
@@ -44,6 +63,7 @@ impl SelectionDragMode {
         match self {
             SelectionDragMode::None => None,
             SelectionDragMode::Move => Some(CursorIcon::System(SystemCursorIcon::Move)),
+            SelectionDragMode::Rotate => Some(CursorIcon::System(SystemCursorIcon::Grab)),
             SelectionDragMode::ResizeN | SelectionDragMode::ResizeS => {
                 Some(CursorIcon::System(SystemCursorIcon::NsResize))
             }
@@ -64,7 +84,7 @@ impl SelectionDragMode {
 pub struct DragState {
     pub is_dragging: bool,
     pub drag_start_world: Vec2,
-    /// The current drag mode (move or resize direction)
+    /// The current drag mode (move, resize, or rotate)
     pub mode: SelectionDragMode,
     /// Original selection bounds when resize started (min, max)
     pub original_bounds: Option<(Vec2, Vec2)>,
@@ -72,6 +92,10 @@ pub struct DragState {
     pub entity_start_positions: Vec<(Entity, Vec2)>,
     /// Maps entity to its original scale when drag began (for resizing)
     pub entity_start_scales: Vec<(Entity, Vec3)>,
+    /// Maps entity to its original rotation when drag began (for rotating)
+    pub entity_start_rotations: Vec<(Entity, Quat)>,
+    /// The starting angle (radians) from selection center to cursor when rotation began
+    pub rotation_start_angle: Option<f32>,
     /// Maps entity to its annotation drag data when drag began
     pub annotation_drag_data: Vec<(Entity, AnnotationDragData)>,
 }
@@ -103,7 +127,7 @@ fn get_sprite_half_size(
     Vec2::splat(32.0)
 }
 
-/// Check if a point is inside an item's bounds
+/// Check if a point is inside an item's bounds, accounting for rotation
 fn point_in_item(
     world_pos: Vec2,
     transform: &Transform,
@@ -112,8 +136,20 @@ fn point_in_item(
 ) -> bool {
     let item_pos = transform.translation.truncate();
     let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
+
+    // Transform the world position into the item's local coordinate space
+    // by applying the inverse rotation
     let diff = world_pos - item_pos;
-    diff.x.abs() < half_size.x && diff.y.abs() < half_size.y
+    // EulerRot::ZYX returns (z, y, x) - we want the Z rotation (first component)
+    let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
+    let cos_a = (-angle).cos();
+    let sin_a = (-angle).sin();
+    let local_diff = Vec2::new(
+        diff.x * cos_a - diff.y * sin_a,
+        diff.x * sin_a + diff.y * cos_a,
+    );
+
+    local_diff.x.abs() < half_size.x && local_diff.y.abs() < half_size.y
 }
 
 /// Check if an item overlaps with a rectangle (defined by two corners)
@@ -167,7 +203,34 @@ pub fn compute_selection_bounds(
     }
 }
 
+/// Check if the cursor is over any selected item's rotation handle (accounting for rotation)
+pub fn check_rotation_handle_hit(
+    world_pos: Vec2,
+    camera_scale: f32,
+    selected_query: &Query<(&Transform, &Sprite), With<Selected>>,
+    images: &Assets<Image>,
+) -> bool {
+    let rotation_hit_size = ROTATION_HANDLE_RADIUS * camera_scale * 1.5;
+
+    for (transform, sprite) in selected_query.iter() {
+        let pos = transform.translation.truncate();
+        let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
+        let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
+
+        // Calculate the rotated rotation handle position
+        let local_handle = Vec2::new(0.0, half_size.y + ROTATION_HANDLE_OFFSET);
+        let world_handle = rotate_point(pos + local_handle, pos, angle);
+
+        if (world_pos - world_handle).length() < rotation_hit_size {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Determine which handle (if any) is under the cursor for selected items
+/// Note: Rotation handle is checked separately via check_rotation_handle_hit
 pub fn get_selection_handle_at_position(
     world_pos: Vec2,
     bounds: (Vec2, Vec2),
@@ -179,7 +242,7 @@ pub fn get_selection_handle_at_position(
     // Adjust handle hit area based on camera zoom
     let hit_size = HANDLE_SIZE * camera_scale * 1.5;
 
-    // Check corners first (higher priority)
+    // Check corners (high priority)
     let corners = [
         (Vec2::new(min.x, min.y), SelectionDragMode::ResizeSW),
         (Vec2::new(max.x, min.y), SelectionDragMode::ResizeSE),
@@ -257,10 +320,20 @@ pub fn handle_selection(
         // First, check if we clicked on a selection handle or inside the selection bounds
         // This takes priority over clicking on individual items
         if let Some(bounds) = compute_selection_bounds(&selected_sprites_query, &images) {
-            let handle_mode = get_selection_handle_at_position(world_pos, bounds, camera_scale);
+            // Check rotation handle first (it's per-item and accounts for rotation)
+            let handle_mode = if check_rotation_handle_hit(
+                world_pos,
+                camera_scale,
+                &selected_sprites_query,
+                &images,
+            ) {
+                SelectionDragMode::Rotate
+            } else {
+                get_selection_handle_at_position(world_pos, bounds, camera_scale)
+            };
 
             if handle_mode != SelectionDragMode::None && !ctrl_held {
-                // Start resize or move operation
+                // Start resize, move, or rotate operation
                 start_selection_drag(
                     &mut drag_state,
                     world_pos,
@@ -443,7 +516,7 @@ fn find_clicked_annotation(
     None
 }
 
-/// Start dragging/resizing all selected entities
+/// Start dragging/resizing/rotating all selected entities
 #[allow(clippy::too_many_arguments)]
 fn start_selection_drag(
     drag_state: &mut ResMut<DragState>,
@@ -462,7 +535,18 @@ fn start_selection_drag(
     drag_state.original_bounds = bounds;
     drag_state.entity_start_positions.clear();
     drag_state.entity_start_scales.clear();
+    drag_state.entity_start_rotations.clear();
+    drag_state.rotation_start_angle = None;
     drag_state.annotation_drag_data.clear();
+
+    // For rotation, calculate the starting angle from selection center to cursor
+    if mode == SelectionDragMode::Rotate
+        && let Some((min, max)) = bounds
+    {
+        let center = (min + max) / 2.0;
+        let angle = (world_pos - center).to_angle();
+        drag_state.rotation_start_angle = Some(angle);
+    }
 
     for entity in selected_query.iter() {
         // Check if it's a placed item
@@ -471,6 +555,9 @@ fn start_selection_drag(
                 .entity_start_positions
                 .push((entity, t.translation.truncate()));
             drag_state.entity_start_scales.push((entity, t.scale));
+            drag_state
+                .entity_start_rotations
+                .push((entity, t.rotation));
         }
         // Check if it's a path
         else if let Ok((_, path)) = paths_query.get(entity) {
@@ -863,11 +950,37 @@ pub fn handle_drag(
                 }
             }
         }
+        SelectionDragMode::Rotate => {
+            // Get original bounds and start angle - required for rotation
+            let Some((orig_min, orig_max)) = drag_state.original_bounds else {
+                return;
+            };
+            let Some(start_angle) = drag_state.rotation_start_angle else {
+                return;
+            };
+
+            let center = (orig_min + orig_max) / 2.0;
+            let current_angle = (world_pos - center).to_angle();
+            let mut angle_delta = current_angle - start_angle;
+
+            // Shift = snap to 15° increments
+            if shift_held {
+                let snap_rad = ROTATION_SNAP_INCREMENT.to_radians();
+                angle_delta = (angle_delta / snap_rad).round() * snap_rad;
+            }
+
+            // Apply rotation to each entity around its own center
+            for (entity, original_rotation) in &drag_state.entity_start_rotations {
+                if let Ok(mut transform) = items_query.get_mut(*entity) {
+                    transform.rotation = *original_rotation * Quat::from_rotation_z(angle_delta);
+                }
+            }
+        }
         SelectionDragMode::None => {}
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn draw_selection_indicators(
     mut gizmos: Gizmos,
     selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
@@ -891,46 +1004,68 @@ pub fn draw_selection_indicators(
         let half_size = get_sprite_half_size(sprite, &images);
         let scaled_half = half_size * scale;
 
-        // Draw selection rectangle
+        // Get the rotation angle from the transform
+        // EulerRot::ZYX returns (z, y, x) - we want the Z rotation (first component)
+        let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
+
+        // Draw rotated selection rectangle
         gizmos.rect_2d(
-            Isometry2d::from_translation(pos),
+            Isometry2d::new(pos, Rot2::radians(angle)),
             scaled_half * 2.0,
             selection_color,
         );
 
-        // Draw corner handles (larger)
+        // Draw corner handles (larger) at rotated positions
         let corner_handle_size = 4.0;
-        let corners = [
-            pos + Vec2::new(-scaled_half.x, -scaled_half.y),
-            pos + Vec2::new(scaled_half.x, -scaled_half.y),
-            pos + Vec2::new(scaled_half.x, scaled_half.y),
-            pos + Vec2::new(-scaled_half.x, scaled_half.y),
+        let local_corners = [
+            Vec2::new(-scaled_half.x, -scaled_half.y), // SW
+            Vec2::new(scaled_half.x, -scaled_half.y),  // SE
+            Vec2::new(scaled_half.x, scaled_half.y),   // NE
+            Vec2::new(-scaled_half.x, scaled_half.y),  // NW
         ];
 
-        for corner in corners {
+        for local_corner in local_corners {
+            let world_corner = rotate_point(pos + local_corner, pos, angle);
             gizmos.rect_2d(
-                Isometry2d::from_translation(corner),
+                Isometry2d::from_translation(world_corner),
                 Vec2::splat(corner_handle_size * 2.0),
                 selection_color,
             );
         }
 
-        // Draw edge handles (smaller)
+        // Draw edge handles (smaller) at rotated positions
         let edge_handle_size = 3.0;
-        let edges = [
-            pos + Vec2::new(0.0, -scaled_half.y), // S
-            pos + Vec2::new(0.0, scaled_half.y),  // N
-            pos + Vec2::new(-scaled_half.x, 0.0), // W
-            pos + Vec2::new(scaled_half.x, 0.0),  // E
+        let local_edges = [
+            Vec2::new(0.0, -scaled_half.y), // S
+            Vec2::new(0.0, scaled_half.y),  // N
+            Vec2::new(-scaled_half.x, 0.0), // W
+            Vec2::new(scaled_half.x, 0.0),  // E
         ];
 
-        for edge in edges {
+        for local_edge in local_edges {
+            let world_edge = rotate_point(pos + local_edge, pos, angle);
             gizmos.rect_2d(
-                Isometry2d::from_translation(edge),
+                Isometry2d::from_translation(world_edge),
                 Vec2::splat(edge_handle_size * 2.0),
                 selection_color,
             );
         }
+
+        // Draw rotation handle above the item, rotated with the item
+        let local_top = Vec2::new(0.0, scaled_half.y);
+        let local_handle = Vec2::new(0.0, scaled_half.y + ROTATION_HANDLE_OFFSET);
+        let world_top = rotate_point(pos + local_top, pos, angle);
+        let world_handle = rotate_point(pos + local_handle, pos, angle);
+
+        // Draw connecting line from top edge to rotation handle
+        gizmos.line_2d(world_top, world_handle, selection_color);
+
+        // Draw circular rotation handle
+        gizmos.circle_2d(
+            Isometry2d::from_translation(world_handle),
+            ROTATION_HANDLE_RADIUS,
+            selection_color,
+        );
     }
 
     // Only draw annotation selections if the layer is visible
@@ -1079,6 +1214,30 @@ pub fn handle_fit_to_grid(
     }
 }
 
+/// Rotate selected items by 90 degrees when R is pressed (clockwise) or Shift+R (counter-clockwise)
+pub fn handle_rotate_90(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut selected_query: Query<&mut Transform, With<Selected>>,
+    mut contexts: EguiContexts,
+) {
+    // Don't trigger if typing in UI
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
+    }
+
+    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+
+    // Rotate 90 degrees: clockwise (negative) or counter-clockwise (positive) with Shift
+    let angle = if shift_held { 90.0_f32 } else { -90.0_f32 };
+    let rotation_delta = Quat::from_rotation_z(angle.to_radians());
+
+    for mut transform in selected_query.iter_mut() {
+        transform.rotation *= rotation_delta;
+    }
+}
+
 pub fn handle_deletion(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -1161,7 +1320,17 @@ pub fn update_selection_cursor(
 
     // Check if hovering over a selection handle
     if let Some(bounds) = compute_selection_bounds(&selected_sprites_query, &images) {
-        let hover_mode = get_selection_handle_at_position(world_pos, bounds, camera_scale);
+        // Check rotation handle first (it's per-item and accounts for rotation)
+        let hover_mode = if check_rotation_handle_hit(
+            world_pos,
+            camera_scale,
+            &selected_sprites_query,
+            &images,
+        ) {
+            SelectionDragMode::Rotate
+        } else {
+            get_selection_handle_at_position(world_pos, bounds, camera_scale)
+        };
 
         if let Some(cursor) = hover_mode.cursor_icon() {
             commands.entity(window_entity).insert(cursor);
@@ -1173,4 +1342,25 @@ pub fn update_selection_cursor(
     commands
         .entity(window_entity)
         .insert(current_tool.tool.cursor_icon());
+}
+
+/// Clear selection when Escape is pressed
+pub fn handle_escape_clear_selection(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    selected_query: Query<Entity, With<Selected>>,
+    mut contexts: EguiContexts,
+) {
+    // Don't trigger if typing in UI
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
+    }
+
+    if keyboard.just_pressed(KeyCode::Escape) {
+        for entity in selected_query.iter() {
+            commands.entity(entity).remove::<Selected>();
+        }
+    }
 }
