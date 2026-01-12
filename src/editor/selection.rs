@@ -313,6 +313,15 @@ pub fn handle_selection(
     // Get camera scale for handle detection
     let camera_scale = camera.zoom_scale();
 
+    // Check if clicking on a live session viewport handle FIRST
+    // This prevents selecting items beneath the viewport gizmo
+    if mouse_button.just_pressed(MouseButton::Left)
+        && session_state.is_active
+        && get_handle_at_position(world_pos, &session_state, camera_scale) != ViewportDragMode::None
+    {
+        return;
+    }
+
     let ctrl_held =
         keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
 
@@ -461,23 +470,13 @@ pub fn handle_selection(
                 drag_state.annotation_drag_data.clear();
             }
         } else {
-            // Clicked on empty space - but check if we clicked on a viewport handle
-            let on_viewport_handle = session_state.is_active
-                && get_handle_at_position(world_pos, &session_state, camera_scale)
-                    != ViewportDragMode::None;
-
-            if on_viewport_handle {
-                // Don't start box selection if clicking on viewport handles
-                return;
-            }
-
+            // Clicked on empty space - start box selection
             if !ctrl_held {
                 // Clear selection
                 for entity in selected_query.iter() {
                     commands.entity(entity).remove::<Selected>();
                 }
             }
-            // Start box selection
             box_select_state.is_selecting = true;
             box_select_state.start_world = world_pos;
             box_select_state.current_world = world_pos;
