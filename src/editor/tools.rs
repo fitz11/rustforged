@@ -9,21 +9,23 @@ pub enum EditorTool {
     #[default]
     Select,
     Place,
-    Erase,
+    Brush,
     Draw,
     Line,
     Text,
+    Fog,
 }
 
 impl EditorTool {
     pub fn display_name(&self) -> &'static str {
         match self {
             EditorTool::Select => "Select (V)",
-            EditorTool::Place => "Place (B)",
-            EditorTool::Erase => "Erase (X)",
+            EditorTool::Place => "Place (P)",
+            EditorTool::Brush => "Brush (B)",
             EditorTool::Draw => "Draw (D)",
             EditorTool::Line => "Line (L)",
             EditorTool::Text => "Text (T)",
+            EditorTool::Fog => "Fog (F)",
         }
     }
 
@@ -31,10 +33,11 @@ impl EditorTool {
         match self {
             EditorTool::Select => CursorIcon::System(SystemCursorIcon::Default),
             EditorTool::Place => CursorIcon::System(SystemCursorIcon::Crosshair),
-            EditorTool::Erase => CursorIcon::System(SystemCursorIcon::NotAllowed),
+            EditorTool::Brush => CursorIcon::System(SystemCursorIcon::Crosshair),
             EditorTool::Draw => CursorIcon::System(SystemCursorIcon::Crosshair),
             EditorTool::Line => CursorIcon::System(SystemCursorIcon::Crosshair),
             EditorTool::Text => CursorIcon::System(SystemCursorIcon::Text),
+            EditorTool::Fog => CursorIcon::System(SystemCursorIcon::Crosshair),
         }
     }
 
@@ -42,10 +45,11 @@ impl EditorTool {
         &[
             EditorTool::Select,
             EditorTool::Place,
-            EditorTool::Erase,
+            EditorTool::Brush,
             EditorTool::Draw,
             EditorTool::Line,
             EditorTool::Text,
+            EditorTool::Fog,
         ]
     }
 
@@ -76,6 +80,7 @@ pub fn handle_tool_shortcuts(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut current_tool: ResMut<CurrentTool>,
+    mut selected_layer: ResMut<SelectedLayer>,
     selected_query: Query<Entity, With<Selected>>,
     mut contexts: EguiContexts,
 ) {
@@ -88,16 +93,18 @@ pub fn handle_tool_shortcuts(
 
     let new_tool = if keyboard.just_pressed(KeyCode::KeyV) || keyboard.just_pressed(KeyCode::KeyS) {
         Some(EditorTool::Select)
-    } else if keyboard.just_pressed(KeyCode::KeyB) || keyboard.just_pressed(KeyCode::KeyP) {
+    } else if keyboard.just_pressed(KeyCode::KeyP) {
         Some(EditorTool::Place)
-    } else if keyboard.just_pressed(KeyCode::KeyX) || keyboard.just_pressed(KeyCode::KeyE) {
-        Some(EditorTool::Erase)
+    } else if keyboard.just_pressed(KeyCode::KeyB) {
+        Some(EditorTool::Brush)
     } else if keyboard.just_pressed(KeyCode::KeyD) {
         Some(EditorTool::Draw)
     } else if keyboard.just_pressed(KeyCode::KeyL) {
         Some(EditorTool::Line)
     } else if keyboard.just_pressed(KeyCode::KeyT) {
         Some(EditorTool::Text)
+    } else if keyboard.just_pressed(KeyCode::KeyF) {
+        Some(EditorTool::Fog)
     } else {
         None
     };
@@ -110,6 +117,29 @@ pub fn handle_tool_shortcuts(
             }
         }
         current_tool.tool = tool;
+    }
+
+    // Handle C/Shift+C to cycle layers when Place or Brush tool is active
+    if (current_tool.tool == EditorTool::Place || current_tool.tool == EditorTool::Brush)
+        && keyboard.just_pressed(KeyCode::KeyC)
+    {
+        let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+        let layers = Layer::all();
+        let current_idx = layers.iter().position(|l| *l == selected_layer.layer).unwrap_or(0);
+
+        let new_idx = if shift {
+            // Shift+C: go backwards
+            if current_idx == 0 {
+                layers.len() - 1
+            } else {
+                current_idx - 1
+            }
+        } else {
+            // C: go forwards
+            (current_idx + 1) % layers.len()
+        };
+
+        selected_layer.layer = layers[new_idx];
     }
 }
 
@@ -143,11 +173,12 @@ mod tests {
     #[test]
     fn test_display_names() {
         assert_eq!(EditorTool::Select.display_name(), "Select (V)");
-        assert_eq!(EditorTool::Place.display_name(), "Place (B)");
-        assert_eq!(EditorTool::Erase.display_name(), "Erase (X)");
+        assert_eq!(EditorTool::Place.display_name(), "Place (P)");
+        assert_eq!(EditorTool::Brush.display_name(), "Brush (B)");
         assert_eq!(EditorTool::Draw.display_name(), "Draw (D)");
         assert_eq!(EditorTool::Line.display_name(), "Line (L)");
         assert_eq!(EditorTool::Text.display_name(), "Text (T)");
+        assert_eq!(EditorTool::Fog.display_name(), "Fog (F)");
     }
 
     #[test]
@@ -163,13 +194,14 @@ mod tests {
     #[test]
     fn test_all_returns_all_tools() {
         let all = EditorTool::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
         assert!(all.contains(&EditorTool::Select));
         assert!(all.contains(&EditorTool::Place));
-        assert!(all.contains(&EditorTool::Erase));
+        assert!(all.contains(&EditorTool::Brush));
         assert!(all.contains(&EditorTool::Draw));
         assert!(all.contains(&EditorTool::Line));
         assert!(all.contains(&EditorTool::Text));
+        assert!(all.contains(&EditorTool::Fog));
     }
 
     #[test]
@@ -177,7 +209,8 @@ mod tests {
         // Non-annotation tools
         assert!(!EditorTool::Select.is_annotation_tool());
         assert!(!EditorTool::Place.is_annotation_tool());
-        assert!(!EditorTool::Erase.is_annotation_tool());
+        assert!(!EditorTool::Brush.is_annotation_tool());
+        assert!(!EditorTool::Fog.is_annotation_tool());
 
         // Annotation tools
         assert!(EditorTool::Draw.is_annotation_tool());
@@ -212,10 +245,14 @@ mod tests {
     }
 
     #[test]
-    fn test_drawing_tools_have_crosshair() {
-        // Place, Draw, and Line tools should use crosshair
+    fn test_placement_tools_have_crosshair() {
+        // Place, Brush, Draw, Line, and Fog tools should use crosshair
         assert_eq!(
             EditorTool::Place.cursor_icon(),
+            CursorIcon::System(SystemCursorIcon::Crosshair)
+        );
+        assert_eq!(
+            EditorTool::Brush.cursor_icon(),
             CursorIcon::System(SystemCursorIcon::Crosshair)
         );
         assert_eq!(
@@ -224,6 +261,10 @@ mod tests {
         );
         assert_eq!(
             EditorTool::Line.cursor_icon(),
+            CursorIcon::System(SystemCursorIcon::Crosshair)
+        );
+        assert_eq!(
+            EditorTool::Fog.cursor_icon(),
             CursorIcon::System(SystemCursorIcon::Crosshair)
         );
     }

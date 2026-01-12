@@ -1,10 +1,13 @@
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use bevy_egui::{egui, EguiContexts};
-use std::path::PathBuf;
 
-use crate::config::{AppConfig, MissingMapWarning, SaveConfigRequest};
-use crate::map::{MapLoadError, NewMapRequest, OpenMaps, SaveMapRequest, UnsavedChangesDialog};
+use crate::assets::AssetLibrary;
+use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
+use crate::map::{
+    AsyncMapOperation, LoadValidationWarning, MapLoadError, MapSaveError, NewMapRequest, OpenMaps,
+    SaveMapRequest, SaveValidationWarning, UnsavedChangesDialog,
+};
 
 #[derive(Resource, Default)]
 pub struct FileMenuState {
@@ -20,6 +23,7 @@ pub fn file_menu_ui(
     mut save_events: MessageWriter<SaveMapRequest>,
     mut new_events: MessageWriter<NewMapRequest>,
     load_error: Res<MapLoadError>,
+    library: Res<AssetLibrary>,
 ) -> Result {
     // New map confirmation dialog
     if menu_state.show_new_confirmation {
@@ -29,7 +33,13 @@ pub fn file_menu_ui(
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(contexts.ctx_mut()?, |ui| {
                 ui.label("Create a new map? Unsaved changes will be lost.");
+                ui.add_space(8.0);
                 ui.horizontal(|ui| {
+                    if ui.button("Save First").clicked() {
+                        // Open save dialog, keep new confirmation for after save
+                        menu_state.show_save_name_dialog = true;
+                        menu_state.show_new_confirmation = false;
+                    }
                     if ui.button("Create New").clicked() {
                         new_events.write(NewMapRequest);
                         menu_state.show_new_confirmation = false;
@@ -43,18 +53,35 @@ pub fn file_menu_ui(
 
     // Save dialog for filename
     if menu_state.show_save_name_dialog {
+        // Use library's maps directory
+        let maps_dir = library.library_path.join("maps");
+
         egui::Window::new("Save Map")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(contexts.ctx_mut()?, |ui| {
+                // Show destination info
+                ui.label(
+                    egui::RichText::new(format!("Saving to: {}/", maps_dir.display()))
+                        .small()
+                        .weak(),
+                );
+                ui.add_space(4.0);
+
                 ui.horizontal(|ui| {
                     ui.label("Map name:");
                     ui.text_edit_singleline(&mut menu_state.save_filename);
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
-                        let maps_dir = PathBuf::from("assets/maps");
+                        // Ensure maps directory exists
+                        if !maps_dir.exists()
+                            && let Err(e) = std::fs::create_dir_all(&maps_dir)
+                        {
+                            warn!("Failed to create maps directory: {}", e);
+                        }
+
                         let filename = sanitize_filename(&menu_state.save_filename);
                         let path = maps_dir.join(format!("{}.json", filename));
                         save_events.write(SaveMapRequest { path });
@@ -211,4 +238,251 @@ pub fn handle_window_close(
             // so we rely on the dialog to give the user a chance to save
         }
     }
+}
+
+/// Modal dialog shown while save/load operations are in progress
+pub fn async_operation_modal_ui(
+    mut contexts: EguiContexts,
+    async_op: Res<AsyncMapOperation>,
+) -> Result {
+    if !async_op.is_busy() {
+        return Ok(());
+    }
+
+    let ctx = contexts.ctx_mut()?;
+
+    // Semi-transparent overlay to block interaction
+    egui::Area::new(egui::Id::new("async_op_overlay"))
+        .fixed_pos(egui::Pos2::ZERO)
+        .show(ctx, |ui| {
+            // Use viewport inner_rect for full-screen overlay
+            let rect = ctx.input(|i| {
+                i.viewport()
+                    .inner_rect
+                    .unwrap_or(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(1920.0, 1080.0)))
+            });
+            ui.painter().rect_filled(
+                rect,
+                0.0,
+                egui::Color32::from_black_alpha(100),
+            );
+        });
+
+    // Modal dialog
+    egui::Window::new("Please Wait")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.set_min_width(200.0);
+
+            // Show operation description
+            if let Some(ref desc) = async_op.operation_description {
+                ui.heading(desc);
+            } else if async_op.is_saving {
+                ui.heading("Saving...");
+            } else {
+                ui.heading("Loading...");
+            }
+
+            ui.add_space(10.0);
+            ui.spinner();
+        });
+
+    Ok(())
+}
+
+/// Renders the save error dialog when a save operation fails
+pub fn save_error_dialog_ui(
+    mut contexts: EguiContexts,
+    mut save_error: ResMut<MapSaveError>,
+    mut menu_state: ResMut<FileMenuState>,
+) -> Result {
+    let Some(error_msg) = save_error.message.clone() else {
+        return Ok(());
+    };
+
+    let mut should_clear = false;
+    let mut should_show_save_as = false;
+
+    egui::Window::new("Save Failed")
+        .collapsible(false)
+        .resizable(true)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.colored_label(egui::Color32::RED, "Failed to save map:");
+            ui.add_space(8.0);
+
+            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                ui.label(&error_msg);
+            });
+
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() {
+                    should_clear = true;
+                }
+
+                if ui.button("Save As...").clicked() {
+                    should_show_save_as = true;
+                    should_clear = true;
+                }
+            });
+        });
+
+    if should_clear {
+        save_error.message = None;
+    }
+    if should_show_save_as {
+        menu_state.show_save_name_dialog = true;
+    }
+
+    Ok(())
+}
+
+/// Renders the warning dialog about missing assets before save
+pub fn save_validation_warning_ui(
+    mut contexts: EguiContexts,
+    mut warning: ResMut<SaveValidationWarning>,
+    mut save_events: MessageWriter<SaveMapRequest>,
+) -> Result {
+    if !warning.show {
+        return Ok(());
+    }
+
+    egui::Window::new("Missing Assets Warning")
+        .collapsible(false)
+        .resizable(true)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.label("The following assets could not be found:");
+            ui.add_space(8.0);
+
+            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                for path in &warning.missing_assets {
+                    ui.label(egui::RichText::new(format!("  - {}", path)).weak());
+                }
+            });
+
+            ui.add_space(8.0);
+            ui.label("These items will appear as placeholders when the map is loaded.");
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if ui.button("Save Anyway").clicked() {
+                    if let Some(path) = warning.pending_save_path.take() {
+                        save_events.write(SaveMapRequest { path });
+                    }
+                    warning.show = false;
+                    warning.missing_assets.clear();
+                }
+
+                if ui.button("Cancel").clicked() {
+                    warning.show = false;
+                    warning.missing_assets.clear();
+                    warning.pending_save_path = None;
+                }
+            });
+        });
+
+    Ok(())
+}
+
+/// Notification dialog shown when config was reset to defaults
+pub fn config_reset_notification_ui(
+    mut contexts: EguiContexts,
+    mut notification: ResMut<ConfigResetNotification>,
+) -> Result {
+    if !notification.show {
+        return Ok(());
+    }
+
+    egui::Window::new("Configuration Reset")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.label("Your configuration file could not be loaded.");
+            ui.add_space(4.0);
+
+            if let Some(ref reason) = notification.reason {
+                ui.label(egui::RichText::new(reason).weak().small());
+                ui.add_space(4.0);
+            }
+
+            ui.label("Default settings have been applied.");
+            ui.add_space(8.0);
+
+            if ui.button("OK").clicked() {
+                notification.show = false;
+                notification.reason = None;
+            }
+        });
+
+    Ok(())
+}
+
+/// Renders the warning dialog when a map cannot be loaded due to missing assets
+pub fn load_validation_warning_ui(
+    mut contexts: EguiContexts,
+    mut warning: ResMut<LoadValidationWarning>,
+) -> Result {
+    if !warning.show {
+        return Ok(());
+    }
+
+    egui::Window::new("Missing Assets")
+        .collapsible(false)
+        .resizable(true)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.label(egui::RichText::new("Cannot load map").strong());
+            ui.add_space(4.0);
+
+            if let Some(ref path) = warning.map_path {
+                let map_name = path
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown");
+                ui.label(
+                    egui::RichText::new(format!("Map: {}", map_name))
+                        .weak()
+                        .small(),
+                );
+                ui.add_space(4.0);
+            }
+
+            ui.label("The following assets are not in the current library:");
+            ui.add_space(8.0);
+
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for asset_path in &warning.missing_assets {
+                        ui.label(
+                            egui::RichText::new(format!("  - {}", asset_path))
+                                .color(egui::Color32::from_rgb(200, 100, 100)),
+                        );
+                    }
+                });
+
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new(
+                    "Import the missing assets to the library, or open a library that contains them.",
+                )
+                .weak()
+                .small(),
+            );
+            ui.add_space(8.0);
+
+            if ui.button("OK").clicked() {
+                warning.show = false;
+                warning.missing_assets.clear();
+                warning.map_path = None;
+            }
+        });
+
+    Ok(())
 }

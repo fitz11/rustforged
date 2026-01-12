@@ -30,6 +30,10 @@ ureq = { version = "2", features = ["json"] }
 semver = "1"
 open = "5"
 futures-lite = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = "0.4"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

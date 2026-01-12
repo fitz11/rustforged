@@ -2,7 +2,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use crate::map::{Layer, MapData, PlacedItem, Selected};
+use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState, PlacedItem, Selected};
 use crate::session::LiveSessionState;
 
 /// Resource to track whether the help window is open
@@ -11,9 +11,12 @@ pub struct HelpWindowState {
     pub is_open: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn layers_panel_ui(
     mut contexts: EguiContexts,
     mut map_data: ResMut<MapData>,
+    mut fog_data: ResMut<FogOfWarData>,
+    mut dirty_state: ResMut<MapDirtyState>,
     mut selected_query: Query<
         (Entity, &mut PlacedItem, &mut Transform, &Sprite, &mut RenderLayers),
         With<Selected>,
@@ -76,6 +79,61 @@ pub fn layers_panel_ui(
                             });
                         });
                 }
+            }
+
+            // =========================================
+            // FOG OF WAR CONTROLS
+            // =========================================
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Fog of War").size(14.0).strong());
+                let revealed = fog_data.revealed_count();
+                let status = if revealed == 0 {
+                    "fully fogged".to_string()
+                } else {
+                    format!("{} revealed", revealed)
+                };
+                ui.label(egui::RichText::new(status).size(12.0).weak());
+            });
+            ui.add_space(4.0);
+
+            // Enable/Disable toggle for fog layer
+            let mut fog_enabled = map_data
+                .layers
+                .iter()
+                .find(|l| l.layer_type == Layer::FogOfWar)
+                .map(|l| l.visible)
+                .unwrap_or(true);
+
+            if ui
+                .checkbox(&mut fog_enabled, "Enable Fog of War")
+                .on_hover_text("Toggle fog visibility for players")
+                .changed()
+            {
+                if let Some(layer_data) = map_data
+                    .layers
+                    .iter_mut()
+                    .find(|l| l.layer_type == Layer::FogOfWar)
+                {
+                    layer_data.visible = fog_enabled;
+                }
+                dirty_state.is_dirty = true;
+            }
+
+            ui.add_space(4.0);
+
+            // Reset Fog button - simply clears all revealed cells
+            let reset_enabled = fog_data.has_revealed_cells();
+            if ui
+                .add_enabled(
+                    reset_enabled,
+                    egui::Button::new("Reset Fog").min_size(egui::vec2(160.0, 24.0)),
+                )
+                .on_hover_text("Hide all revealed areas (cover everything with fog)")
+                .clicked()
+            {
+                fog_data.reset();
+                dirty_state.is_dirty = true;
             }
 
             ui.add_space(12.0);
@@ -173,8 +231,8 @@ pub fn layers_panel_ui(
                             .selected_text(item.layer.display_name())
                             .show_ui(ui, |ui| {
                                 for layer in Layer::all() {
-                                    // Skip unavailable layers (like FogOfWar)
-                                    if !layer.is_available() {
+                                    // Skip FogOfWar layer (not for placing items)
+                                    if *layer == Layer::FogOfWar {
                                         continue;
                                     }
                                     let is_selected = item.layer == *layer;
@@ -443,12 +501,12 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
                     ui.label("Select - Click to select items, drag to move");
                     ui.end_row();
 
-                    ui.strong("B / P");
-                    ui.label("Place - Click to place selected asset");
+                    ui.strong("P");
+                    ui.label("Place - Single-click to place selected asset");
                     ui.end_row();
 
-                    ui.strong("X / E");
-                    ui.label("Erase - Click items to delete");
+                    ui.strong("B");
+                    ui.label("Brush - Drag to continuously place assets");
                     ui.end_row();
 
                     ui.strong("D");
@@ -461,6 +519,14 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
 
                     ui.strong("T");
                     ui.label("Text - Click to add text annotations");
+                    ui.end_row();
+
+                    ui.strong("F");
+                    ui.label("Fog - Reveal/hide fog of war areas");
+                    ui.end_row();
+
+                    ui.strong("C / Shift+C");
+                    ui.label("Cycle layer (Place/Brush tools)");
                     ui.end_row();
                 });
 
@@ -485,6 +551,10 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
                     ui.label("Box selection");
                     ui.end_row();
 
+                    ui.strong("Escape");
+                    ui.label("Clear selection");
+                    ui.end_row();
+
                     ui.strong("Delete / Backspace");
                     ui.label("Delete selected items");
                     ui.end_row();
@@ -501,8 +571,16 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
                     ui.label("Restore aspect ratio");
                     ui.end_row();
 
-                    ui.strong("Ctrl+C / Ctrl+V");
-                    ui.label("Copy / Paste selected items");
+                    ui.strong("R / Shift+R");
+                    ui.label("Rotate 90° CW / CCW");
+                    ui.end_row();
+
+                    ui.strong("Ctrl+C / Ctrl+X");
+                    ui.label("Copy / Cut selected items");
+                    ui.end_row();
+
+                    ui.strong("Ctrl+V");
+                    ui.label("Paste items");
                     ui.end_row();
                 });
 
@@ -549,6 +627,28 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
             ui.add_space(10.0);
             ui.separator();
 
+            // Asset Management
+            ui.heading("Assets");
+            egui::Grid::new("asset_grid")
+                .num_columns(2)
+                .spacing([20.0, 4.0])
+                .show(ui, |ui| {
+                    ui.strong("F2");
+                    ui.label("Rename selected asset");
+                    ui.end_row();
+
+                    ui.strong("F3");
+                    ui.label("Rename current map");
+                    ui.end_row();
+
+                    ui.strong("F4");
+                    ui.label("Rename library");
+                    ui.end_row();
+                });
+
+            ui.add_space(10.0);
+            ui.separator();
+
             // File Operations
             ui.heading("File");
             egui::Grid::new("file_grid")
@@ -569,6 +669,10 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
 
                     ui.strong("Ctrl+N");
                     ui.label("New map");
+                    ui.end_row();
+
+                    ui.strong("H");
+                    ui.label("Toggle this help window");
                     ui.end_row();
                 });
 

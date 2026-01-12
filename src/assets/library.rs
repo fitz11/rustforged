@@ -1,13 +1,32 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::{AssetCategory, RefreshAssetLibrary};
-use crate::config::AddRecentLibrary;
+use crate::config::AddRecentLibraryRequest;
 
 /// Size of thumbnail previews in pixels
 pub const THUMBNAIL_SIZE: u32 = 24;
+
+/// Filename for library metadata (hidden file)
+pub const LIBRARY_METADATA_FILE: &str = ".library.json";
+
+/// Metadata for an asset library, stored in .library.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryMetadata {
+    /// User-defined name for the library
+    pub name: String,
+}
+
+impl Default for LibraryMetadata {
+    fn default() -> Self {
+        Self {
+            name: "Unnamed Library".to_string(),
+        }
+    }
+}
 
 #[derive(Resource)]
 pub struct AssetLibrary {
@@ -15,6 +34,8 @@ pub struct AssetLibrary {
     pub assets: Vec<LibraryAsset>,
     /// Error message if the last library operation failed
     pub error: Option<String>,
+    /// Library metadata (name, etc.)
+    pub metadata: LibraryMetadata,
 }
 
 impl Default for AssetLibrary {
@@ -23,6 +44,7 @@ impl Default for AssetLibrary {
             library_path: PathBuf::from("assets/library"),
             assets: Vec::new(),
             error: None,
+            metadata: LibraryMetadata::default(),
         }
     }
 }
@@ -82,6 +104,51 @@ pub fn create_library_directory(path: &Path) -> Result<(), String> {
         }
     }
 
+    // Create maps folder
+    let maps_folder = path.join("maps");
+    if !maps_folder.exists() {
+        std::fs::create_dir_all(&maps_folder)
+            .map_err(|e| format!("Failed to create maps folder: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Load library metadata from .library.json file
+pub fn load_library_metadata(library_path: &Path) -> LibraryMetadata {
+    let metadata_path = library_path.join(LIBRARY_METADATA_FILE);
+
+    if metadata_path.exists() {
+        match std::fs::read_to_string(&metadata_path) {
+            Ok(json) => match serde_json::from_str(&json) {
+                Ok(metadata) => return metadata,
+                Err(e) => warn!("Failed to parse library metadata: {}", e),
+            },
+            Err(e) => warn!("Failed to read library metadata: {}", e),
+        }
+    }
+
+    // Return default with name derived from directory
+    let name = library_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Unnamed Library")
+        .to_string();
+
+    LibraryMetadata { name }
+}
+
+/// Save library metadata to .library.json file
+pub fn save_library_metadata(library_path: &Path, metadata: &LibraryMetadata) -> Result<(), String> {
+    let metadata_path = library_path.join(LIBRARY_METADATA_FILE);
+
+    let json = serde_json::to_string_pretty(metadata)
+        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+
+    std::fs::write(&metadata_path, json)
+        .map_err(|e| format!("Failed to write metadata file: {}", e))?;
+
+    info!("Saved library metadata to {:?}", metadata_path);
     Ok(())
 }
 
@@ -163,8 +230,30 @@ pub fn scan_asset_library(mut library: ResMut<AssetLibrary>) {
         warn!("Failed to create default library: {}", e);
     }
 
+    // Load library metadata
+    library.metadata = load_library_metadata(&library_path);
+
+    // Ensure metadata file exists (create if missing for migration)
+    if !library_path.join(LIBRARY_METADATA_FILE).exists()
+        && let Err(e) = save_library_metadata(&library_path, &library.metadata)
+    {
+        warn!("Failed to create metadata file: {}", e);
+    }
+
+    // Ensure maps folder exists
+    let maps_folder = library_path.join("maps");
+    if !maps_folder.exists()
+        && let Err(e) = std::fs::create_dir_all(&maps_folder)
+    {
+        warn!("Failed to create maps folder: {}", e);
+    }
+
     scan_library_at_path(&mut library, &library_path);
-    info!("Loaded {} assets from library", library.assets.len());
+    info!(
+        "Loaded {} assets from library '{}'",
+        library.assets.len(),
+        library.metadata.name
+    );
 }
 
 fn is_image_file(path: &Path) -> bool {
@@ -273,9 +362,31 @@ pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Resu
     match validate_library_directory(&path) {
         LibraryValidation::Valid => {
             library.library_path = path.clone();
+            library.metadata = load_library_metadata(&path);
+
+            // Ensure metadata file exists (create if missing for migration)
+            if !path.join(LIBRARY_METADATA_FILE).exists()
+                && let Err(e) = save_library_metadata(&path, &library.metadata)
+            {
+                warn!("Failed to create metadata file: {}", e);
+            }
+
+            // Ensure maps folder exists
+            let maps_folder = path.join("maps");
+            if !maps_folder.exists()
+                && let Err(e) = std::fs::create_dir_all(&maps_folder)
+            {
+                warn!("Failed to create maps folder: {}", e);
+            }
+
             scan_library_at_path(library, &path);
             library.error = None;
-            info!("Opened asset library at {:?} with {} assets", path, library.assets.len());
+            info!(
+                "Opened asset library '{}' at {:?} with {} assets",
+                library.metadata.name,
+                path,
+                library.assets.len()
+            );
             Ok(())
         }
         LibraryValidation::MissingFolders(missing) => {
@@ -301,10 +412,24 @@ pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Resu
 /// Creates a new asset library directory with required subfolders and opens it
 pub fn create_and_open_library(library: &mut AssetLibrary, path: PathBuf) -> Result<(), String> {
     create_library_directory(&path)?;
+
+    // Create metadata with name from folder
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Unnamed Library")
+        .to_string();
+
+    library.metadata = LibraryMetadata { name };
+    save_library_metadata(&path, &library.metadata)?;
+
     library.library_path = path.clone();
     scan_library_at_path(library, &path);
     library.error = None;
-    info!("Created and opened new asset library at {:?}", path);
+    info!(
+        "Created and opened new asset library '{}' at {:?}",
+        library.metadata.name, path
+    );
     Ok(())
 }
 
@@ -312,7 +437,7 @@ pub fn create_and_open_library(library: &mut AssetLibrary, path: PathBuf) -> Res
 pub fn track_library_changes(
     library: Res<AssetLibrary>,
     mut last_path: Local<Option<PathBuf>>,
-    mut recent_events: MessageWriter<AddRecentLibrary>,
+    mut recent_events: MessageWriter<AddRecentLibraryRequest>,
 ) {
     // Skip if library path hasn't changed
     if last_path.as_ref() == Some(&library.library_path) {
@@ -321,7 +446,7 @@ pub fn track_library_changes(
 
     // Only add to recent if the library opened successfully (no error)
     if library.error.is_none() {
-        recent_events.write(AddRecentLibrary {
+        recent_events.write(AddRecentLibraryRequest {
             path: library.library_path.clone(),
         });
     }

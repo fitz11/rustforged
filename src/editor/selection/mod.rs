@@ -15,7 +15,11 @@ mod hit_detection;
 mod shortcuts;
 
 use bevy::prelude::*;
-use bevy::window::{CursorIcon, SystemCursorIcon};
+
+use crate::common::DragMode;
+
+/// Type alias for selection drag mode (uses common DragMode)
+pub type SelectionDragMode = DragMode;
 
 // Re-export public items
 pub use box_select::handle_box_select;
@@ -46,45 +50,6 @@ pub enum AnnotationDragData {
     Text { original_position: Vec2 },
 }
 
-/// Drag mode for selection interaction (move, resize, or rotate)
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SelectionDragMode {
-    #[default]
-    None,
-    Move,
-    Rotate,
-    ResizeN,
-    ResizeS,
-    ResizeE,
-    ResizeW,
-    ResizeNE,
-    ResizeNW,
-    ResizeSE,
-    ResizeSW,
-}
-
-impl SelectionDragMode {
-    /// Get the appropriate cursor icon for this drag mode
-    pub fn cursor_icon(&self) -> Option<CursorIcon> {
-        match self {
-            SelectionDragMode::None => None,
-            SelectionDragMode::Move => Some(CursorIcon::System(SystemCursorIcon::Move)),
-            SelectionDragMode::Rotate => Some(CursorIcon::System(SystemCursorIcon::Grab)),
-            SelectionDragMode::ResizeN | SelectionDragMode::ResizeS => {
-                Some(CursorIcon::System(SystemCursorIcon::NsResize))
-            }
-            SelectionDragMode::ResizeE | SelectionDragMode::ResizeW => {
-                Some(CursorIcon::System(SystemCursorIcon::EwResize))
-            }
-            SelectionDragMode::ResizeNE | SelectionDragMode::ResizeSW => {
-                Some(CursorIcon::System(SystemCursorIcon::NeswResize))
-            }
-            SelectionDragMode::ResizeNW | SelectionDragMode::ResizeSE => {
-                Some(CursorIcon::System(SystemCursorIcon::NwseResize))
-            }
-        }
-    }
-}
 
 #[derive(Resource, Default)]
 pub struct DragState {

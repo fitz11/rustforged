@@ -1,4 +1,20 @@
 //! Common SystemParam bundles to reduce parameter counts in editor systems.
+//!
+//! Bevy ECS systems have a limit of 16 parameters. Complex editor systems often need
+//! access to multiple related queries (e.g., camera, window, projection for cursor handling,
+//! or multiple annotation types for selection). Rather than hitting this limit, we bundle
+//! related queries into SystemParam structs that provide convenient methods.
+//!
+//! ## Available Bundles
+//!
+//! - [`CameraParams`]: Basic camera and window access for cursor-to-world conversion
+//! - [`CameraWithProjection`]: Extended camera access including zoom scale
+//! - [`AnnotationQueries`]: Read-only access to all annotation types (paths, lines, text)
+//! - [`SelectedAnnotationQueries`]: Access to selected annotations only
+//!
+//! ## Helper Functions
+//!
+//! - [`is_cursor_over_ui`]: Check if cursor is over egui UI (for input gating)
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;

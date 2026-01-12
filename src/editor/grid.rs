@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 
+use crate::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
 use crate::map::MapData;
+use crate::theme;
 
 use super::camera::CameraZoom;
 use super::EditorCamera;
@@ -43,10 +45,10 @@ pub fn draw_grid(
     };
 
     let grid_size = map_data.grid_size;
-    let grid_color = Color::srgba(0.5, 0.5, 0.5, 0.3);
+    let grid_color = theme::GRID_COLOR;
 
-    let view_width = 1600.0 * zoom.scale;
-    let view_height = 900.0 * zoom.scale;
+    let view_width = DEFAULT_WINDOW_WIDTH * zoom.scale;
+    let view_height = DEFAULT_WINDOW_HEIGHT * zoom.scale;
 
     let camera_pos = camera_transform.translation.truncate();
 

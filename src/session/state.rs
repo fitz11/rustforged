@@ -1,5 +1,10 @@
 use bevy::prelude::*;
 
+use crate::common::DragMode;
+
+/// Type alias for viewport drag mode (uses common DragMode)
+pub type ViewportDragMode = DragMode;
+
 /// Information about a connected monitor
 #[derive(Clone, Debug)]
 pub struct MonitorInfo {
@@ -65,21 +70,6 @@ impl LiveSessionState {
     }
 }
 
-/// Drag mode for viewport interaction
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ViewportDragMode {
-    #[default]
-    None,
-    Move,
-    ResizeN,
-    ResizeS,
-    ResizeE,
-    ResizeW,
-    ResizeNE,
-    ResizeNW,
-    ResizeSE,
-    ResizeSW,
-}
 
 /// Resource tracking viewport drag state
 #[derive(Resource, Default)]

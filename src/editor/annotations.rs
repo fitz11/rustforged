@@ -1,3 +1,35 @@
+//! Annotation system for drawing on maps (editor-only layer).
+//!
+//! Annotations allow users to mark up maps with freehand paths, straight lines, and text.
+//! These are stored on the Annotation layer (z=350) and are only visible in the editor,
+//! not in the player view.
+//!
+//! ## Annotation Types
+//!
+//! - [`DrawnPath`]: Freehand drawing paths (a series of connected points)
+//! - [`DrawnLine`]: Straight lines between two points
+//! - [`TextAnnotation`]: Text labels at specific positions
+//!
+//! ## Draw States
+//!
+//! The annotation tools use separate state resources to track in-progress drawings:
+//! - [`DrawState`]: Active freehand path being drawn
+//! - [`LineDrawState`]: Active line being placed
+//! - [`TextEditState`]: Active text being edited
+//!
+//! ## Rendering
+//!
+//! Annotations use a custom gizmo group ([`AnnotationGizmoGroup`]) configured to render
+//! only to the editor camera (RenderLayers::layer(1)), ensuring they don't appear in the
+//! player view.
+//!
+//! ## Hit Testing
+//!
+//! Helper functions for detecting clicks on annotations:
+//! - [`point_near_path`]: Check if a point is near a drawn path
+//! - [`point_near_line`]: Check if a point is near a line
+//! - [`point_in_text`]: Check if a point is inside text bounds
+
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::system::SystemParam;
 use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
@@ -705,8 +737,8 @@ pub fn text_annotation_input_ui(
                         .font(egui::TextStyle::Body),
                 );
 
-                // Auto-focus the text input
-                if response.gained_focus() || text_state.text_buffer.is_empty() {
+                // Request focus only when not already focused
+                if !response.has_focus() {
                     response.request_focus();
                 }
 

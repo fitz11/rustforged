@@ -5,6 +5,7 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::editor::EditorCamera;
+use crate::theme;
 
 use super::state::{LiveSessionState, ViewportDragMode, ViewportDragState};
 
@@ -12,9 +13,9 @@ const HANDLE_SIZE: f32 = 8.0;
 const MOVE_HANDLE_WIDTH: f32 = 60.0;
 const MOVE_HANDLE_HEIGHT: f32 = 16.0;
 const MOVE_HANDLE_OFFSET: f32 = 12.0; // Distance above top edge
-const VIEWPORT_COLOR: Color = Color::srgba(1.0, 0.7, 0.2, 0.9);
-const VIEWPORT_FILL_COLOR: Color = Color::srgba(1.0, 0.7, 0.2, 0.1);
-const MOVE_HANDLE_COLOR: Color = Color::srgba(1.0, 0.7, 0.2, 1.0);
+const VIEWPORT_COLOR: Color = theme::VIEWPORT_OUTLINE;
+const VIEWPORT_FILL_COLOR: Color = theme::VIEWPORT_FILL;
+const MOVE_HANDLE_COLOR: Color = theme::VIEWPORT_HANDLE;
 
 /// Custom gizmo group for viewport indicator (editor-only rendering)
 #[derive(Default, Reflect, GizmoConfigGroup)]
@@ -303,7 +304,9 @@ pub fn handle_viewport_interaction(
                 session_state.viewport_size.x = new_width;
                 session_state.viewport_size.y = new_width / aspect_ratio;
             }
-            ViewportDragMode::None => {}
+            ViewportDragMode::Rotate | ViewportDragMode::None => {
+                // Rotate is not used for viewport, only for selection
+            }
         }
     }
 }

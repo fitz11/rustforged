@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const MAX_RECENT_LIBRARIES: usize = 5;
+use crate::constants::MAX_RECENT_LIBRARIES;
 
 /// System set for config loading (other plugins can run after this)
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -52,25 +52,34 @@ pub struct MissingMapWarning {
     pub path: Option<PathBuf>,
 }
 
+/// Resource to notify user when config was reset to defaults
+#[derive(Resource, Default)]
+pub struct ConfigResetNotification {
+    /// Whether to show the notification dialog
+    pub show: bool,
+    /// The reason for the reset (parse error, read error, etc.)
+    pub reason: Option<String>,
+}
+
 /// Message to trigger config save
 #[derive(Message)]
 pub struct SaveConfigRequest;
 
 /// Message to set the default library path
 #[derive(Message)]
-pub struct SetDefaultLibrary {
+pub struct SetDefaultLibraryRequest {
     pub path: PathBuf,
 }
 
 /// Message to add a library to the recent list
 #[derive(Message)]
-pub struct AddRecentLibrary {
+pub struct AddRecentLibraryRequest {
     pub path: PathBuf,
 }
 
 /// Message to update the last map path in config
 #[derive(Message)]
-pub struct UpdateLastMapPath {
+pub struct UpdateLastMapPathRequest {
     pub path: PathBuf,
 }
 
@@ -86,36 +95,52 @@ fn get_config_path() -> PathBuf {
     PathBuf::from("config.json")
 }
 
+/// Result of loading config from disk
+struct LoadConfigResult {
+    config: AppConfig,
+    /// Error message if config was reset to defaults due to an error
+    reset_reason: Option<String>,
+}
+
 /// Load configuration from disk
-fn load_config() -> AppConfig {
+fn load_config() -> LoadConfigResult {
     let config_path = get_config_path();
 
-    let data = if config_path.exists() {
+    let (data, reset_reason) = if config_path.exists() {
         match std::fs::read_to_string(&config_path) {
             Ok(json) => match serde_json::from_str(&json) {
                 Ok(data) => {
                     info!("Loaded config from {:?}", config_path);
-                    data
+                    (data, None)
                 }
                 Err(e) => {
                     warn!("Failed to parse config file: {}", e);
-                    AppConfigData::default()
+                    (
+                        AppConfigData::default(),
+                        Some(format!("Configuration file was corrupted: {}", e)),
+                    )
                 }
             },
             Err(e) => {
                 warn!("Failed to read config file: {}", e);
-                AppConfigData::default()
+                (
+                    AppConfigData::default(),
+                    Some(format!("Could not read configuration file: {}", e)),
+                )
             }
         }
     } else {
         info!("No config file found, using defaults");
-        AppConfigData::default()
+        (AppConfigData::default(), None)
     };
 
-    AppConfig {
-        data,
-        config_path,
-        dirty: false,
+    LoadConfigResult {
+        config: AppConfig {
+            data,
+            config_path,
+            dirty: false,
+        },
+        reset_reason,
     }
 }
 
@@ -136,11 +161,20 @@ fn save_config(config: &AppConfig) {
 }
 
 /// Startup system to load config from disk into the existing resource
-fn load_config_system(mut config: ResMut<AppConfig>) {
-    let loaded = load_config();
-    config.data = loaded.data;
-    config.config_path = loaded.config_path;
-    config.dirty = loaded.dirty;
+fn load_config_system(
+    mut config: ResMut<AppConfig>,
+    mut reset_notification: ResMut<ConfigResetNotification>,
+) {
+    let result = load_config();
+    config.data = result.config.data;
+    config.config_path = result.config.config_path;
+    config.dirty = result.config.dirty;
+
+    // Set notification if config was reset due to an error
+    if let Some(reason) = result.reset_reason {
+        reset_notification.show = true;
+        reset_notification.reason = Some(reason);
+    }
 }
 
 /// Startup system to check if last map exists
@@ -169,7 +203,7 @@ fn save_config_system(
 
 /// System to set the default library path
 fn set_default_library_system(
-    mut events: MessageReader<SetDefaultLibrary>,
+    mut events: MessageReader<SetDefaultLibraryRequest>,
     mut config: ResMut<AppConfig>,
     mut save_events: MessageWriter<SaveConfigRequest>,
 ) {
@@ -183,7 +217,7 @@ fn set_default_library_system(
 
 /// System to add a library to the recent list
 fn add_recent_library_system(
-    mut events: MessageReader<AddRecentLibrary>,
+    mut events: MessageReader<AddRecentLibraryRequest>,
     mut config: ResMut<AppConfig>,
     mut save_events: MessageWriter<SaveConfigRequest>,
 ) {
@@ -207,7 +241,7 @@ fn add_recent_library_system(
 
 /// System to update last map path
 fn update_last_map_path_system(
-    mut events: MessageReader<UpdateLastMapPath>,
+    mut events: MessageReader<UpdateLastMapPathRequest>,
     mut config: ResMut<AppConfig>,
     mut save_events: MessageWriter<SaveConfigRequest>,
 ) {
@@ -224,10 +258,11 @@ impl Plugin for ConfigPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AppConfig>()
             .init_resource::<MissingMapWarning>()
+            .init_resource::<ConfigResetNotification>()
             .add_message::<SaveConfigRequest>()
-            .add_message::<SetDefaultLibrary>()
-            .add_message::<AddRecentLibrary>()
-            .add_message::<UpdateLastMapPath>()
+            .add_message::<SetDefaultLibraryRequest>()
+            .add_message::<AddRecentLibraryRequest>()
+            .add_message::<UpdateLastMapPathRequest>()
             .add_systems(
                 Startup,
                 (load_config_system, check_last_map_exists)
@@ -238,9 +273,9 @@ impl Plugin for ConfigPlugin {
                 Update,
                 (
                     save_config_system.run_if(on_message::<SaveConfigRequest>),
-                    set_default_library_system.run_if(on_message::<SetDefaultLibrary>),
-                    add_recent_library_system.run_if(on_message::<AddRecentLibrary>),
-                    update_last_map_path_system.run_if(on_message::<UpdateLastMapPath>),
+                    set_default_library_system.run_if(on_message::<SetDefaultLibraryRequest>),
+                    add_recent_library_system.run_if(on_message::<AddRecentLibraryRequest>),
+                    update_last_map_path_system.run_if(on_message::<UpdateLastMapPathRequest>),
                 ),
             );
     }

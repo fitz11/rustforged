@@ -1,14 +1,16 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
-use std::collections::HashMap;
+use bevy::tasks::{IoTaskPool, Task};
+use futures_lite::future;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::{
-    Layer, MapData, PlacedItem, SavedAnnotations, SavedLine, SavedMap, SavedPath, SavedPlacedItem,
-    SavedTextBox,
+    AssetManifest, FogOfWarData, Layer, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
+    SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
 };
 use crate::assets::AssetLibrary;
-use crate::config::UpdateLastMapPath;
+use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 
 #[derive(Message)]
@@ -35,6 +37,73 @@ pub struct SwitchMapRequest {
 pub struct MapLoadError {
     pub message: Option<String>,
 }
+
+/// Resource tracking save operation errors for display to user.
+#[derive(Resource, Default)]
+pub struct MapSaveError {
+    pub message: Option<String>,
+}
+
+/// Resource for pre-save validation warnings about missing assets.
+#[derive(Resource, Default)]
+pub struct SaveValidationWarning {
+    /// Whether to show the warning dialog
+    pub show: bool,
+    /// List of asset paths that are missing
+    pub missing_assets: Vec<String>,
+    /// The path we want to save to after user confirmation
+    pub pending_save_path: Option<PathBuf>,
+}
+
+/// Resource for load-time validation warnings about missing assets.
+#[derive(Resource, Default)]
+pub struct LoadValidationWarning {
+    /// Whether to show the warning dialog
+    pub show: bool,
+    /// List of asset paths that are missing from the library
+    pub missing_assets: Vec<String>,
+    /// The map file that failed to load
+    pub map_path: Option<PathBuf>,
+}
+
+/// Resource tracking async map I/O operations for modal dialog
+#[derive(Resource, Default)]
+pub struct AsyncMapOperation {
+    /// Whether a save operation is in progress
+    pub is_saving: bool,
+    /// Whether a load operation is in progress
+    pub is_loading: bool,
+    /// Description of the current operation
+    pub operation_description: Option<String>,
+}
+
+impl AsyncMapOperation {
+    pub fn is_busy(&self) -> bool {
+        self.is_saving || self.is_loading
+    }
+}
+
+/// Result of an async save operation
+pub struct SaveResult {
+    pub path: PathBuf,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// Component for save task
+#[derive(Component)]
+pub struct SaveMapTask(pub Task<SaveResult>);
+
+/// Result of an async load operation
+pub struct LoadResult {
+    pub path: PathBuf,
+    pub saved_map: Option<SavedMap>,
+    pub error: Option<String>,
+}
+
+/// Component for load task
+#[derive(Component)]
+pub struct LoadMapTask(pub Task<LoadResult>);
 
 /// Resource tracking the currently loaded map file path
 #[derive(Resource, Default)]
@@ -135,20 +204,26 @@ pub struct UnsavedChangesDialog {
     pub pending_load_path: Option<PathBuf>,
 }
 
+/// Starts an async save operation
 #[allow(clippy::too_many_arguments)]
 pub fn save_map_system(
+    mut commands: Commands,
     mut events: MessageReader<SaveMapRequest>,
     map_data: Res<MapData>,
+    fog_data: Res<FogOfWarData>,
     placed_items: Query<(&PlacedItem, &Transform)>,
     paths: Query<&DrawnPath>,
     lines: Query<&DrawnLine>,
     texts: Query<(&Transform, &TextAnnotation)>,
-    mut current_map_file: ResMut<CurrentMapFile>,
-    mut config_events: MessageWriter<UpdateLastMapPath>,
-    mut dirty_state: ResMut<MapDirtyState>,
-    mut open_maps: ResMut<OpenMaps>,
+    mut async_op: ResMut<AsyncMapOperation>,
 ) {
     for event in events.read() {
+        // Don't start a new save if one is already in progress
+        if async_op.is_busy() {
+            warn!("Save operation already in progress");
+            continue;
+        }
+
         let items: Vec<SavedPlacedItem> = placed_items
             .iter()
             .map(|(item, transform)| SavedPlacedItem::from_entity(item, transform))
@@ -184,7 +259,11 @@ pub fn save_map_system(
             })
             .collect();
 
+        // Build asset manifest from placed items
+        let asset_manifest = AssetManifest::from_items(items.iter());
+
         let saved_map = SavedMap {
+            asset_manifest,
             map_data: map_data.clone(),
             placed_items: items,
             annotations: SavedAnnotations {
@@ -192,42 +271,108 @@ pub fn save_map_system(
                 lines: saved_lines,
                 text_boxes: saved_texts,
             },
+            fog_of_war: SavedFogOfWar::from(&*fog_data),
         };
 
-        match serde_json::to_string_pretty(&saved_map) {
-            Ok(json) => {
-                if let Err(e) = std::fs::write(&event.path, json) {
-                    error!("Failed to save map: {}", e);
-                } else {
-                    info!("Map saved to {:?}", event.path);
-                    // Update current map file and config
-                    current_map_file.path = Some(event.path.clone());
-                    config_events.write(UpdateLastMapPath {
-                        path: event.path.clone(),
-                    });
+        let path = event.path.clone();
+        let map_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("map")
+            .to_string();
 
-                    // Clear dirty state
-                    dirty_state.is_dirty = false;
-                    dirty_state.last_known_item_count = placed_items.iter().count();
-                    dirty_state.last_known_annotation_count =
-                        paths.iter().count() + lines.iter().count() + texts.iter().count();
+        // Mark as saving
+        async_op.is_saving = true;
+        async_op.operation_description = Some(format!("Saving {}...", map_name));
 
-                    // Update open maps
-                    if let Some(active_map) = open_maps.active_map_mut() {
-                        active_map.is_dirty = false;
-                        active_map.path = Some(event.path.clone());
-                        active_map.name = event
-                            .path
-                            .file_stem()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Unknown")
-                            .to_string();
+        // Spawn async task for file I/O
+        let task_pool = IoTaskPool::get();
+        let task = task_pool.spawn(async move {
+            // Serialize (could be slow for large maps)
+            match serde_json::to_string_pretty(&saved_map) {
+                Ok(json) => {
+                    // Write to file
+                    if let Err(e) = std::fs::write(&path, json) {
+                        SaveResult {
+                            path,
+                            success: false,
+                            error: Some(format!("Failed to write file: {}", e)),
+                        }
+                    } else {
+                        SaveResult {
+                            path,
+                            success: true,
+                            error: None,
+                        }
                     }
                 }
+                Err(e) => SaveResult {
+                    path,
+                    success: false,
+                    error: Some(format!("Failed to serialize map: {}", e)),
+                },
             }
-            Err(e) => {
-                error!("Failed to serialize map: {}", e);
+        });
+
+        commands.spawn(SaveMapTask(task));
+    }
+}
+
+/// Polls save tasks and handles completion
+#[allow(clippy::too_many_arguments)]
+pub fn poll_save_tasks(
+    mut commands: Commands,
+    mut tasks: Query<(Entity, &mut SaveMapTask)>,
+    mut async_op: ResMut<AsyncMapOperation>,
+    mut current_map_file: ResMut<CurrentMapFile>,
+    mut config_events: MessageWriter<UpdateLastMapPathRequest>,
+    mut dirty_state: ResMut<MapDirtyState>,
+    mut open_maps: ResMut<OpenMaps>,
+    mut save_error: ResMut<MapSaveError>,
+    placed_items: Query<Entity, With<PlacedItem>>,
+    annotations: Query<Entity, With<AnnotationMarker>>,
+) {
+    for (entity, mut task) in tasks.iter_mut() {
+        if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
+            // Clear async state
+            async_op.is_saving = false;
+            async_op.operation_description = None;
+
+            if result.success {
+                info!("Map saved to {:?}", result.path);
+
+                // Clear any previous save error
+                save_error.message = None;
+
+                // Update current map file and config
+                current_map_file.path = Some(result.path.clone());
+                config_events.write(UpdateLastMapPathRequest {
+                    path: result.path.clone(),
+                });
+
+                // Clear dirty state
+                dirty_state.is_dirty = false;
+                dirty_state.last_known_item_count = placed_items.iter().count();
+                dirty_state.last_known_annotation_count = annotations.iter().count();
+
+                // Update open maps
+                if let Some(active_map) = open_maps.active_map_mut() {
+                    active_map.is_dirty = false;
+                    active_map.path = Some(result.path.clone());
+                    active_map.name = result
+                        .path
+                        .file_stem()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                }
+            } else if let Some(error) = result.error {
+                error!("{}", error);
+                // Store error for display to user
+                save_error.message = Some(error);
             }
+
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -241,181 +386,257 @@ fn array_to_color(arr: [f32; 4]) -> Color {
     Color::srgba(arr[0], arr[1], arr[2], arr[3])
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Starts an async load operation (file I/O only)
 pub fn load_map_system(
     mut commands: Commands,
     mut events: MessageReader<LoadMapRequest>,
+    mut async_op: ResMut<AsyncMapOperation>,
+) {
+    for event in events.read() {
+        // Don't start a new load if one is already in progress
+        if async_op.is_busy() {
+            warn!("Load operation already in progress");
+            continue;
+        }
+
+        let path = event.path.clone();
+        let map_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("map")
+            .to_string();
+
+        // Mark as loading
+        async_op.is_loading = true;
+        async_op.operation_description = Some(format!("Loading {}...", map_name));
+
+        // Spawn async task for file I/O and parsing
+        let task_pool = IoTaskPool::get();
+        let task = task_pool.spawn(async move {
+            // Read file
+            let json = match std::fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(e) => {
+                    return LoadResult {
+                        path,
+                        saved_map: None,
+                        error: Some(format!("Failed to read file: {}", e)),
+                    };
+                }
+            };
+
+            // Parse JSON
+            match serde_json::from_str::<SavedMap>(&json) {
+                Ok(saved_map) => LoadResult {
+                    path,
+                    saved_map: Some(saved_map),
+                    error: None,
+                },
+                Err(e) => LoadResult {
+                    path,
+                    saved_map: None,
+                    error: Some(format!("Failed to parse map file: {}", e)),
+                },
+            }
+        });
+
+        commands.spawn(LoadMapTask(task));
+    }
+}
+
+/// Polls load tasks and handles completion (spawns entities synchronously)
+#[allow(clippy::too_many_arguments)]
+pub fn poll_load_tasks(
+    mut commands: Commands,
+    mut tasks: Query<(Entity, &mut LoadMapTask)>,
+    mut async_op: ResMut<AsyncMapOperation>,
     mut map_data: ResMut<MapData>,
+    mut fog_data: ResMut<FogOfWarData>,
     mut load_error: ResMut<MapLoadError>,
+    mut load_warning: ResMut<LoadValidationWarning>,
     asset_library: Res<AssetLibrary>,
     asset_server: Res<AssetServer>,
     existing_items: Query<Entity, With<PlacedItem>>,
     existing_annotations: Query<Entity, With<AnnotationMarker>>,
     mut current_map_file: ResMut<CurrentMapFile>,
-    mut config_events: MessageWriter<UpdateLastMapPath>,
+    mut config_events: MessageWriter<UpdateLastMapPathRequest>,
     mut dirty_state: ResMut<MapDirtyState>,
     mut open_maps: ResMut<OpenMaps>,
 ) {
-    for event in events.read() {
-        load_error.message = None;
+    for (entity, mut task) in tasks.iter_mut() {
+        if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
+            // Clear async state
+            async_op.is_loading = false;
+            async_op.operation_description = None;
+            load_error.message = None;
 
-        let json = match std::fs::read_to_string(&event.path) {
-            Ok(content) => content,
-            Err(e) => {
-                load_error.message = Some(format!("Failed to read file: {}", e));
-                error!("{}", load_error.message.as_ref().unwrap());
+            // Handle error
+            if let Some(error) = result.error {
+                load_error.message = Some(error.clone());
+                error!("{}", error);
+                commands.entity(entity).despawn();
                 continue;
             }
-        };
 
-        let saved_map: SavedMap = match serde_json::from_str(&json) {
-            Ok(map) => map,
-            Err(e) => {
-                load_error.message = Some(format!("Failed to parse map file: {}", e));
-                error!("{}", load_error.message.as_ref().unwrap());
+            let Some(saved_map) = result.saved_map else {
+                commands.entity(entity).despawn();
                 continue;
-            }
-        };
-
-        // Validate all assets exist
-        let mut missing_assets = Vec::new();
-        for item in &saved_map.placed_items {
-            let asset_exists = asset_library
-                .assets
-                .iter()
-                .any(|a| a.relative_path == item.asset_path);
-            if !asset_exists {
-                missing_assets.push(item.asset_path.clone());
-            }
-        }
-
-        if !missing_assets.is_empty() {
-            load_error.message = Some(format!(
-                "Cannot load map: missing assets:\n{}",
-                missing_assets.join("\n")
-            ));
-            error!("{}", load_error.message.as_ref().unwrap());
-            continue;
-        }
-
-        // Clear existing items
-        for entity in existing_items.iter() {
-            commands.entity(entity).despawn();
-        }
-
-        // Clear existing annotations
-        for entity in existing_annotations.iter() {
-            commands.entity(entity).despawn();
-        }
-
-        // Load map data
-        *map_data = saved_map.map_data;
-
-        // Spawn placed items
-        for item in saved_map.placed_items {
-            let texture: Handle<Image> = asset_server.load(&item.asset_path);
-            // Clamp z_index to valid range (for migration from old maps with larger ranges)
-            let z_index = item.z_index.clamp(0, Layer::max_z_index());
-            let z = item.layer.z_base() + z_index as f32;
-
-            // Items on non-player-visible layers (GM, FogOfWar) go to render layer 1 (editor-only)
-            let render_layer = if item.layer.is_player_visible() {
-                RenderLayers::layer(0)
-            } else {
-                RenderLayers::layer(1)
             };
 
-            commands.spawn((
-                Sprite::from_image(texture),
-                Transform {
-                    translation: item.position.extend(z),
-                    rotation: Quat::from_rotation_z(item.rotation),
-                    scale: item.scale.extend(1.0),
+            // Validate all assets exist using the manifest for efficient lookup
+            let available_assets: HashSet<&str> = asset_library
+                .assets
+                .iter()
+                .map(|a| a.relative_path.as_str())
+                .collect();
+
+            let missing_assets: Vec<String> = saved_map
+                .asset_manifest
+                .assets
+                .iter()
+                .filter(|path| !available_assets.contains(path.as_str()))
+                .cloned()
+                .collect();
+
+            if !missing_assets.is_empty() {
+                // Show warning dialog with missing assets
+                load_warning.show = true;
+                load_warning.missing_assets = missing_assets.clone();
+                load_warning.map_path = Some(result.path.clone());
+
+                warn!(
+                    "Cannot load map {:?}: {} missing assets",
+                    result.path,
+                    missing_assets.len()
+                );
+                commands.entity(entity).despawn();
+                continue;
+            }
+
+            // Clear existing items
+            for existing in existing_items.iter() {
+                commands.entity(existing).despawn();
+            }
+
+            // Clear existing annotations
+            for existing in existing_annotations.iter() {
+                commands.entity(existing).despawn();
+            }
+
+            // Load map data
+            *map_data = saved_map.map_data;
+
+            // Load fog of war data
+            *fog_data = FogOfWarData::from(saved_map.fog_of_war);
+
+            // Spawn placed items
+            for item in saved_map.placed_items {
+                let texture: Handle<Image> = asset_server.load(&item.asset_path);
+                // Clamp z_index to valid range (for migration from old maps with larger ranges)
+                let z_index = item.z_index.clamp(0, Layer::max_z_index());
+                let z = item.layer.z_base() + z_index as f32;
+
+                // Items on non-player-visible layers (GM, FogOfWar) go to render layer 1 (editor-only)
+                let render_layer = if item.layer.is_player_visible() {
+                    RenderLayers::layer(0)
+                } else {
+                    RenderLayers::layer(1)
+                };
+
+                commands.spawn((
+                    Sprite::from_image(texture),
+                    Transform {
+                        translation: item.position.extend(z),
+                        rotation: Quat::from_rotation_z(item.rotation),
+                        scale: item.scale.extend(1.0),
+                    },
+                    PlacedItem {
+                        asset_path: item.asset_path,
+                        layer: item.layer,
+                        z_index,
+                    },
+                    render_layer,
+                ));
+            }
+
+            // Spawn annotations
+            let z = Layer::Annotation.z_base();
+
+            for path in saved_map.annotations.paths {
+                commands.spawn((
+                    Transform::from_translation(Vec3::new(0.0, 0.0, z)),
+                    DrawnPath {
+                        points: path.points,
+                        color: array_to_color(path.color),
+                        stroke_width: path.stroke_width,
+                    },
+                    AnnotationMarker,
+                ));
+            }
+
+            for line in saved_map.annotations.lines {
+                commands.spawn((
+                    Transform::from_translation(Vec3::new(0.0, 0.0, z)),
+                    DrawnLine {
+                        start: line.start,
+                        end: line.end,
+                        color: array_to_color(line.color),
+                        stroke_width: line.stroke_width,
+                    },
+                    AnnotationMarker,
+                ));
+            }
+
+            for text in saved_map.annotations.text_boxes {
+                commands.spawn((
+                    Transform::from_translation(text.position.extend(z)),
+                    TextAnnotation {
+                        content: text.content,
+                        font_size: text.font_size,
+                        color: array_to_color(text.color),
+                    },
+                    AnnotationMarker,
+                ));
+            }
+
+            info!("Map loaded from {:?}", result.path);
+
+            // Update current map file and config
+            current_map_file.path = Some(result.path.clone());
+            config_events.write(UpdateLastMapPathRequest {
+                path: result.path.clone(),
+            });
+
+            // Clear dirty state (freshly loaded map is clean)
+            dirty_state.is_dirty = false;
+            dirty_state.last_known_item_count = 0; // Will be updated by detection system
+            dirty_state.last_known_annotation_count = 0;
+
+            // Update open maps - create new entry for this map
+            let map_name = result
+                .path
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            let new_id = open_maps.next_id;
+            open_maps.next_id += 1;
+
+            open_maps.maps.insert(
+                new_id,
+                OpenMap {
+                    id: new_id,
+                    name: map_name,
+                    path: Some(result.path.clone()),
+                    is_dirty: false,
+                    saved_state: None,
                 },
-                PlacedItem {
-                    asset_path: item.asset_path,
-                    layer: item.layer,
-                    z_index,
-                },
-                render_layer,
-            ));
+            );
+            open_maps.active_map_id = Some(new_id);
+
+            commands.entity(entity).despawn();
         }
-
-        // Spawn annotations
-        let z = Layer::Annotation.z_base();
-
-        for path in saved_map.annotations.paths {
-            commands.spawn((
-                Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                DrawnPath {
-                    points: path.points,
-                    color: array_to_color(path.color),
-                    stroke_width: path.stroke_width,
-                },
-                AnnotationMarker,
-            ));
-        }
-
-        for line in saved_map.annotations.lines {
-            commands.spawn((
-                Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                DrawnLine {
-                    start: line.start,
-                    end: line.end,
-                    color: array_to_color(line.color),
-                    stroke_width: line.stroke_width,
-                },
-                AnnotationMarker,
-            ));
-        }
-
-        for text in saved_map.annotations.text_boxes {
-            commands.spawn((
-                Transform::from_translation(text.position.extend(z)),
-                TextAnnotation {
-                    content: text.content,
-                    font_size: text.font_size,
-                    color: array_to_color(text.color),
-                },
-                AnnotationMarker,
-            ));
-        }
-
-        info!("Map loaded from {:?}", event.path);
-
-        // Update current map file and config
-        current_map_file.path = Some(event.path.clone());
-        config_events.write(UpdateLastMapPath {
-            path: event.path.clone(),
-        });
-
-        // Clear dirty state (freshly loaded map is clean)
-        dirty_state.is_dirty = false;
-        dirty_state.last_known_item_count = 0; // Will be updated by detection system
-        dirty_state.last_known_annotation_count = 0;
-
-        // Update open maps - create new entry for this map
-        let map_name = event
-            .path
-            .file_stem()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let new_id = open_maps.next_id;
-        open_maps.next_id += 1;
-
-        open_maps.maps.insert(
-            new_id,
-            OpenMap {
-                id: new_id,
-                name: map_name,
-                path: Some(event.path.clone()),
-                is_dirty: false,
-                saved_state: None,
-            },
-        );
-        open_maps.active_map_id = Some(new_id);
     }
 }
 
@@ -424,6 +645,7 @@ pub fn new_map_system(
     mut commands: Commands,
     mut events: MessageReader<NewMapRequest>,
     mut map_data: ResMut<MapData>,
+    mut fog_data: ResMut<FogOfWarData>,
     existing_items: Query<Entity, With<PlacedItem>>,
     existing_annotations: Query<Entity, With<AnnotationMarker>>,
     mut current_map_file: ResMut<CurrentMapFile>,
@@ -443,6 +665,9 @@ pub fn new_map_system(
 
         // Reset map data to default
         *map_data = MapData::default();
+
+        // Reset fog of war to default (empty = fully fogged)
+        *fog_data = FogOfWarData::default();
 
         // Clear current map file (new map has no file yet)
         current_map_file.path = None;
@@ -481,35 +706,63 @@ pub fn ensure_maps_directory() {
     }
 }
 
-/// System that detects changes to the map and marks it as dirty
-pub fn detect_map_changes(
+/// System that detects when items are added to the map
+pub fn detect_item_additions(
     mut dirty_state: ResMut<MapDirtyState>,
     mut open_maps: ResMut<OpenMaps>,
-    placed_items: Query<Entity, With<PlacedItem>>,
-    annotations: Query<Entity, With<AnnotationMarker>>,
+    added_items: Query<Entity, Added<PlacedItem>>,
+    added_annotations: Query<Entity, Added<AnnotationMarker>>,
 ) {
-    let current_item_count = placed_items.iter().count();
-    let current_annotation_count = annotations.iter().count();
+    // Only run if something was added
+    if added_items.is_empty() && added_annotations.is_empty() {
+        return;
+    }
 
-    // Check if counts changed
-    let count_changed = current_item_count != dirty_state.last_known_item_count
-        || current_annotation_count != dirty_state.last_known_annotation_count;
+    dirty_state.is_dirty = true;
+    if let Some(active_map) = open_maps.active_map_mut() {
+        active_map.is_dirty = true;
+    }
+}
 
-    if count_changed {
-        dirty_state.is_dirty = true;
-        dirty_state.last_known_item_count = current_item_count;
-        dirty_state.last_known_annotation_count = current_annotation_count;
+/// System that detects when items are removed from the map
+pub fn detect_item_removals(
+    mut dirty_state: ResMut<MapDirtyState>,
+    mut open_maps: ResMut<OpenMaps>,
+    mut removed_items: RemovedComponents<PlacedItem>,
+    mut removed_annotations: RemovedComponents<AnnotationMarker>,
+) {
+    // Only run if something was removed
+    if removed_items.read().next().is_none() && removed_annotations.read().next().is_none() {
+        return;
+    }
 
-        // Update the active map's dirty state
-        if let Some(active_map) = open_maps.active_map_mut() {
-            active_map.is_dirty = true;
-        }
+    dirty_state.is_dirty = true;
+    if let Some(active_map) = open_maps.active_map_mut() {
+        active_map.is_dirty = true;
+    }
+}
+
+/// System that detects when items are transformed (moved, rotated, scaled)
+pub fn detect_item_transforms(
+    mut dirty_state: ResMut<MapDirtyState>,
+    mut open_maps: ResMut<OpenMaps>,
+    changed_items: Query<Entity, (Changed<Transform>, With<PlacedItem>)>,
+) {
+    // Only run if transforms changed
+    if changed_items.is_empty() {
+        return;
+    }
+
+    dirty_state.is_dirty = true;
+    if let Some(active_map) = open_maps.active_map_mut() {
+        active_map.is_dirty = true;
     }
 }
 
 /// Helper to capture current map state as a SavedMap
 fn capture_current_map_state(
     map_data: &MapData,
+    fog_data: &FogOfWarData,
     placed_items: &Query<(&PlacedItem, &Transform)>,
     paths: &Query<&DrawnPath>,
     lines: &Query<&DrawnLine>,
@@ -549,7 +802,10 @@ fn capture_current_map_state(
         })
         .collect();
 
+    let asset_manifest = AssetManifest::from_items(items.iter());
+
     SavedMap {
+        asset_manifest,
         map_data: map_data.clone(),
         placed_items: items,
         annotations: SavedAnnotations {
@@ -557,6 +813,7 @@ fn capture_current_map_state(
             lines: saved_lines,
             text_boxes: saved_texts,
         },
+        fog_of_war: SavedFogOfWar::from(fog_data),
     }
 }
 
@@ -566,6 +823,7 @@ pub fn switch_map_system(
     mut commands: Commands,
     mut events: MessageReader<SwitchMapRequest>,
     mut map_data: ResMut<MapData>,
+    mut fog_data: ResMut<FogOfWarData>,
     mut open_maps: ResMut<OpenMaps>,
     mut current_map_file: ResMut<CurrentMapFile>,
     mut dirty_state: ResMut<MapDirtyState>,
@@ -587,8 +845,14 @@ pub fn switch_map_system(
 
         // First, save the current map state
         if let Some(current_id) = open_maps.active_map_id {
-            let current_state =
-                capture_current_map_state(&map_data, &placed_items_query, &paths, &lines, &texts);
+            let current_state = capture_current_map_state(
+                &map_data,
+                &fog_data,
+                &placed_items_query,
+                &paths,
+                &lines,
+                &texts,
+            );
             let current_dirty = dirty_state.is_dirty;
 
             if let Some(current_map) = open_maps.maps.get_mut(&current_id) {
@@ -613,6 +877,9 @@ pub fn switch_map_system(
             if let Some(saved_state) = &target_map.saved_state {
                 // Restore map data
                 *map_data = saved_state.map_data.clone();
+
+                // Restore fog of war data
+                *fog_data = FogOfWarData::from(saved_state.fog_of_war.clone());
 
                 // Spawn placed items
                 for item in &saved_state.placed_items {
@@ -685,6 +952,8 @@ pub fn switch_map_system(
                 // No saved state, start with empty/default map
                 *map_data = MapData::default();
                 map_data.name = target_map.name.clone();
+                // Reset fog of war to default (empty = fully fogged)
+                *fog_data = FogOfWarData::default();
             }
 
             // Update current map file

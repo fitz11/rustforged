@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
+use crate::editor::fog::FogState;
 use crate::editor::{AnnotationSettings, CurrentTool, EditorTool, SelectedLayer};
 use crate::map::{Layer, MapData};
 use crate::session::{LiveSessionState, MonitorSelectionDialog};
@@ -72,9 +73,13 @@ pub fn tool_settings_ui(
     current_tool: Res<CurrentTool>,
     mut annotation_settings: ResMut<AnnotationSettings>,
     mut selected_layer: ResMut<SelectedLayer>,
+    mut fog_state: ResMut<FogState>,
 ) -> Result {
     // Only show settings bar for tools that have settings
-    let has_settings = current_tool.tool.is_annotation_tool() || current_tool.tool == EditorTool::Place;
+    let has_settings = current_tool.tool.is_annotation_tool()
+        || current_tool.tool == EditorTool::Place
+        || current_tool.tool == EditorTool::Brush
+        || current_tool.tool == EditorTool::Fog;
     if !has_settings {
         return Ok(());
     }
@@ -90,10 +95,15 @@ pub fn tool_settings_ui(
                 ui.spacing_mut().item_spacing.x = 6.0;
 
                 match current_tool.tool {
-                    EditorTool::Place => {
-                        // Place tool settings
+                    EditorTool::Place | EditorTool::Brush => {
+                        // Place/Brush tool settings
+                        let tool_name = if current_tool.tool == EditorTool::Place {
+                            "Place"
+                        } else {
+                            "Brush"
+                        };
                         ui.label(
-                            egui::RichText::new("Place Settings:")
+                            egui::RichText::new(format!("{} Settings:", tool_name))
                                 .color(egui::Color32::LIGHT_GRAY),
                         );
 
@@ -101,7 +111,12 @@ pub fn tool_settings_ui(
 
                         // Layer selector
                         ui.label("Layer:");
-                        egui::ComboBox::from_id_salt("place_layer_select")
+                        let combo_id = if current_tool.tool == EditorTool::Place {
+                            "place_layer_select"
+                        } else {
+                            "brush_layer_select"
+                        };
+                        egui::ComboBox::from_id_salt(combo_id)
                             .selected_text(selected_layer.layer.display_name())
                             .width(100.0)
                             .show_ui(ui, |ui| {
@@ -115,6 +130,13 @@ pub fn tool_settings_ui(
                                     }
                                 }
                             });
+
+                        ui.add_space(12.0);
+                        ui.label(
+                            egui::RichText::new("C/Shift+C: Cycle layers")
+                                .color(egui::Color32::GRAY)
+                                .size(11.0),
+                        );
                     }
                     EditorTool::Draw | EditorTool::Line | EditorTool::Text => {
                         // Annotation tool settings
@@ -211,6 +233,43 @@ pub fn tool_settings_ui(
                             _ => {}
                         }
                     }
+                    EditorTool::Fog => {
+                        // Fog tool settings
+                        ui.label(
+                            egui::RichText::new("Fog Settings:")
+                                .color(egui::Color32::LIGHT_GRAY),
+                        );
+
+                        ui.add_space(8.0);
+
+                        // Brush size slider
+                        ui.label("Brush Size:");
+                        ui.add(
+                            egui::DragValue::new(&mut fog_state.brush_size)
+                                .range(0.5..=5.0)
+                                .speed(0.1)
+                                .suffix(" cells"),
+                        );
+
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(12.0);
+
+                        // Editor opacity slider
+                        ui.label("Editor Opacity:");
+                        ui.add(
+                            egui::Slider::new(&mut fog_state.editor_opacity, 0.0..=1.0)
+                                .fixed_decimals(2),
+                        );
+
+                        ui.add_space(8.0);
+
+                        ui.label(
+                            egui::RichText::new("Shift+Click: Single cell mode")
+                                .color(egui::Color32::GRAY)
+                                .size(11.0),
+                        );
+                    }
                     _ => {}
                 }
             });
@@ -222,10 +281,11 @@ pub fn tool_settings_ui(
 fn tool_button_label(tool: &EditorTool) -> &'static str {
     match tool {
         EditorTool::Select => "Select [V]",
-        EditorTool::Place => "Place [B]",
-        EditorTool::Erase => "Erase [X]",
+        EditorTool::Place => "Place [P]",
+        EditorTool::Brush => "Brush [B]",
         EditorTool::Draw => "Draw [D]",
         EditorTool::Line => "Line [L]",
         EditorTool::Text => "Text [T]",
+        EditorTool::Fog => "Fog [F]",
     }
 }

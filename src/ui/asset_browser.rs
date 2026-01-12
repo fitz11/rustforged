@@ -1,17 +1,46 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiTextureHandle, EguiUserTextures};
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
 
 use crate::assets::{
     create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
-    AssetCategory, AssetLibrary, LibraryAsset, SelectedAsset, ThumbnailCache, THUMBNAIL_SIZE,
+    AssetCategory, AssetLibrary, LibraryAsset, RenameAssetRequest, SelectedAsset, ThumbnailCache,
+    UpdateLibraryMetadataRequest, THUMBNAIL_SIZE,
 };
-use crate::config::{AppConfig, SetDefaultLibrary};
+use crate::constants::MAX_THUMBNAILS_PER_FRAME;
+use crate::config::{AppConfig, SetDefaultLibraryRequest};
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::{CurrentMapFile, LoadMapRequest, MapData, MapDirtyState, OpenMaps, SwitchMapRequest};
 
 use super::asset_import::AssetImportDialog;
 use super::file_menu::FileMenuState;
+use super::settings_dialog::SettingsDialogState;
+
+const LIBRARY_METADATA_FILE: &str = ".library.json";
+
+/// Bundle of map-related resources and event writers
+#[derive(SystemParam)]
+pub struct MapResources<'w> {
+    pub map_data: ResMut<'w, MapData>,
+    pub current_map_file: Res<'w, CurrentMapFile>,
+    pub dirty_state: ResMut<'w, MapDirtyState>,
+    pub open_maps: Res<'w, OpenMaps>,
+    pub load_events: MessageWriter<'w, LoadMapRequest>,
+    pub switch_events: MessageWriter<'w, SwitchMapRequest>,
+}
+
+/// Bundle of dialog state resources
+#[derive(SystemParam)]
+pub struct DialogStates<'w> {
+    pub menu_state: ResMut<'w, FileMenuState>,
+    pub import_dialog: ResMut<'w, AssetImportDialog>,
+    pub settings_state: ResMut<'w, SettingsDialogState>,
+}
 
 /// Scan the maps directory and return sorted list of map names (without extension)
 fn scan_maps_directory(maps_dir: &std::path::Path) -> Vec<(String, PathBuf)> {
@@ -44,6 +73,115 @@ fn scan_maps_directory(maps_dir: &std::path::Path) -> Vec<(String, PathBuf)> {
     maps
 }
 
+/// Export an entire library directory to a zip file
+fn export_library_to_zip(library_path: &Path, dest_path: &Path) -> Result<(), String> {
+    let file = File::create(dest_path).map_err(|e| format!("Failed to create zip file: {}", e))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    // Walk the library directory recursively
+    fn add_directory_to_zip(
+        zip: &mut ZipWriter<File>,
+        base_path: &Path,
+        current_path: &Path,
+        options: SimpleFileOptions,
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(current_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let relative_path = path
+                .strip_prefix(base_path)
+                .map_err(|e| format!("Failed to get relative path: {}", e))?;
+            let relative_str = relative_path.to_string_lossy();
+
+            if path.is_dir() {
+                // Add directory entry
+                zip.add_directory(format!("{}/", relative_str), options)
+                    .map_err(|e| format!("Failed to add directory to zip: {}", e))?;
+                // Recurse into subdirectory
+                add_directory_to_zip(zip, base_path, &path, options)?;
+            } else {
+                // Add file
+                zip.start_file(relative_str.to_string(), options)
+                    .map_err(|e| format!("Failed to start file in zip: {}", e))?;
+                let mut file =
+                    File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer)
+                    .map_err(|e| format!("Failed to read file: {}", e))?;
+                zip.write_all(&buffer)
+                    .map_err(|e| format!("Failed to write file to zip: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+
+    add_directory_to_zip(&mut zip, library_path, library_path, options)?;
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    Ok(())
+}
+
+/// Import a library from a zip file to a destination directory
+fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), String> {
+    let file = File::open(zip_path).map_err(|e| format!("Failed to open zip file: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {}", e))?;
+
+    // First pass: check if .library.json exists
+    let mut has_library_metadata = false;
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name();
+        // Check if .library.json is at the root level
+        if name == LIBRARY_METADATA_FILE || name == format!("{}/", LIBRARY_METADATA_FILE) {
+            has_library_metadata = true;
+            break;
+        }
+    }
+
+    if !has_library_metadata {
+        return Err(
+            "Invalid library archive: missing .library.json file.\n\n\
+             This zip file does not contain a valid asset library."
+                .to_string(),
+        );
+    }
+
+    // Create destination directory
+    std::fs::create_dir_all(dest_path)
+        .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+
+    // Extract all files
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let outpath = dest_path.join(entry.name());
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&outpath)
+                .map_err(|e| format!("Failed to create directory: {}", e))?;
+        } else {
+            // Ensure parent directory exists
+            if let Some(parent) = outpath.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+            }
+            let mut outfile = File::create(&outpath)
+                .map_err(|e| format!("Failed to create file: {}", e))?;
+            std::io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("Failed to extract file: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// System that loads thumbnails and registers them with egui.
 /// Runs in Update before the egui pass to avoid timing issues.
 pub fn load_and_register_thumbnails(
@@ -52,7 +190,7 @@ pub fn load_and_register_thumbnails(
     mut images: ResMut<Assets<Image>>,
     mut egui_textures: ResMut<EguiUserTextures>,
 ) {
-    // Load up to 3 new thumbnails per frame
+    // Load a limited number of new thumbnails per frame to avoid stuttering
     let assets_to_load: Vec<PathBuf> = library
         .assets
         .iter()
@@ -60,7 +198,7 @@ pub fn load_and_register_thumbnails(
             !thumbnail_cache.thumbnails.contains_key(&a.full_path)
                 && !thumbnail_cache.has_failed(&a.full_path)
         })
-        .take(3)
+        .take(MAX_THUMBNAILS_PER_FRAME)
         .map(|a| a.full_path.clone())
         .collect();
 
@@ -89,7 +227,7 @@ pub fn load_and_register_thumbnails(
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct AssetBrowserState {
     pub selected_category: AssetCategory,
     /// Whether the library info section is expanded
@@ -110,6 +248,206 @@ pub struct AssetBrowserState {
     pub cached_maps: Vec<(String, PathBuf)>,
     /// Last path used for map scanning (to detect changes)
     pub last_maps_scan_path: Option<PathBuf>,
+    /// Error message for library import failures
+    pub library_import_error: Option<String>,
+    /// Success message for export/import operations
+    pub library_operation_success: Option<String>,
+    /// Whether the rename dialog is open
+    pub rename_dialog_open: bool,
+    /// New name input for rename dialog
+    pub rename_new_name: String,
+    /// Error message for rename operation
+    pub rename_error: Option<String>,
+    /// Whether the rename map dialog is open
+    pub rename_map_dialog_open: bool,
+    /// New name input for rename map dialog
+    pub rename_map_new_name: String,
+    /// Whether the rename library dialog is open
+    pub rename_library_dialog_open: bool,
+    /// New name input for rename library dialog
+    pub rename_library_new_name: String,
+    /// Whether the move asset dialog is open
+    pub move_dialog_open: bool,
+    /// Error message for move operation
+    pub move_error: Option<String>,
+}
+
+impl Default for AssetBrowserState {
+    fn default() -> Self {
+        Self {
+            selected_category: AssetCategory::default(),
+            library_expanded: true, // Expanded by default
+            selected_dimensions: None,
+            cached_dimensions_path: None,
+            last_library_path: None,
+            show_set_default_dialog: false,
+            set_default_dialog_path: None,
+            set_as_default_checked: false,
+            cached_maps: Vec::new(),
+            last_maps_scan_path: None,
+            library_import_error: None,
+            library_operation_success: None,
+            rename_dialog_open: false,
+            rename_new_name: String::new(),
+            rename_error: None,
+            rename_map_dialog_open: false,
+            rename_map_new_name: String::new(),
+            rename_library_dialog_open: false,
+            rename_library_new_name: String::new(),
+            move_dialog_open: false,
+            move_error: None,
+        }
+    }
+}
+
+/// Rename an asset file and update all map files that reference it
+fn rename_asset(
+    old_path: &Path,
+    new_name: &str,
+    library_path: &Path,
+) -> Result<(PathBuf, String, String), String> {
+    // Validate new name
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        return Err("Name cannot be empty".to_string());
+    }
+
+    // Check for invalid characters
+    if new_name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
+        return Err("Name contains invalid characters".to_string());
+    }
+
+    let extension = old_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    let parent = old_path.parent().ok_or("Invalid file path")?;
+    let new_filename = if extension.is_empty() {
+        new_name.to_string()
+    } else {
+        format!("{}.{}", new_name, extension)
+    };
+
+    let new_path = parent.join(&new_filename);
+
+    // Check if target already exists
+    if new_path.exists() && new_path != old_path {
+        return Err("A file with that name already exists".to_string());
+    }
+
+    // Rename the file
+    std::fs::rename(old_path, &new_path)
+        .map_err(|e| format!("Failed to rename file: {}", e))?;
+
+    // Calculate old and new relative paths for map updates
+    let old_relative = if library_path.starts_with("assets/library") {
+        // Internal library - use relative path
+        let category_folder = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let old_filename = old_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        format!("library/{}/{}", category_folder, old_filename)
+    } else {
+        old_path.to_string_lossy().to_string()
+    };
+
+    let new_relative = if library_path.starts_with("assets/library") {
+        let category_folder = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        format!("library/{}/{}", category_folder, new_filename)
+    } else {
+        new_path.to_string_lossy().to_string()
+    };
+
+    // Update all map files in the library's maps folder
+    let maps_dir = library_path.join("maps");
+    if maps_dir.exists() {
+        update_asset_paths_in_maps(&maps_dir, &old_relative, &new_relative)?;
+    }
+
+    Ok((new_path, old_relative, new_relative))
+}
+
+/// Update asset_path references in all map files
+fn update_asset_paths_in_maps(maps_dir: &Path, old_path: &str, new_path: &str) -> Result<(), String> {
+    let entries = std::fs::read_dir(maps_dir)
+        .map_err(|e| format!("Failed to read maps directory: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            // Read the map file
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read map file {:?}: {}", path, e))?;
+
+            // Check if this map references the old asset path
+            if content.contains(old_path) {
+                // Replace the old path with the new path
+                let updated = content.replace(old_path, new_path);
+
+                // Write back
+                std::fs::write(&path, updated)
+                    .map_err(|e| format!("Failed to update map file {:?}: {}", path, e))?;
+
+                info!("Updated asset path in map: {:?}", path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Move an asset file to a different category folder and update all map files that reference it
+fn move_asset(
+    old_path: &Path,
+    target_category: AssetCategory,
+    library_path: &Path,
+) -> Result<(PathBuf, String, String), String> {
+    // Get the filename
+    let filename = old_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Invalid file path")?;
+
+    // Build the new path in the target category folder
+    let new_folder = library_path.join(target_category.folder_name());
+    let new_path = new_folder.join(filename);
+
+    // Check if target already exists
+    if new_path.exists() {
+        return Err(format!(
+            "A file named '{}' already exists in {}",
+            filename,
+            target_category.display_name()
+        ));
+    }
+
+    // Ensure target folder exists
+    if !new_folder.exists() {
+        std::fs::create_dir_all(&new_folder)
+            .map_err(|e| format!("Failed to create target folder: {}", e))?;
+    }
+
+    // Calculate relative paths for map updates
+    let old_relative = old_path
+        .strip_prefix(library_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
+
+    let new_relative = new_path
+        .strip_prefix(library_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
+
+    // Move the file
+    std::fs::rename(old_path, &new_path)
+        .map_err(|e| format!("Failed to move file: {}", e))?;
+
+    // Update all map files in the library's maps folder
+    let maps_dir = library_path.join("maps");
+    if maps_dir.exists() {
+        update_asset_paths_in_maps(&maps_dir, &old_relative, &new_relative)?;
+    }
+
+    Ok((new_path, old_relative, new_relative))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -119,23 +457,59 @@ pub fn asset_browser_ui(
     mut selected_asset: ResMut<SelectedAsset>,
     mut browser_state: ResMut<AssetBrowserState>,
     mut current_tool: ResMut<CurrentTool>,
-    mut menu_state: ResMut<FileMenuState>,
-    mut load_events: MessageWriter<LoadMapRequest>,
-    mut import_dialog: ResMut<AssetImportDialog>,
-    map_data: Res<MapData>,
     mut thumbnail_cache: ResMut<ThumbnailCache>,
     config: Res<AppConfig>,
-    mut set_default_events: MessageWriter<SetDefaultLibrary>,
-    current_map_file: Res<CurrentMapFile>,
-    dirty_state: Res<MapDirtyState>,
-    open_maps: Res<OpenMaps>,
-    mut switch_events: MessageWriter<SwitchMapRequest>,
+    mut set_default_events: MessageWriter<SetDefaultLibraryRequest>,
+    mut rename_events: MessageWriter<RenameAssetRequest>,
+    mut library_metadata_events: MessageWriter<UpdateLibraryMetadataRequest>,
+    mut map_res: MapResources,
+    mut dialogs: DialogStates,
 ) -> Result {
     // Clear thumbnail cache if library path changed
     let current_path = library.library_path.clone();
     if browser_state.last_library_path.as_ref() != Some(&current_path) {
         thumbnail_cache.clear();
         browser_state.last_library_path = Some(current_path);
+    }
+
+    // Handle F2 key to open rename dialog for selected asset
+    if let Ok(ctx) = contexts.ctx_mut() {
+        if ctx.input(|i| i.key_pressed(egui::Key::F2))
+            && !browser_state.rename_dialog_open
+            && let Some(ref asset) = selected_asset.asset
+        {
+            browser_state.rename_new_name = asset.name.clone();
+            browser_state.rename_error = None;
+            browser_state.rename_dialog_open = true;
+        }
+
+        // Handle F3 key to open rename map dialog
+        if ctx.input(|i| i.key_pressed(egui::Key::F3))
+            && !browser_state.rename_map_dialog_open
+        {
+            browser_state.rename_map_new_name = map_res.map_data.name.clone();
+            browser_state.rename_map_dialog_open = true;
+        }
+
+        // Handle F4 key to open rename library dialog
+        if ctx.input(|i| i.key_pressed(egui::Key::F4))
+            && !browser_state.rename_library_dialog_open
+        {
+            browser_state.rename_library_new_name = library.metadata.name.clone();
+            browser_state.rename_library_dialog_open = true;
+        }
+
+        // Handle Escape to close rename dialogs
+        if browser_state.rename_dialog_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            browser_state.rename_dialog_open = false;
+            browser_state.rename_error = None;
+        }
+        if browser_state.rename_map_dialog_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            browser_state.rename_map_dialog_open = false;
+        }
+        if browser_state.rename_library_dialog_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            browser_state.rename_library_dialog_open = false;
+        }
     }
 
     egui::SidePanel::left("asset_browser")
@@ -154,7 +528,8 @@ pub fn asset_browser_ui(
                 if ui.button(toggle_text).clicked() {
                     browser_state.library_expanded = !browser_state.library_expanded;
                 }
-                ui.label(egui::RichText::new("Asset Library").heading().size(18.0));
+                // Show library name from metadata
+                ui.label(egui::RichText::new(&library.metadata.name).heading().size(18.0));
             });
             ui.add_space(2.0);
 
@@ -179,7 +554,7 @@ pub fn asset_browser_ui(
 
                 // Library management buttons
                 ui.horizontal(|ui| {
-                    if ui.add_sized([70.0, 24.0], egui::Button::new("Open...")).clicked()
+                    if ui.add_sized([65.0, 24.0], egui::Button::new("Open...")).clicked()
                         && let Some(path) = rfd::FileDialog::new()
                             .set_title("Open Asset Library")
                             .pick_folder()
@@ -195,7 +570,7 @@ pub fn asset_browser_ui(
                         }
                     }
 
-                    if ui.add_sized([70.0, 24.0], egui::Button::new("New...")).clicked()
+                    if ui.add_sized([65.0, 24.0], egui::Button::new("New...")).clicked()
                         && let Some(path) = rfd::FileDialog::new()
                             .set_title("Create New Asset Library")
                             .pick_folder()
@@ -209,59 +584,86 @@ pub fn asset_browser_ui(
                             browser_state.set_as_default_checked = false;
                         }
                     }
+
+                    if ui.add_sized([65.0, 24.0], egui::Button::new("Rename"))
+                        .on_hover_text("Rename library (F4)")
+                        .clicked()
+                    {
+                        browser_state.rename_library_new_name = library.metadata.name.clone();
+                        browser_state.rename_library_dialog_open = true;
+                    }
                 });
 
-                // Recent libraries section
-                if !config.data.recent_libraries.is_empty() {
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new("Recent:").small().weak());
-                    for recent_path in &config.data.recent_libraries {
-                        // Skip current library
-                        if recent_path == &library.library_path {
-                            continue;
-                        }
-                        // Skip if doesn't exist
-                        if !recent_path.exists() {
-                            continue;
-                        }
-                        let display_name = recent_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Unknown");
-                        let full_path_str = recent_path.to_string_lossy();
-                        if ui
-                            .small_button(display_name)
-                            .on_hover_text(full_path_str.as_ref())
-                            .clicked()
-                            && let Err(e) = open_library_directory(&mut library, recent_path.clone())
-                        {
-                            warn!("Failed to open recent library: {}", e);
+                // Export/Import library buttons
+                ui.horizontal(|ui| {
+                    // Export library to zip
+                    if ui.add_sized([70.0, 24.0], egui::Button::new("Export...")).clicked()
+                        && let Some(dest_path) = rfd::FileDialog::new()
+                            .set_title("Export Library as Zip")
+                            .set_file_name(format!("{}.zip", library.metadata.name))
+                            .add_filter("Zip Archive", &["zip"])
+                            .save_file()
+                    {
+                        match export_library_to_zip(&library.library_path, &dest_path) {
+                            Ok(()) => {
+                                browser_state.library_operation_success =
+                                    Some(format!("Library exported to:\n{}", dest_path.display()));
+                            }
+                            Err(e) => {
+                                browser_state.library_import_error = Some(e);
+                            }
                         }
                     }
-                }
+
+                    // Import library from zip
+                    if ui.add_sized([70.0, 24.0], egui::Button::new("Import...")).clicked()
+                        && let Some(zip_path) = rfd::FileDialog::new()
+                            .set_title("Import Library from Zip")
+                            .add_filter("Zip Archive", &["zip"])
+                            .pick_file()
+                        && let Some(dest_path) = rfd::FileDialog::new()
+                            .set_title("Select Destination Folder")
+                            .pick_folder()
+                    {
+                        match import_library_from_zip(&zip_path, &dest_path) {
+                            Ok(()) => {
+                                // Open the imported library
+                                if let Err(e) = open_library_directory(&mut library, dest_path.clone()) {
+                                    browser_state.library_import_error =
+                                        Some(format!("Library extracted but failed to open: {}", e));
+                                } else {
+                                    browser_state.library_operation_success =
+                                        Some("Library imported successfully!".to_string());
+                                    browser_state.show_set_default_dialog = true;
+                                    browser_state.set_default_dialog_path = Some(dest_path);
+                                    browser_state.set_as_default_checked = false;
+                                }
+                            }
+                            Err(e) => {
+                                browser_state.library_import_error = Some(e);
+                            }
+                        }
+                    }
+                });
 
                 ui.add_space(10.0);
 
                 // Maps subsection
-                ui.horizontal(|ui| {
-                    ui.separator();
-                    ui.label(egui::RichText::new("Maps").size(14.0).strong());
-                    ui.separator();
-                });
-                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Maps").size(13.0).strong());
+                ui.separator();
 
                 // Show open maps with unsaved indicators
                 let mut map_to_switch: Option<u64> = None;
 
-                if !open_maps.maps.is_empty() {
+                if !map_res.open_maps.maps.is_empty() {
                     ui.label(egui::RichText::new("Open:").size(12.0).weak());
 
                     // Sort maps by ID to maintain consistent order
-                    let mut sorted_maps: Vec<_> = open_maps.maps.values().collect();
+                    let mut sorted_maps: Vec<_> = map_res.open_maps.maps.values().collect();
                     sorted_maps.sort_by_key(|m| m.id);
 
                     for map in sorted_maps {
-                        let is_active = open_maps.active_map_id == Some(map.id);
+                        let is_active = map_res.open_maps.active_map_id == Some(map.id);
                         let display_name = if map.is_dirty {
                             format!("{}*", map.name)
                         } else {
@@ -303,12 +705,12 @@ pub fn asset_browser_ui(
                     ui.add_space(4.0);
                 } else {
                     // Fallback to showing current map indicator
-                    if let Some(ref current_path) = current_map_file.path {
+                    if let Some(ref current_path) = map_res.current_map_file.path {
                         let current_name = current_path
                             .file_stem()
                             .and_then(|n| n.to_str())
                             .unwrap_or("Unknown");
-                        let dirty_indicator = if dirty_state.is_dirty { "*" } else { "" };
+                        let dirty_indicator = if map_res.dirty_state.is_dirty { "*" } else { "" };
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Current:").size(12.0).weak());
                             ui.label(
@@ -319,7 +721,7 @@ pub fn asset_browser_ui(
                         });
                         ui.add_space(4.0);
                     } else {
-                        let dirty_indicator = if dirty_state.is_dirty { "*" } else { "" };
+                        let dirty_indicator = if map_res.dirty_state.is_dirty { "*" } else { "" };
                         ui.label(
                             egui::RichText::new(format!("(unsaved map){}", dirty_indicator))
                                 .size(12.0)
@@ -332,48 +734,40 @@ pub fn asset_browser_ui(
 
                 // Switch to selected map if requested
                 if let Some(target_id) = map_to_switch {
-                    switch_events.write(SwitchMapRequest { map_id: target_id });
+                    map_res.switch_events.write(SwitchMapRequest { map_id: target_id });
                 }
 
                 ui.horizontal(|ui| {
-                    if ui.add_sized([50.0, 24.0], egui::Button::new("New")).clicked() {
-                        menu_state.show_new_confirmation = true;
+                    if ui.add_sized([45.0, 24.0], egui::Button::new("New")).clicked() {
+                        dialogs.menu_state.show_new_confirmation = true;
                     }
-                    if ui.add_sized([50.0, 24.0], egui::Button::new("Save")).clicked() {
-                        menu_state.save_filename = map_data.name.clone();
-                        menu_state.show_save_name_dialog = true;
+                    if ui.add_sized([45.0, 24.0], egui::Button::new("Save")).clicked() {
+                        dialogs.menu_state.save_filename = map_res.map_data.name.clone();
+                        dialogs.menu_state.show_save_name_dialog = true;
                     }
-                    if ui.add_sized([50.0, 24.0], egui::Button::new("Load")).clicked() {
-                        let maps_dir = library.library_path.join("maps");
-                        let maps_dir = if maps_dir.exists() {
-                            maps_dir
-                        } else {
-                            PathBuf::from("assets/maps")
-                        };
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Map Files", &["json"])
-                            .set_directory(&maps_dir)
-                            .set_title("Load Map")
-                            .pick_file()
-                        {
-                            load_events.write(LoadMapRequest { path });
-                        }
+                    if ui.add_sized([55.0, 24.0], egui::Button::new("Rename"))
+                        .on_hover_text("Rename map (F3)")
+                        .clicked()
+                    {
+                        browser_state.rename_map_new_name = map_res.map_data.name.clone();
+                        browser_state.rename_map_dialog_open = true;
                     }
                 });
 
-                // Scan maps directory and show available maps
+                // Scan maps directory (within library only)
                 let maps_dir = library.library_path.join("maps");
-                let fallback_maps_dir = PathBuf::from("assets/maps");
-                let effective_maps_dir = if maps_dir.exists() {
-                    maps_dir
-                } else {
-                    fallback_maps_dir
-                };
+
+                // Ensure maps directory exists
+                if !maps_dir.exists()
+                    && let Err(e) = std::fs::create_dir_all(&maps_dir)
+                {
+                    warn!("Failed to create maps directory: {}", e);
+                }
 
                 // Refresh cached maps if directory changed
-                if browser_state.last_maps_scan_path.as_ref() != Some(&effective_maps_dir) {
-                    browser_state.cached_maps = scan_maps_directory(&effective_maps_dir);
-                    browser_state.last_maps_scan_path = Some(effective_maps_dir.clone());
+                if browser_state.last_maps_scan_path.as_ref() != Some(&maps_dir) {
+                    browser_state.cached_maps = scan_maps_directory(&maps_dir);
+                    browser_state.last_maps_scan_path = Some(maps_dir.clone());
                 }
 
                 if !browser_state.cached_maps.is_empty() {
@@ -381,7 +775,7 @@ pub fn asset_browser_ui(
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Available:").size(12.0).weak());
                         if ui.small_button("R").on_hover_text("Refresh map list").clicked() {
-                            browser_state.cached_maps = scan_maps_directory(&effective_maps_dir);
+                            browser_state.cached_maps = scan_maps_directory(&maps_dir);
                         }
                     });
 
@@ -391,7 +785,7 @@ pub fn asset_browser_ui(
                         .max_height(120.0)
                         .show(ui, |ui| {
                             for (map_name, map_path) in &browser_state.cached_maps {
-                                let is_current = current_map_file
+                                let is_current = map_res.current_map_file
                                     .path
                                     .as_ref()
                                     .map(|p| p == map_path)
@@ -416,7 +810,7 @@ pub fn asset_browser_ui(
                                         .clicked()
                                         && !is_current
                                     {
-                                        load_events.write(LoadMapRequest {
+                                        map_res.load_events.write(LoadMapRequest {
                                             path: map_path.clone(),
                                         });
                                     }
@@ -428,16 +822,12 @@ pub fn asset_browser_ui(
                 ui.add_space(10.0);
 
                 // Assets subsection
-                ui.horizontal(|ui| {
-                    ui.separator();
-                    ui.label(egui::RichText::new("Assets").size(14.0).strong());
-                    ui.separator();
-                });
-                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Assets").size(13.0).strong());
+                ui.separator();
 
                 ui.horizontal(|ui| {
                     if ui.add_sized([80.0, 24.0], egui::Button::new("Import...")).clicked() {
-                        import_dialog.is_open = true;
+                        dialogs.import_dialog.is_open = true;
                     }
                 });
 
@@ -512,15 +902,42 @@ pub fn asset_browser_ui(
                                 );
                             }
 
-                            // Asset name (selectable)
-                            if ui
-                                .selectable_label(is_selected, &asset.name)
-                                .clicked()
-                            {
-                                browser_state.selected_dimensions = None;
-                                browser_state.cached_dimensions_path = None;
-                                selected_asset.asset = Some(asset.clone());
-                                current_tool.tool = EditorTool::Place;
+                            // Check if asset file is missing
+                            let is_missing = thumbnail_cache.has_failed(&asset.full_path)
+                                || !asset.full_path.exists();
+
+                            // Asset name (selectable) with visual indicator if missing
+                            let label_text = if is_missing {
+                                egui::RichText::new(&asset.name)
+                                    .color(egui::Color32::from_rgb(200, 100, 100))
+                            } else {
+                                egui::RichText::new(&asset.name)
+                            };
+
+                            let response = ui.selectable_label(is_selected, label_text);
+
+                            // Apply hover text and get final response
+                            let response = if is_missing {
+                                response.on_hover_text("Asset file not found")
+                            } else {
+                                response
+                            };
+
+                            if response.clicked() {
+                                // Validate file exists before selecting
+                                if !asset.full_path.exists() {
+                                    // Mark as failed in thumbnail cache
+                                    thumbnail_cache.failed.insert(asset.full_path.clone(), ());
+                                    warn!(
+                                        "Selected asset no longer exists: {:?}",
+                                        asset.full_path
+                                    );
+                                } else {
+                                    browser_state.selected_dimensions = None;
+                                    browser_state.cached_dimensions_path = None;
+                                    selected_asset.asset = Some(asset.clone());
+                                    current_tool.tool = EditorTool::Place;
+                                }
                             }
 
                             // File type badge on the right
@@ -552,7 +969,20 @@ pub fn asset_browser_ui(
             // SELECTED ASSET METADATA SECTION
             // =========================================
             if let Some(ref asset) = selected_asset.asset {
-                ui.label(egui::RichText::new("Selected Asset").size(14.0).strong());
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Selected Asset").size(14.0).strong());
+                    // Rename button
+                    if ui.small_button("Rename").on_hover_text("Rename asset (F2)").clicked() {
+                        browser_state.rename_new_name = asset.name.clone();
+                        browser_state.rename_error = None;
+                        browser_state.rename_dialog_open = true;
+                    }
+                    // Move button
+                    if ui.small_button("Move").on_hover_text("Move to another category").clicked() {
+                        browser_state.move_error = None;
+                        browser_state.move_dialog_open = true;
+                    }
+                });
                 ui.add_space(6.0);
 
                 // Asset name
@@ -597,6 +1027,21 @@ pub fn asset_browser_ui(
             } else {
                 ui.label(egui::RichText::new("No asset selected").size(13.0).weak());
             }
+
+            // Settings button at bottom
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                ui.add_space(4.0);
+                if ui
+                    .add_sized([100.0, 24.0], egui::Button::new("Settings"))
+                    .clicked()
+                {
+                    dialogs.settings_state.load_from_config(&config);
+                    dialogs.settings_state.load_library_info(&library);
+                    dialogs.settings_state.is_open = true;
+                }
+                ui.add_space(4.0);
+                ui.separator();
+            });
         });
 
     // "Set as default library" dialog
@@ -624,13 +1069,324 @@ pub fn asset_browser_ui(
                     if browser_state.set_as_default_checked
                         && let Some(ref path) = browser_state.set_default_dialog_path
                     {
-                        set_default_events.write(SetDefaultLibrary { path: path.clone() });
+                        set_default_events.write(SetDefaultLibraryRequest { path: path.clone() });
                     }
                     browser_state.show_set_default_dialog = false;
                     browser_state.set_default_dialog_path = None;
                     browser_state.set_as_default_checked = false;
                 }
             });
+    }
+
+    // Library import error dialog
+    if let Some(ref error) = browser_state.library_import_error.clone() {
+        egui::Window::new("Import Error")
+            .collapsible(false)
+            .resizable(true)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                ui.colored_label(egui::Color32::RED, "Failed to import library");
+                ui.add_space(8.0);
+                egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                    ui.label(error);
+                });
+                ui.add_space(8.0);
+                if ui.button("OK").clicked() {
+                    browser_state.library_import_error = None;
+                }
+            });
+    }
+
+    // Library operation success dialog
+    if let Some(ref message) = browser_state.library_operation_success.clone() {
+        egui::Window::new("Success")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                ui.label(message);
+                ui.add_space(8.0);
+                if ui.button("OK").clicked() {
+                    browser_state.library_operation_success = None;
+                }
+            });
+    }
+
+    // Asset rename dialog
+    if browser_state.rename_dialog_open {
+        let mut close_dialog = false;
+        let mut do_rename = false;
+
+        egui::Window::new("Rename Asset")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                ui.label("Enter new name:");
+                ui.add_space(4.0);
+
+                let response = ui.text_edit_singleline(&mut browser_state.rename_new_name);
+
+                // Request focus only when first opened (not every frame)
+                if !response.has_focus() {
+                    response.request_focus();
+                }
+
+                // Handle Enter key
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    do_rename = true;
+                }
+
+                // Show error message if any
+                if let Some(ref error) = browser_state.rename_error {
+                    ui.add_space(4.0);
+                    ui.colored_label(egui::Color32::RED, error);
+                }
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Rename").clicked() {
+                        do_rename = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close_dialog = true;
+                    }
+                });
+            });
+
+        // Handle rename action
+        if do_rename
+            && let Some(ref asset) = selected_asset.asset.clone()
+        {
+            match rename_asset(&asset.full_path, &browser_state.rename_new_name, &library.library_path) {
+                Ok((new_path, old_relative, new_relative)) => {
+                    // Update the asset in the library
+                    if let Some(lib_asset) = library.assets.iter_mut().find(|a| a.full_path == asset.full_path) {
+                        lib_asset.full_path = new_path.clone();
+                        lib_asset.relative_path = new_relative.clone();
+                        lib_asset.name = browser_state.rename_new_name.trim().to_string();
+                    }
+
+                    // Update the selected asset
+                    if let Some(ref mut sel) = selected_asset.asset {
+                        sel.full_path = new_path;
+                        sel.relative_path = new_relative.clone();
+                        sel.name = browser_state.rename_new_name.trim().to_string();
+                    }
+
+                    // Clear thumbnail cache for this asset (path changed)
+                    thumbnail_cache.thumbnails.remove(&asset.full_path);
+                    thumbnail_cache.texture_ids.remove(&asset.full_path);
+
+                    // Emit message to update currently placed items
+                    rename_events.write(RenameAssetRequest {
+                        old_path: old_relative,
+                        new_path: new_relative,
+                    });
+
+                    browser_state.rename_dialog_open = false;
+                    browser_state.rename_error = None;
+                    info!("Renamed asset: {} -> {}", asset.name, browser_state.rename_new_name);
+                }
+                Err(e) => {
+                    browser_state.rename_error = Some(e);
+                }
+            }
+        }
+
+        if close_dialog {
+            browser_state.rename_dialog_open = false;
+            browser_state.rename_error = None;
+        }
+    }
+
+    // Rename map dialog
+    if browser_state.rename_map_dialog_open {
+        let mut close_dialog = false;
+        let mut do_rename = false;
+
+        egui::Window::new("Rename Map")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                ui.label("Enter new map name:");
+                ui.add_space(4.0);
+
+                let response = ui.text_edit_singleline(&mut browser_state.rename_map_new_name);
+
+                // Request focus only when first opened (not every frame)
+                if !response.has_focus() {
+                    response.request_focus();
+                }
+
+                // Handle Enter key
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    do_rename = true;
+                }
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Rename").clicked() {
+                        do_rename = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close_dialog = true;
+                    }
+                });
+            });
+
+        if do_rename {
+            let new_name = browser_state.rename_map_new_name.trim().to_string();
+            if !new_name.is_empty() {
+                map_res.map_data.name = new_name;
+                map_res.dirty_state.is_dirty = true;
+                browser_state.rename_map_dialog_open = false;
+            }
+        }
+
+        if close_dialog {
+            browser_state.rename_map_dialog_open = false;
+        }
+    }
+
+    // Rename library dialog
+    if browser_state.rename_library_dialog_open {
+        let mut close_dialog = false;
+        let mut do_rename = false;
+
+        egui::Window::new("Rename Library")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                ui.label("Enter new library name:");
+                ui.add_space(4.0);
+
+                let response = ui.text_edit_singleline(&mut browser_state.rename_library_new_name);
+
+                // Request focus only when first opened (not every frame)
+                if !response.has_focus() {
+                    response.request_focus();
+                }
+
+                // Handle Enter key
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    do_rename = true;
+                }
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Rename").clicked() {
+                        do_rename = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close_dialog = true;
+                    }
+                });
+            });
+
+        if do_rename {
+            let new_name = browser_state.rename_library_new_name.trim().to_string();
+            if !new_name.is_empty() {
+                library_metadata_events.write(UpdateLibraryMetadataRequest { name: new_name });
+                browser_state.rename_library_dialog_open = false;
+            }
+        }
+
+        if close_dialog {
+            browser_state.rename_library_dialog_open = false;
+        }
+    }
+
+    // Move asset dialog
+    if browser_state.move_dialog_open {
+        let mut close_dialog = false;
+        let mut target_category: Option<AssetCategory> = None;
+
+        egui::Window::new("Move Asset")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                if let Some(ref asset) = selected_asset.asset {
+                    ui.label(format!("Move '{}' to:", asset.name));
+                    ui.add_space(8.0);
+
+                    // Show category buttons (excluding current category)
+                    for category in AssetCategory::all() {
+                        if *category != asset.category
+                            && ui.button(category.display_name()).clicked()
+                        {
+                            target_category = Some(*category);
+                        }
+                    }
+
+                    // Show error message if any
+                    if let Some(ref error) = browser_state.move_error {
+                        ui.add_space(4.0);
+                        ui.colored_label(egui::Color32::RED, error);
+                    }
+
+                    ui.add_space(8.0);
+                    if ui.button("Cancel").clicked() {
+                        close_dialog = true;
+                    }
+                } else {
+                    ui.label("No asset selected");
+                    if ui.button("Close").clicked() {
+                        close_dialog = true;
+                    }
+                }
+            });
+
+        // Handle move action
+        if let Some(category) = target_category
+            && let Some(ref asset) = selected_asset.asset.clone()
+        {
+            match move_asset(&asset.full_path, category, &library.library_path) {
+                Ok((new_path, old_relative, new_relative)) => {
+                    // Update the asset in the library
+                    if let Some(lib_asset) = library.assets.iter_mut().find(|a| a.full_path == asset.full_path) {
+                        lib_asset.full_path = new_path.clone();
+                        lib_asset.relative_path = new_relative.clone();
+                        lib_asset.category = category;
+                    }
+
+                    // Update the selected asset
+                    if let Some(ref mut sel) = selected_asset.asset {
+                        sel.full_path = new_path;
+                        sel.relative_path = new_relative.clone();
+                        sel.category = category;
+                    }
+
+                    // Update the browser to show the new category
+                    browser_state.selected_category = category;
+
+                    // Clear thumbnail cache for this asset (path changed)
+                    thumbnail_cache.thumbnails.remove(&asset.full_path);
+                    thumbnail_cache.texture_ids.remove(&asset.full_path);
+
+                    // Emit message to update currently placed items
+                    rename_events.write(RenameAssetRequest {
+                        old_path: old_relative,
+                        new_path: new_relative,
+                    });
+
+                    browser_state.move_dialog_open = false;
+                    browser_state.move_error = None;
+                    info!("Moved asset '{}' to {}", asset.name, category.display_name());
+                }
+                Err(e) => {
+                    browser_state.move_error = Some(e);
+                }
+            }
+        }
+
+        if close_dialog {
+            browser_state.move_dialog_open = false;
+            browser_state.move_error = None;
+        }
     }
 
     Ok(())
