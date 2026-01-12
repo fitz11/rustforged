@@ -23,10 +23,12 @@ env:
   CARGO_TERM_COLOR: always
   # Reduce noise in CI logs
   CARGO_INCREMENTAL: 0
+  # Use CI profile for faster builds
+  CARGO_PROFILE: ci
 
 jobs:
   ci:
-    name: Check, Lint, Test
+    name: Lint & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,12 +45,14 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
-      - name: Run cargo check
-        run: cargo check --all-targets
+        with:
+          # Prefix for cache key (auto-includes Cargo.lock hash + rust version)
+          prefix-key: v1
+          # Save cache even if build fails (helps when debugging)
+          cache-on-failure: true
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --profile ci --all-targets -- -D warnings
 
       - name: Run tests
-        run: cargo test
+        run: cargo test --profile ci
