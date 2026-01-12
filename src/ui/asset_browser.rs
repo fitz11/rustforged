@@ -106,17 +106,19 @@ pub fn asset_browser_ui(
             // =========================================
             // ASSET LIBRARY SECTION
             // =========================================
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let toggle_text = if browser_state.library_expanded {
                     "▼"
                 } else {
                     "▶"
                 };
-                if ui.small_button(toggle_text).clicked() {
+                if ui.button(toggle_text).clicked() {
                     browser_state.library_expanded = !browser_state.library_expanded;
                 }
-                ui.heading("Asset Library");
+                ui.label(egui::RichText::new("Asset Library").heading().size(18.0));
             });
+            ui.add_space(2.0);
 
             // Show current library path (truncated if too long)
             let path_str = library.library_path.to_string_lossy();
@@ -135,11 +137,11 @@ pub fn asset_browser_ui(
 
             // Library management and subsections (shown when expanded)
             if browser_state.library_expanded {
-                ui.add_space(4.0);
+                ui.add_space(6.0);
 
                 // Library management buttons
                 ui.horizontal(|ui| {
-                    if ui.button("Open...").clicked()
+                    if ui.add_sized([70.0, 24.0], egui::Button::new("Open...")).clicked()
                         && let Some(path) = rfd::FileDialog::new()
                             .set_title("Open Asset Library")
                             .pick_folder()
@@ -155,7 +157,7 @@ pub fn asset_browser_ui(
                         }
                     }
 
-                    if ui.button("New...").clicked()
+                    if ui.add_sized([70.0, 24.0], egui::Button::new("New...")).clicked()
                         && let Some(path) = rfd::FileDialog::new()
                             .set_title("Create New Asset Library")
                             .pick_folder()
@@ -200,24 +202,25 @@ pub fn asset_browser_ui(
                     }
                 }
 
-                ui.add_space(8.0);
+                ui.add_space(10.0);
 
                 // Maps subsection
                 ui.horizontal(|ui| {
                     ui.separator();
-                    ui.label(egui::RichText::new("Maps").strong());
+                    ui.label(egui::RichText::new("Maps").size(14.0).strong());
                     ui.separator();
                 });
+                ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
-                    if ui.button("New").clicked() {
+                    if ui.add_sized([50.0, 24.0], egui::Button::new("New")).clicked() {
                         menu_state.show_new_confirmation = true;
                     }
-                    if ui.button("Save").clicked() {
+                    if ui.add_sized([50.0, 24.0], egui::Button::new("Save")).clicked() {
                         menu_state.save_filename = map_data.name.clone();
                         menu_state.show_save_name_dialog = true;
                     }
-                    if ui.button("Load").clicked() {
+                    if ui.add_sized([50.0, 24.0], egui::Button::new("Load")).clicked() {
                         let maps_dir = library.library_path.join("maps");
                         let maps_dir = if maps_dir.exists() {
                             maps_dir
@@ -254,31 +257,33 @@ pub fn asset_browser_ui(
                     }
                 });
 
-                ui.add_space(8.0);
+                ui.add_space(10.0);
 
                 // Assets subsection
                 ui.horizontal(|ui| {
                     ui.separator();
-                    ui.label(egui::RichText::new("Assets").strong());
+                    ui.label(egui::RichText::new("Assets").size(14.0).strong());
                     ui.separator();
                 });
+                ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
-                    if ui.button("Import...").clicked() {
+                    if ui.add_sized([80.0, 24.0], egui::Button::new("Import...")).clicked() {
                         import_dialog.is_open = true;
                     }
                 });
 
-                ui.add_space(4.0);
+                ui.add_space(6.0);
             }
 
             ui.separator();
+            ui.add_space(4.0);
 
             ui.horizontal(|ui| {
                 for category in AssetCategory::all() {
                     let selected = browser_state.selected_category == *category;
                     if ui
-                        .selectable_label(selected, category.display_name())
+                        .selectable_label(selected, egui::RichText::new(category.display_name()).size(13.0))
                         .clicked()
                     {
                         browser_state.selected_category = *category;
@@ -286,6 +291,7 @@ pub fn asset_browser_ui(
                 }
             });
 
+            ui.add_space(4.0);
             ui.separator();
 
             let filtered_assets: Vec<&LibraryAsset> = library
@@ -372,25 +378,26 @@ pub fn asset_browser_ui(
             }
 
             ui.separator();
+            ui.add_space(4.0);
 
             // =========================================
             // SELECTED ASSET METADATA SECTION
             // =========================================
             if let Some(ref asset) = selected_asset.asset {
-                ui.label(egui::RichText::new("Selected Asset").strong());
-                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Selected Asset").size(14.0).strong());
+                ui.add_space(6.0);
 
                 // Asset name
-                ui.label(&asset.name);
+                ui.label(egui::RichText::new(&asset.name).size(13.0));
 
-                ui.add_space(4.0);
+                ui.add_space(6.0);
 
                 // Metadata in a subtle style
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Type:").small().weak());
+                    ui.label(egui::RichText::new("Type:").size(13.0).weak());
                     ui.label(
                         egui::RichText::new(asset.extension.to_uppercase())
-                            .small()
+                            .size(13.0)
                             .strong(),
                     );
                 });
@@ -408,19 +415,19 @@ pub fn asset_browser_ui(
                 }
 
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Size:").small().weak());
+                    ui.label(egui::RichText::new("Size:").size(13.0).weak());
                     if let Some((width, height)) = browser_state.selected_dimensions {
                         ui.label(
                             egui::RichText::new(format!("{}x{}", width, height))
-                                .small()
+                                .size(13.0)
                                 .strong(),
                         );
                     } else {
-                        ui.label(egui::RichText::new("Unknown").small().weak());
+                        ui.label(egui::RichText::new("Unknown").size(13.0).weak());
                     }
                 });
             } else {
-                ui.label(egui::RichText::new("No asset selected").weak());
+                ui.label(egui::RichText::new("No asset selected").size(13.0).weak());
             }
         });
 

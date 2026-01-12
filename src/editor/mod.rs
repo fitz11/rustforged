@@ -96,6 +96,14 @@ impl Plugin for EditorPlugin {
                         input_just_pressed(KeyCode::KeyG)
                             .and(tool_is(EditorTool::Select)),
                     ),
+                    selection::handle_center_to_grid.run_if(
+                        input_just_pressed(KeyCode::KeyC)
+                            .and(tool_is(EditorTool::Select)),
+                    ),
+                    selection::handle_restore_aspect_ratio.run_if(
+                        input_just_pressed(KeyCode::KeyA)
+                            .and(tool_is(EditorTool::Select)),
+                    ),
                     selection::handle_rotate_90.run_if(
                         input_just_pressed(KeyCode::KeyR)
                             .and(tool_is(EditorTool::Select)),

@@ -15,6 +15,7 @@ impl Plugin for UiPlugin {
         app.init_resource::<asset_browser::AssetBrowserState>()
             .init_resource::<asset_import::AssetImportDialog>()
             .init_resource::<file_menu::FileMenuState>()
+            .init_resource::<layers_panel::HelpWindowState>()
             // Load thumbnails before egui pass
             .add_systems(Update, asset_browser::load_and_register_thumbnails)
             // Side panels must render first so top panels fit between them
@@ -46,6 +47,7 @@ impl Plugin for UiPlugin {
                     file_menu::file_menu_ui,
                     file_menu::missing_map_warning_ui,
                     asset_import::asset_import_ui,
+                    layers_panel::help_popup_ui,
                 )
                     .after(toolbar::toolbar_ui),
             )
@@ -53,6 +55,7 @@ impl Plugin for UiPlugin {
                 EguiPrimaryContextPass,
                 session_controls::monitor_selection_dialog,
             )
-            .add_systems(Update, session_controls::enumerate_monitors);
+            .add_systems(Update, session_controls::enumerate_monitors)
+            .add_systems(Update, layers_panel::handle_help_shortcut);
     }
 }
