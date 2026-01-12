@@ -27,6 +27,7 @@ impl Plugin for LiveSessionPlugin {
                     player_window::setup_player_camera,
                     player_window::sync_player_camera.run_if(session_is_active),
                     player_window::handle_player_window_close.run_if(session_is_active),
+                    player_window::handle_graceful_shutdown,
                 ),
             );
     }

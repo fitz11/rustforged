@@ -1,7 +1,7 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{RenderTarget, ScalingMode};
 use bevy::prelude::*;
-use bevy::window::{Monitor, WindowMode, WindowRef};
+use bevy::window::{Monitor, PrimaryWindow, WindowCloseRequested, WindowMode, WindowRef};
 
 use super::state::LiveSessionState;
 
@@ -154,6 +154,40 @@ pub fn handle_player_window_close(
         }
         for entity in player_cameras.iter() {
             commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Handle graceful shutdown when the primary (editor) window is closed
+///
+/// This ensures the player window and camera are properly despawned before
+/// the application exits, preventing any potential issues with orphaned windows.
+pub fn handle_graceful_shutdown(
+    mut commands: Commands,
+    mut close_events: MessageReader<WindowCloseRequested>,
+    mut session_state: ResMut<LiveSessionState>,
+    primary_window: Query<Entity, With<PrimaryWindow>>,
+    player_windows: Query<Entity, With<PlayerWindow>>,
+    player_cameras: Query<Entity, With<PlayerCamera>>,
+) {
+    let primary_entity = primary_window.single().ok();
+
+    for event in close_events.read() {
+        // Check if the primary window is being closed
+        if Some(event.window) == primary_entity {
+            // Deactivate the session
+            if session_state.is_active {
+                info!("Primary window closing, deactivating live session");
+                session_state.is_active = false;
+            }
+
+            // Immediately despawn player window and camera to ensure clean exit
+            for entity in player_windows.iter() {
+                commands.entity(entity).despawn();
+            }
+            for entity in player_cameras.iter() {
+                commands.entity(entity).despawn();
+            }
         }
     }
 }
