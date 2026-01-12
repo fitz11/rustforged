@@ -1,4 +1,5 @@
 mod assets;
+mod config;
 mod editor;
 mod map;
 mod session;
@@ -19,6 +20,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
+        .add_plugins(config::ConfigPlugin)
         .add_plugins(editor::EditorPlugin)
         .add_plugins(assets::AssetLibraryPlugin)
         .add_plugins(map::MapPlugin)

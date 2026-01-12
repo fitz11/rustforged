@@ -7,7 +7,7 @@ pub use layer::Layer;
 pub use map_data::{
     MapData, SavedAnnotations, SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
 };
-pub use persistence::{LoadMapRequest, MapLoadError, NewMapRequest, SaveMapRequest};
+pub use persistence::{CurrentMapFile, LoadMapRequest, MapLoadError, NewMapRequest, SaveMapRequest};
 pub use placed_item::{PlacedItem, Selected};
 
 use bevy::prelude::*;
@@ -18,6 +18,7 @@ impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MapData>()
             .init_resource::<MapLoadError>()
+            .init_resource::<CurrentMapFile>()
             .add_message::<SaveMapRequest>()
             .add_message::<LoadMapRequest>()
             .add_message::<NewMapRequest>()

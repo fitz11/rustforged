@@ -6,6 +6,7 @@ use super::{
     SavedTextBox,
 };
 use crate::assets::AssetLibrary;
+use crate::config::UpdateLastMapPath;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 
 #[derive(Message)]
@@ -26,6 +27,13 @@ pub struct MapLoadError {
     pub message: Option<String>,
 }
 
+/// Resource tracking the currently loaded map file path
+#[derive(Resource, Default)]
+pub struct CurrentMapFile {
+    pub path: Option<PathBuf>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn save_map_system(
     mut events: MessageReader<SaveMapRequest>,
     map_data: Res<MapData>,
@@ -33,6 +41,8 @@ pub fn save_map_system(
     paths: Query<&DrawnPath>,
     lines: Query<&DrawnLine>,
     texts: Query<(&Transform, &TextAnnotation)>,
+    mut current_map_file: ResMut<CurrentMapFile>,
+    mut config_events: MessageWriter<UpdateLastMapPath>,
 ) {
     for event in events.read() {
         let items: Vec<SavedPlacedItem> = placed_items
@@ -86,6 +96,11 @@ pub fn save_map_system(
                     error!("Failed to save map: {}", e);
                 } else {
                     info!("Map saved to {:?}", event.path);
+                    // Update current map file and config
+                    current_map_file.path = Some(event.path.clone());
+                    config_events.write(UpdateLastMapPath {
+                        path: event.path.clone(),
+                    });
                 }
             }
             Err(e) => {
@@ -114,6 +129,8 @@ pub fn load_map_system(
     asset_server: Res<AssetServer>,
     existing_items: Query<Entity, With<PlacedItem>>,
     existing_annotations: Query<Entity, With<AnnotationMarker>>,
+    mut current_map_file: ResMut<CurrentMapFile>,
+    mut config_events: MessageWriter<UpdateLastMapPath>,
 ) {
     for event in events.read() {
         load_error.message = None;
@@ -231,6 +248,12 @@ pub fn load_map_system(
         }
 
         info!("Map loaded from {:?}", event.path);
+
+        // Update current map file and config
+        current_map_file.path = Some(event.path.clone());
+        config_events.write(UpdateLastMapPath {
+            path: event.path.clone(),
+        });
     }
 }
 
@@ -240,6 +263,7 @@ pub fn new_map_system(
     mut map_data: ResMut<MapData>,
     existing_items: Query<Entity, With<PlacedItem>>,
     existing_annotations: Query<Entity, With<AnnotationMarker>>,
+    mut current_map_file: ResMut<CurrentMapFile>,
 ) {
     for _ in events.read() {
         // Clear existing items
@@ -254,6 +278,9 @@ pub fn new_map_system(
 
         // Reset map data to default
         *map_data = MapData::default();
+
+        // Clear current map file (new map has no file yet)
+        current_map_file.path = None;
 
         info!("Created new map");
     }

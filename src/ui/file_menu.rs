@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use std::path::PathBuf;
 
+use crate::config::{AppConfig, MissingMapWarning, SaveConfigRequest};
 use crate::map::{MapLoadError, NewMapRequest, SaveMapRequest};
 
 #[derive(Resource, Default)]
@@ -93,4 +94,52 @@ fn sanitize_filename(name: &str) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+/// Renders the missing map warning dialog (shown at startup if last map doesn't exist)
+pub fn missing_map_warning_ui(
+    mut contexts: EguiContexts,
+    mut warning: ResMut<MissingMapWarning>,
+    mut config: ResMut<AppConfig>,
+    mut save_events: MessageWriter<SaveConfigRequest>,
+) -> Result {
+    if !warning.show {
+        return Ok(());
+    }
+
+    egui::Window::new("Map Not Found")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.label("The last opened map file no longer exists:");
+
+            if let Some(ref path) = warning.path {
+                ui.add_space(5.0);
+                let path_str = path.to_string_lossy();
+                let display_path = if path_str.len() > 50 {
+                    format!("...{}", &path_str[path_str.len() - 47..])
+                } else {
+                    path_str.to_string()
+                };
+                ui.label(egui::RichText::new(display_path).weak())
+                    .on_hover_text(path_str.as_ref());
+                ui.add_space(10.0);
+            }
+
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() {
+                    warning.show = false;
+                }
+
+                if ui.button("Clear from history").clicked() {
+                    config.data.last_map_path = None;
+                    config.dirty = true;
+                    save_events.write(SaveConfigRequest);
+                    warning.show = false;
+                }
+            });
+        });
+
+    Ok(())
 }

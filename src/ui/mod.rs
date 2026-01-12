@@ -44,6 +44,7 @@ impl Plugin for UiPlugin {
                 (
                     // Last: dialogs/overlays
                     file_menu::file_menu_ui,
+                    file_menu::missing_map_warning_ui,
                     asset_import::asset_import_ui,
                 )
                     .after(toolbar::toolbar_ui),

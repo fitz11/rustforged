@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::{AssetCategory, RefreshAssetLibrary};
+use crate::config::AddRecentLibrary;
 
 /// Size of thumbnail previews in pixels
 pub const THUMBNAIL_SIZE: u32 = 24;
@@ -305,4 +306,25 @@ pub fn create_and_open_library(library: &mut AssetLibrary, path: PathBuf) -> Res
     library.error = None;
     info!("Created and opened new asset library at {:?}", path);
     Ok(())
+}
+
+/// Track library changes and add to recent libraries list
+pub fn track_library_changes(
+    library: Res<AssetLibrary>,
+    mut last_path: Local<Option<PathBuf>>,
+    mut recent_events: MessageWriter<AddRecentLibrary>,
+) {
+    // Skip if library path hasn't changed
+    if last_path.as_ref() == Some(&library.library_path) {
+        return;
+    }
+
+    // Only add to recent if the library opened successfully (no error)
+    if library.error.is_none() {
+        recent_events.write(AddRecentLibrary {
+            path: library.library_path.clone(),
+        });
+    }
+
+    *last_path = Some(library.library_path.clone());
 }

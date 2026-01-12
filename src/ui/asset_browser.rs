@@ -6,6 +6,7 @@ use crate::assets::{
     create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
     AssetCategory, AssetLibrary, LibraryAsset, SelectedAsset, ThumbnailCache, THUMBNAIL_SIZE,
 };
+use crate::config::{AppConfig, MissingMapWarning, SetDefaultLibrary};
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::{LoadMapRequest, MapData};
 
@@ -68,6 +69,12 @@ pub struct AssetBrowserState {
     pub cached_dimensions_path: Option<PathBuf>,
     /// Last known library path (to detect changes and clear thumbnail cache)
     pub last_library_path: Option<PathBuf>,
+    /// Whether the "set as default" dialog is shown
+    pub show_set_default_dialog: bool,
+    /// Path for the "set as default" dialog
+    pub set_default_dialog_path: Option<PathBuf>,
+    /// Checkbox state for "set as default" dialog
+    pub set_as_default_checked: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -82,6 +89,9 @@ pub fn asset_browser_ui(
     mut import_dialog: ResMut<AssetImportDialog>,
     map_data: Res<MapData>,
     mut thumbnail_cache: ResMut<ThumbnailCache>,
+    config: Res<AppConfig>,
+    missing_map_warning: Res<MissingMapWarning>,
+    mut set_default_events: MessageWriter<SetDefaultLibrary>,
 ) -> Result {
     // Clear thumbnail cache if library path changed
     let current_path = library.library_path.clone();
@@ -133,20 +143,62 @@ pub fn asset_browser_ui(
                         && let Some(path) = rfd::FileDialog::new()
                             .set_title("Open Asset Library")
                             .pick_folder()
-                        && let Err(e) = open_library_directory(&mut library, path)
                     {
-                        warn!("Failed to open library: {}", e);
+                        // Try to open the library
+                        if let Err(e) = open_library_directory(&mut library, path.clone()) {
+                            warn!("Failed to open library: {}", e);
+                        } else {
+                            // Show the "set as default" dialog
+                            browser_state.show_set_default_dialog = true;
+                            browser_state.set_default_dialog_path = Some(path);
+                            browser_state.set_as_default_checked = false;
+                        }
                     }
 
                     if ui.button("New...").clicked()
                         && let Some(path) = rfd::FileDialog::new()
                             .set_title("Create New Asset Library")
                             .pick_folder()
-                        && let Err(e) = create_and_open_library(&mut library, path)
                     {
-                        warn!("Failed to create library: {}", e);
+                        if let Err(e) = create_and_open_library(&mut library, path.clone()) {
+                            warn!("Failed to create library: {}", e);
+                        } else {
+                            // Show the "set as default" dialog
+                            browser_state.show_set_default_dialog = true;
+                            browser_state.set_default_dialog_path = Some(path);
+                            browser_state.set_as_default_checked = false;
+                        }
                     }
                 });
+
+                // Recent libraries section
+                if !config.data.recent_libraries.is_empty() {
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("Recent:").small().weak());
+                    for recent_path in &config.data.recent_libraries {
+                        // Skip current library
+                        if recent_path == &library.library_path {
+                            continue;
+                        }
+                        // Skip if doesn't exist
+                        if !recent_path.exists() {
+                            continue;
+                        }
+                        let display_name = recent_path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("Unknown");
+                        let full_path_str = recent_path.to_string_lossy();
+                        if ui
+                            .small_button(display_name)
+                            .on_hover_text(full_path_str.as_ref())
+                            .clicked()
+                            && let Err(e) = open_library_directory(&mut library, recent_path.clone())
+                        {
+                            warn!("Failed to open recent library: {}", e);
+                        }
+                    }
+                }
 
                 ui.add_space(8.0);
 
@@ -179,6 +231,25 @@ pub fn asset_browser_ui(
                             .pick_file()
                         {
                             load_events.write(LoadMapRequest { path });
+                        }
+                    }
+                    // Recent map button - only show if we have a last map and it exists
+                    if let Some(ref last_map) = config.data.last_map_path
+                        && !missing_map_warning.show
+                        && last_map.exists()
+                    {
+                        let filename = last_map
+                            .file_stem()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("Recent");
+                        if ui
+                            .button("Recent")
+                            .on_hover_text(format!("Open: {}", filename))
+                            .clicked()
+                        {
+                            load_events.write(LoadMapRequest {
+                                path: last_map.clone(),
+                            });
                         }
                     }
                 });
@@ -352,6 +423,41 @@ pub fn asset_browser_ui(
                 ui.label(egui::RichText::new("No asset selected").weak());
             }
         });
+
+    // "Set as default library" dialog
+    if browser_state.show_set_default_dialog {
+        egui::Window::new("Library Opened")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(contexts.ctx_mut()?, |ui| {
+                if let Some(ref path) = browser_state.set_default_dialog_path {
+                    let display_name = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown");
+                    ui.label(format!("Opened library: {}", display_name));
+                    ui.add_space(8.0);
+                    ui.checkbox(
+                        &mut browser_state.set_as_default_checked,
+                        "Set as default library",
+                    );
+                    ui.add_space(8.0);
+                }
+
+                if ui.button("OK").clicked() {
+                    if browser_state.set_as_default_checked
+                        && let Some(ref path) = browser_state.set_default_dialog_path
+                    {
+                        set_default_events.write(SetDefaultLibrary { path: path.clone() });
+                    }
+                    browser_state.show_set_default_dialog = false;
+                    browser_state.set_default_dialog_path = None;
+                    browser_state.set_as_default_checked = false;
+                }
+            });
+    }
+
     Ok(())
 }
 
