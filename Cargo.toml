@@ -9,7 +9,7 @@ categories = ["games", "graphics"]
 license = "MIT OR Apache-2.0"
 
 [features]
-default = ["dev"]
+default = []
 # Use dynamic linking for faster dev builds (not for release!)
 dev = ["bevy/dynamic_linking"]
 

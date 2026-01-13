@@ -52,7 +52,7 @@ jobs:
           prefix-key: v1-release
 
       - name: Build release binary
-        run: cargo build --release --no-default-features
+        run: cargo build --release
 
       - name: Package
         run: |
@@ -83,7 +83,7 @@ jobs:
           prefix-key: v1-release
 
       - name: Build release binary
-        run: cargo build --release --no-default-features
+        run: cargo build --release
 
       - name: Package
         shell: pwsh

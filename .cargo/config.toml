@@ -1,0 +1,6 @@
+# Convenient aliases for development vs release builds
+[alias]
+# Dev build with dynamic linking (fast iteration)
+r = "run --features dev"
+# Release build (no dynamic linking)
+rr = "run --release"
