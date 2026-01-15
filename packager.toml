@@ -1,35 +1,22 @@
 # cargo-packager configuration
 # https://github.com/crabnebula-dev/cargo-packager
 
-[package]
 name = "rustforged"
 product-name = "Rustforged"
 version = "0.1.0"
 identifier = "com.fitz11.rustforged"
 description = "D&D 5E Virtual Tabletop Map Editor"
 authors = ["fitz11"]
-license = "MIT OR Apache-2.0"
+license-file = "LICENSE-MIT"
 homepage = "https://github.com/fitz11/rustforged"
 out-dir = "target/release/packager"
+binaries-dir = "target/release"
+icons = ["packaging/icons/icon.ico", "packaging/icons/icon.icns"]
+resources = [{ src = "assets", target = "assets" }]
 
-[[package.binaries]]
+[[binaries]]
 path = "rustforged"
 main = true
 
-[package.icons]
-windows = ["packaging/icons/icon.ico"]
-macos = ["packaging/icons/icon.icns"]
-
-[package.resources]
-# Bundle the assets directory with the application
-"assets" = "assets"
-
-[package.windows]
-# Create MSI installer
-wix = { enabled = true }
-
-[package.macos]
-# macOS 11.0 (Big Sur) minimum for Apple Silicon native support
+[macos]
 minimum-system-version = "11.0"
-category = "public.app-category.games"
-dmg = { enabled = true }

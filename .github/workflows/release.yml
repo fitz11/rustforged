@@ -96,6 +96,9 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Build release binary
+        run: cargo build --release
+
       - name: Build MSI installer
         run: cargo packager --release --formats msi
 
@@ -103,7 +106,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
-          files: target/release/msi/*.msi
+          files: target/release/packager/*.msi
 
   build-windows-arm64:
     name: Build Windows ARM64
@@ -125,14 +128,17 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Build release binary
+        run: cargo build --release --target aarch64-pc-windows-msvc
+
       - name: Build MSI installer
-        run: cargo packager --release --target aarch64-pc-windows-msvc --formats msi
+        run: cargo packager --release --target aarch64-pc-windows-msvc --binaries-dir target/aarch64-pc-windows-msvc/release --formats msi
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
-          files: target/aarch64-pc-windows-msvc/release/msi/*.msi
+          files: target/release/packager/*.msi
 
   build-macos-arm64:
     name: Build macOS ARM64
@@ -154,14 +160,17 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
       - name: Build DMG
-        run: cargo packager --release --target aarch64-apple-darwin --formats dmg
+        run: cargo packager --release --target aarch64-apple-darwin --binaries-dir target/aarch64-apple-darwin/release --formats dmg
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
-          files: target/aarch64-apple-darwin/release/dmg/*.dmg
+          files: target/release/packager/*.dmg
 
   publish-manifest:
     name: Publish Release Manifest

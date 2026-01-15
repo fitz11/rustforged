@@ -54,11 +54,11 @@ cargo build --release --target "$TARGET"
 # Create DMG installer
 echo ""
 echo "Creating DMG installer..."
-cargo packager --release --target "$TARGET" --formats dmg
+cargo packager --release --target "$TARGET" --binaries-dir "target/$TARGET/release" --formats dmg
 
 # Find and report output
-DMG_DIR="target/$TARGET/release/dmg"
-if [[ -d "$DMG_DIR" ]]; then
+DMG_DIR="target/release/packager"
+if [[ -d "$DMG_DIR" ]] && ls "$DMG_DIR"/*.dmg 1> /dev/null 2>&1; then
     echo ""
     echo "Build complete!"
     echo "Output:"
@@ -70,6 +70,6 @@ if [[ -d "$DMG_DIR" ]]; then
     echo ""
     echo "Copied to releases/"
 else
-    echo "Error: DMG output directory not found"
+    echo "Error: DMG output not found in $DMG_DIR"
     exit 1
 fi

@@ -54,12 +54,12 @@ function Build-Target {
 
     # Create MSI installer
     Write-Host "Creating MSI installer..."
-    cargo packager --release --target $Target --formats msi
+    cargo packager --release --target $Target --binaries-dir "target\$Target\release" --formats msi
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     # Find output
-    $MsiDir = "target\$Target\release\msi"
-    if (Test-Path $MsiDir) {
+    $MsiDir = "target\release\packager"
+    if ((Test-Path $MsiDir) -and (Get-ChildItem "$MsiDir\*.msi" -ErrorAction SilentlyContinue)) {
         $MsiFiles = Get-ChildItem "$MsiDir\*.msi"
         Write-Host "`nOutput:" -ForegroundColor Green
         foreach ($msi in $MsiFiles) {
@@ -74,7 +74,7 @@ function Build-Target {
         Copy-Item "$MsiDir\*.msi" $ReleasesDir -Force
         Write-Host "Copied to releases\"
     } else {
-        Write-Host "Error: MSI output directory not found" -ForegroundColor Red
+        Write-Host "Error: MSI output not found in $MsiDir" -ForegroundColor Red
         exit 1
     }
 }

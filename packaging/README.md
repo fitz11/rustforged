@@ -8,9 +8,9 @@ Rustforged uses [cargo-packager](https://github.com/crabnebula-dev/cargo-package
 
 | Platform | Format | Output |
 |----------|--------|--------|
-| Windows x64 | MSI | `target/release/msi/*.msi` |
-| Windows ARM64 | MSI | `target/aarch64-pc-windows-msvc/release/msi/*.msi` |
-| macOS ARM64 | DMG | `target/aarch64-apple-darwin/release/dmg/*.dmg` |
+| Windows x64 | MSI | `target/release/packager/*.msi` |
+| Windows ARM64 | MSI | `target/release/packager/*.msi` |
+| macOS ARM64 | DMG | `target/release/packager/*.dmg` |
 | Linux x64 | tar.gz | Built manually (no installer) |
 
 ## Directory Structure
@@ -47,10 +47,11 @@ Before building installers, you need icons in `packaging/icons/`:
 Run on a Windows machine:
 
 ```bash
+cargo build --release
 cargo packager --release --formats msi
 ```
 
-Output: `target/release/msi/Rustforged_<version>_x64_en-US.msi`
+Output: `target/release/packager/Rustforged_<version>_x64_en-US.msi`
 
 ### Windows (ARM64)
 
@@ -58,21 +59,22 @@ Cross-compile on Windows (requires ARM64 target):
 
 ```bash
 rustup target add aarch64-pc-windows-msvc
+cargo build --release --target aarch64-pc-windows-msvc
 cargo packager --release --target aarch64-pc-windows-msvc --formats msi
 ```
 
-Output: `target/aarch64-pc-windows-msvc/release/msi/Rustforged_<version>_arm64_en-US.msi`
+Output: `target/release/packager/Rustforged_<version>_arm64_en-US.msi`
 
 ### macOS (Apple Silicon)
 
 Run on a Mac with Apple Silicon:
 
 ```bash
-rustup target add aarch64-apple-darwin
-cargo packager --release --target aarch64-apple-darwin --formats dmg
+cargo build --release
+cargo packager --release --formats dmg
 ```
 
-Output: `target/aarch64-apple-darwin/release/dmg/Rustforged_<version>_aarch64.dmg`
+Output: `target/release/packager/Rustforged_<version>_aarch64.dmg`
 
 ### Linux
 
@@ -91,12 +93,38 @@ tar -czvf rustforged-linux-x86_64.tar.gz -C dist rustforged
 
 ### Configuration
 
-The `packager.toml` file in the repository root defines:
+The `packager.toml` file in the repository root uses a flat structure (no `[package]` wrapper):
 
-- **Package metadata**: Name, version, description, license
-- **Icons**: Platform-specific icon paths
-- **Resources**: Files bundled with the application (the `assets/` directory)
-- **Platform settings**: OS-specific options (installer type, macOS category, etc.)
+```toml
+# Top-level fields
+name = "rustforged"
+product-name = "Rustforged"
+version = "0.1.0"
+identifier = "com.fitz11.rustforged"
+out-dir = "target/release/packager"
+binaries-dir = "target/release"
+
+# Icons as a flat array (not per-platform)
+icons = ["packaging/icons/icon.ico", "packaging/icons/icon.icns"]
+
+# Resources as array of {src, target} objects
+resources = [{ src = "assets", target = "assets" }]
+
+# Binaries section
+[[binaries]]
+path = "rustforged"
+main = true
+
+# Platform-specific settings
+[macos]
+minimum-system-version = "11.0"
+```
+
+Key format notes:
+- All fields are at the top level (no `[package]` section)
+- `icons` is a flat array, not a table with `windows`/`macos` keys
+- `resources` is an array of objects with `src` and `target` fields
+- `binaries-dir` must point to where `cargo build --release` outputs the binary
 
 ### What Gets Bundled
 
@@ -154,9 +182,8 @@ To enable code signing later:
 2. Add certificate to GitHub secrets
 3. Configure in `packager.toml`:
    ```toml
-   [package.windows]
-   certificate = "path/to/cert.pfx"
-   certificate_password = "${WINDOWS_CERT_PASSWORD}"
+   [windows]
+   certificate-thumbprint = "YOUR_CERT_THUMBPRINT"
    ```
 
 ### macOS
@@ -166,9 +193,8 @@ To enable code signing later:
 3. Add to GitHub secrets
 4. Configure in `packager.toml`:
    ```toml
-   [package.macos]
+   [macos]
    signing-identity = "Developer ID Application: Your Name (TEAMID)"
-   notarization-credentials = { apple-id = "${APPLE_ID}", password = "${APPLE_PASSWORD}", team-id = "TEAMID" }
    ```
 
 ## Troubleshooting
@@ -197,10 +223,21 @@ rustup target add aarch64-pc-windows-msvc
 
 macOS DMGs can only be built on macOS. Use GitHub Actions or a Mac.
 
+### "Couldn't detect a valid configuration file" error
+
+This usually means the `packager.toml` format is invalid. Common issues:
+- Using `[package]` wrapper (fields should be at top level)
+- Using `[icons]` table instead of `icons = [...]` array
+- Placing fields after `[[binaries]]` section (they become part of that table)
+
+Run with verbose mode to see the actual parse error:
+```bash
+cargo packager --release -v
+```
+
 ### Assets not included in installer
 
-Check `packager.toml` has:
+Check `packager.toml` has resources defined as an array (at the top level, before `[[binaries]]`):
 ```toml
-[package.resources]
-"assets" = "assets"
+resources = [{ src = "assets", target = "assets" }]
 ```
