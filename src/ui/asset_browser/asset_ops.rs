@@ -44,21 +44,28 @@ pub fn rename_asset(
         .map_err(|e| format!("Failed to rename file: {}", e))?;
 
     // Calculate old and new relative paths for map updates
-    let old_relative = if library_path.starts_with("assets/library") {
-        // Internal library - use relative path
-        let category_folder = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let old_filename = old_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        format!("library/{}/{}", category_folder, old_filename)
-    } else {
-        old_path.to_string_lossy().to_string()
-    };
+    let old_relative =
+        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
+            // Internal library - construct relative path
+            let asset_in_lib = old_path
+                .strip_prefix(library_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
+            format!("{}/{}", assets_relative.display(), asset_in_lib)
+        } else {
+            old_path.to_string_lossy().to_string()
+        };
 
-    let new_relative = if library_path.starts_with("assets/library") {
-        let category_folder = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        format!("library/{}/{}", category_folder, new_filename)
-    } else {
-        new_path.to_string_lossy().to_string()
-    };
+    let new_relative =
+        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
+            let asset_in_lib = new_path
+                .strip_prefix(library_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
+            format!("{}/{}", assets_relative.display(), asset_in_lib)
+        } else {
+            new_path.to_string_lossy().to_string()
+        };
 
     // Update all map files in the library's maps folder
     let maps_dir = library_path.join("maps");

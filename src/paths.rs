@@ -6,7 +6,7 @@
 //! - macOS: `~/Library/Application Support/Rustforged/`
 //! - Linux: `~/.config/rustforged/` (config), `~/.local/share/rustforged/` (data)
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Returns true when running in development mode (cargo run).
 ///
@@ -131,6 +131,27 @@ pub fn setup_default_library() -> std::io::Result<()> {
     std::fs::create_dir_all(dest.join("tokens"))?;
     std::fs::create_dir_all(dest.join("maps"))?;
     Ok(())
+}
+
+/// Determines if a path is inside the Bevy assets folder.
+/// Returns the path relative to assets/ if inside, None otherwise.
+///
+/// This is used to determine whether to use relative paths (for Bevy's asset loading)
+/// or absolute paths (for external libraries).
+pub fn get_bevy_assets_relative_path(path: &Path) -> Option<PathBuf> {
+    let assets_dir = if is_dev_mode() {
+        PathBuf::from("assets")
+    } else {
+        bundled_assets_dir()
+    };
+
+    let canonical_assets = assets_dir.canonicalize().ok()?;
+    let canonical_path = path.canonicalize().ok()?;
+
+    canonical_path
+        .strip_prefix(&canonical_assets)
+        .ok()
+        .map(|p| p.to_path_buf())
 }
 
 #[cfg(test)]

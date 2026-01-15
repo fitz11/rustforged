@@ -217,18 +217,22 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        // For assets in the default library location, use relative path for Bevy asset loading
-        // For external libraries, use absolute path
-        let relative_path = if base_path.starts_with("assets/library") {
-            let asset_relative = path
-                .strip_prefix(base_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| path.to_string_lossy().to_string());
-            format!("library/{}", asset_relative)
-        } else {
-            // Use absolute path for external libraries
-            path.to_string_lossy().to_string()
-        };
+        // For assets in the Bevy assets folder, use relative path for asset loading
+        // For external libraries, use absolute path (requires UnapprovedPathMode::Allow)
+        let relative_path =
+            if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(base_path) {
+                // Library is inside assets/ folder - construct Bevy-relative path
+                let asset_relative = path
+                    .strip_prefix(base_path)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| path.to_string_lossy().to_string());
+                format!("{}/{}", assets_relative.display(), asset_relative)
+            } else {
+                // External library - use absolute path
+                path.canonicalize()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| path.to_string_lossy().to_string())
+            };
 
         library.assets.push(LibraryAsset {
             name,
