@@ -11,7 +11,7 @@ Rustforged aims to be a lightweight, performant VTT map editor focused on:
 - **Portable asset libraries** - Organize and reuse assets across multiple maps
 - **Minimal dependencies** - Built with Rust and Bevy for native performance without browser overhead
 
-## Downloads
+## Downloads (Coming Soon!)
 
 Pre-built installers are available for Windows and macOS:
 
