@@ -22,7 +22,7 @@ pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 use bevy::input::common_conditions::{input_just_pressed, input_pressed};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-use bevy_egui::EguiPrimaryContextPass;
+// EguiPrimaryContextPass import removed - text tool disabled
 
 use crate::map::{MapData, PlacedItem};
 
@@ -148,8 +148,9 @@ impl Plugin for EditorPlugin {
                         .run_if(tool_is(EditorTool::Draw).and(no_dialog_open)),
                     annotations::handle_line
                         .run_if(tool_is(EditorTool::Line).and(no_dialog_open)),
-                    annotations::handle_text
-                        .run_if(tool_is(EditorTool::Text).and(no_dialog_open)),
+                    // Text tool disabled - see TODO in tools.rs
+                    // annotations::handle_text
+                    //     .run_if(tool_is(EditorTool::Text).and(no_dialog_open)),
                     annotations::render_drawn_paths,
                     annotations::render_drawn_lines,
                     annotations::render_line_preview.run_if(tool_is(EditorTool::Line)),
@@ -165,12 +166,14 @@ impl Plugin for EditorPlugin {
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),
                 ),
             )
-            .add_systems(
-                EguiPrimaryContextPass,
-                (
-                    annotations::text_annotation_input_ui,
-                    annotations::render_text_annotations,
-                ),
-            );
+            // Text annotation systems disabled - see TODO in tools.rs
+            // .add_systems(
+            //     EguiPrimaryContextPass,
+            //     (
+            //         annotations::text_annotation_input_ui,
+            //         annotations::render_text_annotations,
+            //     ),
+            // );
+            ;
     }
 }

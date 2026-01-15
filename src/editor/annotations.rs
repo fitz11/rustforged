@@ -229,6 +229,8 @@ pub struct TextAnnotation {
 #[derive(Component)]
 pub struct AnnotationMarker;
 
+// Text tool disabled - see TODO in tools.rs
+#[allow(dead_code)]
 #[derive(Component)]
 pub struct EditingText;
 
@@ -247,6 +249,8 @@ pub struct LineDrawState {
     pub start_point: Option<Vec2>,
 }
 
+// Text tool disabled - see TODO in tools.rs
+#[allow(dead_code)]
 #[derive(Resource, Default)]
 pub struct TextEditState {
     pub editing_entity: Option<Entity>,
@@ -421,6 +425,8 @@ pub fn handle_line(
     }
 }
 
+// Text tool disabled - see TODO in tools.rs
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn handle_text(
     mut commands: Commands,
@@ -605,6 +611,8 @@ pub fn render_draw_preview(
     }
 }
 
+// Text tool disabled - see TODO in tools.rs
+#[allow(dead_code)]
 /// Render text annotations using egui (editor-only, doesn't show in player view)
 pub fn render_text_annotations(
     mut contexts: EguiContexts,
@@ -668,6 +676,8 @@ pub fn render_text_annotations(
 
 use bevy_egui::egui;
 
+// Text tool disabled - see TODO in tools.rs
+#[allow(dead_code)]
 /// UI system for editing text annotations - shows an egui text input
 pub fn text_annotation_input_ui(
     mut commands: Commands,
