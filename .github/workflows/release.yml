@@ -21,6 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify version matches Cargo.toml
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$CARGO_VERSION" != "${{ github.event.inputs.version }}" ]; then
+            echo "::error::Version mismatch: Cargo.toml has $CARGO_VERSION but workflow input is ${{ github.event.inputs.version }}"
+            echo "Please update Cargo.toml before releasing."
+            exit 1
+          fi
+          echo "Version verified: $CARGO_VERSION"
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
