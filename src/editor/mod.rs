@@ -72,12 +72,14 @@ impl Plugin for EditorPlugin {
             .init_gizmo_group::<annotations::AnnotationGizmoGroup>()
             .init_gizmo_group::<fog::FogEditorGizmoGroup>()
             .init_gizmo_group::<fog::FogPlayerGizmoGroup>()
+            .init_gizmo_group::<selection::SelectionGizmoGroup>()
             .add_systems(
                 Startup,
                 (
                     camera::spawn_camera,
                     annotations::configure_annotation_gizmos,
                     fog::configure_fog_gizmos,
+                    selection::configure_selection_gizmos,
                 ),
             )
             .add_systems(

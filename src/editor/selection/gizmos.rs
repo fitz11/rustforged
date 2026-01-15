@@ -1,5 +1,7 @@
 //! Selection gizmo drawing - visual indicators for selected items.
 
+use bevy::camera::visibility::RenderLayers;
+use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 
 use crate::editor::annotations::{
@@ -11,9 +13,20 @@ use crate::map::{MapData, Selected};
 use super::hit_detection::{get_sprite_half_size, rotate_point};
 use super::{BoxSelectState, ROTATION_HANDLE_OFFSET, ROTATION_HANDLE_RADIUS};
 
+/// Custom gizmo group for selection indicators (editor-only rendering)
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct SelectionGizmoGroup;
+
+/// Configure the selection gizmo group to only render to editor camera
+pub fn configure_selection_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
+    let (config, _) = config_store.config_mut::<SelectionGizmoGroup>();
+    // Only render to layer 1 (editor-only)
+    config.render_layers = RenderLayers::layer(1);
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn draw_selection_indicators(
-    mut gizmos: Gizmos,
+    mut gizmos: Gizmos<SelectionGizmoGroup>,
     selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
     images: Res<Assets<Image>>,
     map_data: Res<MapData>,
@@ -172,7 +185,7 @@ pub fn draw_selection_indicators(
     }
 }
 
-pub fn draw_box_select_rect(mut gizmos: Gizmos, box_select_state: Res<BoxSelectState>) {
+pub fn draw_box_select_rect(mut gizmos: Gizmos<SelectionGizmoGroup>, box_select_state: Res<BoxSelectState>) {
     if !box_select_state.is_selecting {
         return;
     }

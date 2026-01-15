@@ -25,7 +25,10 @@ pub type SelectionDragMode = DragMode;
 pub use box_select::handle_box_select;
 pub use cursor::update_selection_cursor;
 pub use drag::handle_drag;
-pub use gizmos::{draw_box_select_rect, draw_selection_indicators};
+pub use gizmos::{
+    configure_selection_gizmos, draw_box_select_rect, draw_selection_indicators,
+    SelectionGizmoGroup,
+};
 pub use handle::handle_selection;
 // hit_detection items are used internally by submodules but not re-exported
 pub use shortcuts::{
