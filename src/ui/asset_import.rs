@@ -94,7 +94,7 @@ pub fn asset_import_ui(
             );
             ui.add_space(4.0);
             ui.label(
-                egui::RichText::new("Images -> unsorted/  |  Maps -> maps/")
+                egui::RichText::new("Images -> library root  |  Maps -> maps/")
                     .weak()
                     .small(),
             );
@@ -154,7 +154,7 @@ pub fn asset_import_ui(
                         if !images.is_empty() {
                             ui.label(
                                 egui::RichText::new(format!(
-                                    "Images ({}) -> unsorted/:",
+                                    "Images ({}) -> library root:",
                                     images.len()
                                 ))
                                 .strong(),
@@ -216,11 +216,14 @@ pub fn asset_import_ui(
                         let mut imported = 0;
                         let mut errors = Vec::new();
 
-                        // Import images to unsorted folder
-                        let image_dest = library.library_path.join("unsorted");
-                        if let Err(e) = std::fs::create_dir_all(&image_dest) {
-                            errors.push(format!("Failed to create unsorted directory: {}", e));
-                        } else {
+                        // Import images to library root
+                        let image_dest = library.library_path.clone();
+                        if !image_dest.exists()
+                            && let Err(e) = std::fs::create_dir_all(&image_dest)
+                        {
+                            errors.push(format!("Failed to create library directory: {}", e));
+                        }
+                        if image_dest.exists() {
                             for src_path in &images {
                                 if let Some(filename) = src_path.file_name() {
                                     let dest_path = image_dest.join(filename);

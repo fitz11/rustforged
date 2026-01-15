@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+use std::collections::HashSet;
+
 use crate::assets::{
     create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
-    AssetCategory, AssetLibrary, LibraryAsset, RenameAssetRequest, SelectedAsset, ThumbnailCache,
+    AssetLibrary, LibraryAsset, RenameAssetRequest, SelectedAsset, ThumbnailCache,
     UpdateLibraryMetadataRequest, THUMBNAIL_SIZE,
 };
 use crate::constants::MAX_THUMBNAILS_PER_FRAME;
@@ -229,7 +231,10 @@ pub fn load_and_register_thumbnails(
 
 #[derive(Resource)]
 pub struct AssetBrowserState {
-    pub selected_category: AssetCategory,
+    /// Currently selected folder path (empty string = root)
+    pub selected_folder: String,
+    /// Cached list of discovered folders in the library
+    pub discovered_folders: Vec<String>,
     /// Whether the library info section is expanded
     pub library_expanded: bool,
     /// Cached dimensions for the selected asset
@@ -270,13 +275,16 @@ pub struct AssetBrowserState {
     pub move_dialog_open: bool,
     /// Error message for move operation
     pub move_error: Option<String>,
+    /// New folder name input for move dialog
+    pub move_new_folder_name: String,
 }
 
 impl Default for AssetBrowserState {
     fn default() -> Self {
         Self {
-            selected_category: AssetCategory::default(),
-            library_expanded: true, // Expanded by default
+            selected_folder: String::new(),
+            discovered_folders: Vec::new(),
+            library_expanded: true,
             selected_dimensions: None,
             cached_dimensions_path: None,
             last_library_path: None,
@@ -296,8 +304,30 @@ impl Default for AssetBrowserState {
             rename_library_new_name: String::new(),
             move_dialog_open: false,
             move_error: None,
+            move_new_folder_name: String::new(),
         }
     }
+}
+
+/// Discover all folders in the library from asset paths
+fn discover_folders(library: &AssetLibrary) -> Vec<String> {
+    let mut folders: HashSet<String> = HashSet::new();
+    for asset in &library.assets {
+        if !asset.folder_path.is_empty() {
+            // Add the folder and all parent folders
+            let mut path = String::new();
+            for component in asset.folder_path.split(['/', '\\']) {
+                if !path.is_empty() {
+                    path.push('/');
+                }
+                path.push_str(component);
+                folders.insert(path.clone());
+            }
+        }
+    }
+    let mut sorted: Vec<String> = folders.into_iter().collect();
+    sorted.sort();
+    sorted
 }
 
 /// Rename an asset file and update all map files that reference it
@@ -395,10 +425,10 @@ fn update_asset_paths_in_maps(maps_dir: &Path, old_path: &str, new_path: &str) -
     Ok(())
 }
 
-/// Move an asset file to a different category folder and update all map files that reference it
+/// Move an asset file to a different folder and update all map files that reference it
 fn move_asset(
     old_path: &Path,
-    target_category: AssetCategory,
+    target_folder: &str,
     library_path: &Path,
 ) -> Result<(PathBuf, String, String), String> {
     // Get the filename
@@ -407,16 +437,24 @@ fn move_asset(
         .and_then(|n| n.to_str())
         .ok_or("Invalid file path")?;
 
-    // Build the new path in the target category folder
-    let new_folder = library_path.join(target_category.folder_name());
+    // Build the new path in the target folder
+    let new_folder = if target_folder.is_empty() {
+        library_path.to_path_buf()
+    } else {
+        library_path.join(target_folder)
+    };
     let new_path = new_folder.join(filename);
 
     // Check if target already exists
     if new_path.exists() {
+        let target_display = if target_folder.is_empty() {
+            "library root".to_string()
+        } else {
+            target_folder.to_string()
+        };
         return Err(format!(
             "A file named '{}' already exists in {}",
-            filename,
-            target_category.display_name()
+            filename, target_display
         ));
     }
 
@@ -829,6 +867,27 @@ pub fn asset_browser_ui(
                     if ui.add_sized([80.0, 24.0], egui::Button::new("Import...")).clicked() {
                         dialogs.import_dialog.is_open = true;
                     }
+                    if ui.add_sized([80.0, 24.0], egui::Button::new("Open Folder")).on_hover_text("Open library folder in file explorer").clicked() {
+                        let path = &library.library_path;
+                        #[cfg(target_os = "linux")]
+                        {
+                            let _ = std::process::Command::new("xdg-open")
+                                .arg(path)
+                                .spawn();
+                        }
+                        #[cfg(target_os = "macos")]
+                        {
+                            let _ = std::process::Command::new("open")
+                                .arg(path)
+                                .spawn();
+                        }
+                        #[cfg(target_os = "windows")]
+                        {
+                            let _ = std::process::Command::new("explorer")
+                                .arg(path)
+                                .spawn();
+                        }
+                    }
                 });
 
                 ui.add_space(6.0);
@@ -837,17 +896,43 @@ pub fn asset_browser_ui(
             ui.separator();
             ui.add_space(4.0);
 
-            ui.horizontal(|ui| {
-                for category in AssetCategory::all() {
-                    let selected = browser_state.selected_category == *category;
+            // Update discovered folders when library changes
+            if browser_state.last_library_path.as_ref() != Some(&library.library_path) {
+                browser_state.discovered_folders = discover_folders(&library);
+            }
+
+            // Folder tree view
+            ui.label(egui::RichText::new("Folders").size(12.0).weak());
+            egui::ScrollArea::vertical()
+                .id_salt("folder_tree")
+                .max_height(120.0)
+                .show(ui, |ui| {
+                    // Root folder (library root)
+                    let root_selected = browser_state.selected_folder.is_empty();
                     if ui
-                        .selectable_label(selected, egui::RichText::new(category.display_name()).size(13.0))
+                        .selectable_label(root_selected, egui::RichText::new("(root)").size(12.0))
                         .clicked()
                     {
-                        browser_state.selected_category = *category;
+                        browser_state.selected_folder = String::new();
                     }
-                }
-            });
+
+                    // Render folders as a tree
+                    for folder in &browser_state.discovered_folders.clone() {
+                        let is_selected = browser_state.selected_folder == *folder;
+                        let depth = folder.matches('/').count();
+                        let display_name = folder.split('/').next_back().unwrap_or(folder);
+
+                        ui.horizontal(|ui| {
+                            ui.add_space(depth as f32 * 12.0);
+                            if ui
+                                .selectable_label(is_selected, egui::RichText::new(display_name).size(12.0))
+                                .clicked()
+                            {
+                                browser_state.selected_folder = folder.clone();
+                            }
+                        });
+                    }
+                });
 
             ui.add_space(4.0);
             ui.separator();
@@ -855,15 +940,17 @@ pub fn asset_browser_ui(
             let filtered_assets: Vec<&LibraryAsset> = library
                 .assets
                 .iter()
-                .filter(|a| a.category == browser_state.selected_category)
+                .filter(|a| a.folder_path == browser_state.selected_folder)
                 .collect();
 
             if filtered_assets.is_empty() {
-                ui.label("No assets found.");
-                let folder_path = library
-                    .library_path
-                    .join(browser_state.selected_category.folder_name());
-                ui.label(format!("Add images to {}/", folder_path.display()));
+                ui.label("No assets in this folder.");
+                let folder_display = if browser_state.selected_folder.is_empty() {
+                    library.library_path.display().to_string()
+                } else {
+                    library.library_path.join(&browser_state.selected_folder).display().to_string()
+                };
+                ui.label(format!("Add images to {}/", folder_display));
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for asset in filtered_assets {
@@ -1302,7 +1389,7 @@ pub fn asset_browser_ui(
     // Move asset dialog
     if browser_state.move_dialog_open {
         let mut close_dialog = false;
-        let mut target_category: Option<AssetCategory> = None;
+        let mut target_folder: Option<String> = None;
 
         egui::Window::new("Move Asset")
             .collapsible(false)
@@ -1313,14 +1400,29 @@ pub fn asset_browser_ui(
                     ui.label(format!("Move '{}' to:", asset.name));
                     ui.add_space(8.0);
 
-                    // Show category buttons (excluding current category)
-                    for category in AssetCategory::all() {
-                        if *category != asset.category
-                            && ui.button(category.display_name()).clicked()
-                        {
-                            target_category = Some(*category);
+                    // Root folder option
+                    if !asset.folder_path.is_empty() && ui.button("(root)").clicked() {
+                        target_folder = Some(String::new());
+                    }
+
+                    // Existing folder options (excluding current folder)
+                    for folder in &browser_state.discovered_folders.clone() {
+                        if *folder != asset.folder_path && ui.button(folder).clicked() {
+                            target_folder = Some(folder.clone());
                         }
                     }
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.label("Or create new folder:");
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut browser_state.move_new_folder_name);
+                        if ui.button("Create & Move").clicked()
+                            && !browser_state.move_new_folder_name.is_empty()
+                        {
+                            target_folder = Some(browser_state.move_new_folder_name.clone());
+                        }
+                    });
 
                     // Show error message if any
                     if let Some(ref error) = browser_state.move_error {
@@ -1341,27 +1443,29 @@ pub fn asset_browser_ui(
             });
 
         // Handle move action
-        if let Some(category) = target_category
+        if let Some(folder) = target_folder
             && let Some(ref asset) = selected_asset.asset.clone()
         {
-            match move_asset(&asset.full_path, category, &library.library_path) {
+            match move_asset(&asset.full_path, &folder, &library.library_path) {
                 Ok((new_path, old_relative, new_relative)) => {
                     // Update the asset in the library
                     if let Some(lib_asset) = library.assets.iter_mut().find(|a| a.full_path == asset.full_path) {
                         lib_asset.full_path = new_path.clone();
                         lib_asset.relative_path = new_relative.clone();
-                        lib_asset.category = category;
+                        lib_asset.folder_path = folder.clone();
                     }
 
                     // Update the selected asset
                     if let Some(ref mut sel) = selected_asset.asset {
                         sel.full_path = new_path;
                         sel.relative_path = new_relative.clone();
-                        sel.category = category;
+                        sel.folder_path = folder.clone();
                     }
 
-                    // Update the browser to show the new category
-                    browser_state.selected_category = category;
+                    // Update the browser to show the new folder
+                    browser_state.selected_folder = folder.clone();
+                    // Refresh discovered folders
+                    browser_state.discovered_folders = discover_folders(&library);
 
                     // Clear thumbnail cache for this asset (path changed)
                     thumbnail_cache.thumbnails.remove(&asset.full_path);
@@ -1375,7 +1479,9 @@ pub fn asset_browser_ui(
 
                     browser_state.move_dialog_open = false;
                     browser_state.move_error = None;
-                    info!("Moved asset '{}' to {}", asset.name, category.display_name());
+                    browser_state.move_new_folder_name.clear();
+                    let folder_display = if folder.is_empty() { "(root)" } else { &folder };
+                    info!("Moved asset '{}' to {}", asset.name, folder_display);
                 }
                 Err(e) => {
                     browser_state.move_error = Some(e);
@@ -1386,6 +1492,7 @@ pub fn asset_browser_ui(
         if close_dialog {
             browser_state.move_dialog_open = false;
             browser_state.move_error = None;
+            browser_state.move_new_folder_name.clear();
         }
     }
 

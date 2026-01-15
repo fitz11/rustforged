@@ -1,9 +1,6 @@
-mod asset_type;
 mod library;
 mod placeholder;
 mod validation;
-
-pub use asset_type::AssetCategory;
 pub use library::{
     create_and_open_library, get_image_dimensions, load_thumbnail, open_library_directory,
     save_library_metadata, AssetLibrary, LibraryAsset, ThumbnailCache, THUMBNAIL_SIZE,

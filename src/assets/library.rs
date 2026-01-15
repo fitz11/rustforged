@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::{AssetCategory, RefreshAssetLibrary};
+use super::RefreshAssetLibrary;
 use crate::config::AddRecentLibraryRequest;
 
 /// Size of thumbnail previews in pixels
@@ -52,17 +52,15 @@ impl Default for AssetLibrary {
 /// Result of validating/opening an asset library directory
 #[derive(Debug)]
 pub enum LibraryValidation {
-    /// Directory is a valid asset library with all required subfolders
+    /// Directory is a valid asset library
     Valid,
-    /// Directory exists but is missing required subfolders
-    MissingFolders(Vec<String>),
     /// Directory doesn't exist
     NotFound,
     /// Other error (permissions, etc.)
     Error(String),
 }
 
-/// Validates that a directory is a valid asset library (has required subfolders)
+/// Validates that a directory can be used as an asset library
 pub fn validate_library_directory(path: &Path) -> LibraryValidation {
     if !path.exists() {
         return LibraryValidation::NotFound;
@@ -72,22 +70,10 @@ pub fn validate_library_directory(path: &Path) -> LibraryValidation {
         return LibraryValidation::Error("Path is not a directory".to_string());
     }
 
-    let mut missing = Vec::new();
-    for category in AssetCategory::all() {
-        let subfolder = path.join(category.folder_name());
-        if !subfolder.exists() {
-            missing.push(category.folder_name().to_string());
-        }
-    }
-
-    if missing.is_empty() {
-        LibraryValidation::Valid
-    } else {
-        LibraryValidation::MissingFolders(missing)
-    }
+    LibraryValidation::Valid
 }
 
-/// Creates a new asset library directory with all required subfolders
+/// Creates a new asset library directory with suggested subfolders
 pub fn create_library_directory(path: &Path) -> Result<(), String> {
     // Create the main directory if it doesn't exist
     if !path.exists() {
@@ -95,12 +81,12 @@ pub fn create_library_directory(path: &Path) -> Result<(), String> {
             .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    // Create all category subfolders
-    for category in AssetCategory::all() {
-        let subfolder = path.join(category.folder_name());
+    // Create suggested asset folders (terrain, doodads, tokens)
+    for folder in ["terrain", "doodads", "tokens"] {
+        let subfolder = path.join(folder);
         if !subfolder.exists() {
             std::fs::create_dir_all(&subfolder)
-                .map_err(|e| format!("Failed to create {} folder: {}", category.folder_name(), e))?;
+                .map_err(|e| format!("Failed to create {} folder: {}", folder, e))?;
         }
     }
 
@@ -155,8 +141,10 @@ pub fn save_library_metadata(library_path: &Path, metadata: &LibraryMetadata) ->
 #[derive(Debug, Clone)]
 pub struct LibraryAsset {
     pub name: String,
+    /// Full relative path for asset loading (e.g., "library/terrain/stone/floor.png")
     pub relative_path: String,
-    pub category: AssetCategory,
+    /// Parent folder relative path from library root (e.g., "terrain/stone" or "" for root)
+    pub folder_path: String,
     /// File extension (e.g., "png", "jpg")
     pub extension: String,
     /// Full filesystem path for reading metadata
@@ -168,54 +156,80 @@ fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
     library.assets.clear();
     library.error = None;
 
-    for category in AssetCategory::all() {
-        let category_path = library_path.join(category.folder_name());
+    scan_directory_recursive(library, library_path, library_path);
+}
 
-        if !category_path.exists() {
+/// Recursively scans a directory for image assets
+fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, current_path: &Path) {
+    let Ok(entries) = std::fs::read_dir(current_path) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        // Skip hidden files/directories (starting with .)
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with('.'))
+            .unwrap_or(false)
+        {
             continue;
         }
 
-        if let Ok(entries) = std::fs::read_dir(&category_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-
-                if !is_image_file(&path) {
-                    continue;
-                }
-
-                let name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-
-                let extension = path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-
-                // For assets outside the default location, store absolute path
-                let relative_path = if library_path.starts_with("assets/library") {
-                    format!(
-                        "library/{}/{}",
-                        category.folder_name(),
-                        path.file_name().unwrap().to_str().unwrap()
-                    )
-                } else {
-                    // Use absolute path for external libraries
-                    path.to_string_lossy().to_string()
-                };
-
-                library.assets.push(LibraryAsset {
-                    name,
-                    relative_path,
-                    category: *category,
-                    extension,
-                    full_path: path,
-                });
+        if path.is_dir() {
+            // Skip the "maps" directory
+            if path.file_name().and_then(|n| n.to_str()) == Some("maps") {
+                continue;
             }
+            // Recurse into subdirectories
+            scan_directory_recursive(library, base_path, &path);
+            continue;
         }
+
+        if !is_image_file(&path) {
+            continue;
+        }
+
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let extension = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        // Calculate folder path relative to library root
+        let folder_path = current_path
+            .strip_prefix(base_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // For assets in the default library location, use relative path for Bevy asset loading
+        // For external libraries, use absolute path
+        let relative_path = if base_path.starts_with("assets/library") {
+            let asset_relative = path
+                .strip_prefix(base_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.to_string_lossy().to_string());
+            format!("library/{}", asset_relative)
+        } else {
+            // Use absolute path for external libraries
+            path.to_string_lossy().to_string()
+        };
+
+        library.assets.push(LibraryAsset {
+            name,
+            relative_path,
+            folder_path,
+            extension,
+            full_path: path,
+        });
     }
 }
 
@@ -357,7 +371,7 @@ pub fn refresh_asset_library(
     }
 }
 
-/// Opens an existing asset library directory, validating it has required subfolders
+/// Opens an existing asset library directory
 pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Result<(), String> {
     match validate_library_directory(&path) {
         LibraryValidation::Valid => {
@@ -388,14 +402,6 @@ pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Resu
                 library.assets.len()
             );
             Ok(())
-        }
-        LibraryValidation::MissingFolders(missing) => {
-            let err = format!(
-                "Directory is missing required folders: {}",
-                missing.join(", ")
-            );
-            library.error = Some(err.clone());
-            Err(err)
         }
         LibraryValidation::NotFound => {
             let err = "Directory not found".to_string();
