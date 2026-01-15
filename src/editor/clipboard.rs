@@ -1,3 +1,4 @@
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
@@ -389,6 +390,13 @@ pub fn handle_paste(
 
         let texture: Handle<Image> = asset_server.load(&clip_item.saved.asset_path);
 
+        // Items on non-player-visible layers go to render layer 1 (editor-only)
+        let render_layer = if clip_item.saved.layer.is_player_visible() {
+            RenderLayers::layer(0)
+        } else {
+            RenderLayers::layer(1)
+        };
+
         commands.spawn((
             Sprite::from_image(texture),
             Transform {
@@ -401,6 +409,7 @@ pub fn handle_paste(
                 layer: clip_item.saved.layer,
                 z_index: clip_item.saved.z_index,
             },
+            render_layer,
             Selected, // Auto-select pasted item
         ));
     }
