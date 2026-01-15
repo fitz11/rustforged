@@ -64,12 +64,15 @@ pub fn config_file() -> PathBuf {
 
 /// Path to the default asset library.
 ///
-/// - Dev mode: `./assets/library/`
-/// - Installed: `{data_dir}/library/`
+/// - Dev mode: `./library/`
+/// - Installed: `{config_dir}/library/`
+///
+/// Note: Library defaults to config_dir so new users get their library
+/// created alongside their config file (e.g., ~/.config/rustforged/library/).
 pub fn default_library_dir() -> PathBuf {
-    data_dir()
+    config_dir()
         .map(|p| p.join("library"))
-        .unwrap_or_else(|| PathBuf::from("assets/library"))
+        .unwrap_or_else(|| PathBuf::from("library"))
 }
 
 /// Path to the logs directory.
