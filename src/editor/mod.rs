@@ -114,7 +114,7 @@ impl Plugin for EditorPlugin {
                             .and(no_dialog_open),
                     ),
                     selection::handle_center_to_grid.run_if(
-                        input_just_pressed(KeyCode::KeyC)
+                        input_just_pressed(KeyCode::KeyG)
                             .and(tool_is(EditorTool::Select))
                             .and(no_dialog_open),
                     ),

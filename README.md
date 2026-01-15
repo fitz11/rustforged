@@ -95,7 +95,7 @@ cargo build --release
 | Resize selected | Drag edge or corner handles |
 | Snap while dragging | Hold Shift |
 | Fit to grid | G |
-| Center to grid | C |
+| Center to grid | Shift+G |
 | Restore aspect ratio | A |
 | Rotate 90 degrees | R |
 | Delete selected | Delete or Backspace |

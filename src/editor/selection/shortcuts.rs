@@ -21,8 +21,9 @@ pub fn handle_fit_to_grid(
         return;
     }
 
-    // G = fit to grid
-    if !keyboard.just_pressed(KeyCode::KeyG) {
+    // G = fit to grid (but not Shift+G, which is center to grid)
+    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    if !keyboard.just_pressed(KeyCode::KeyG) || shift_held {
         return;
     }
 
@@ -42,7 +43,7 @@ pub fn handle_fit_to_grid(
     }
 }
 
-/// Center selected items to the nearest grid cell center when C is pressed
+/// Center selected items to the nearest grid cell center when Shift+G is pressed
 pub fn handle_center_to_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected_query: Query<&mut Transform, With<Selected>>,
@@ -56,8 +57,9 @@ pub fn handle_center_to_grid(
         return;
     }
 
-    // C = center to grid
-    if !keyboard.just_pressed(KeyCode::KeyC) {
+    // Shift+G = center to grid
+    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    if !keyboard.just_pressed(KeyCode::KeyG) || !shift_held {
         return;
     }
 
