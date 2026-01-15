@@ -4,6 +4,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState, PlacedItem, Selected};
 use crate::session::LiveSessionState;
+use crate::update::UpdateState;
 
 /// Resource to track whether the help window is open
 #[derive(Resource, Default)]
@@ -475,7 +476,11 @@ pub fn layers_panel_ui(
 }
 
 /// Renders the help popup window with keyboard shortcuts and usage instructions
-pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWindowState>) -> Result {
+pub fn help_popup_ui(
+    mut contexts: EguiContexts,
+    mut help_state: ResMut<HelpWindowState>,
+    update_state: Res<UpdateState>,
+) -> Result {
     if !help_state.is_open {
         return Ok(());
     }
@@ -489,6 +494,21 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
         .default_width(400.0)
         .show(ctx, |ui| {
             ui.heading("Rustforged - D&D 5E VTT Map Editor");
+
+            ui.horizontal(|ui| {
+                ui.label("Version:");
+                ui.strong(crate::update::CURRENT_VERSION);
+
+                if update_state.update_available
+                    && let Some(ref version) = update_state.latest_version
+                {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 165, 0),
+                        format!("(v{} available)", version),
+                    );
+                }
+            });
+
             ui.separator();
 
             // Tools Section
@@ -676,7 +696,15 @@ pub fn help_popup_ui(mut contexts: EguiContexts, mut help_state: ResMut<HelpWind
                     ui.end_row();
                 });
 
-            ui.add_space(15.0);
+            ui.add_space(10.0);
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                ui.label("GitHub:");
+                ui.hyperlink_to("fitz11/rustforged", "https://github.com/fitz11/rustforged");
+            });
+
+            ui.add_space(10.0);
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                 if ui.button("Close").clicked() {

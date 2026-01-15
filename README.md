@@ -11,6 +11,21 @@ Rustforged aims to be a lightweight, performant VTT map editor focused on:
 - **Portable asset libraries** - Organize and reuse assets across multiple maps
 - **Minimal dependencies** - Built with Rust and Bevy for native performance without browser overhead
 
+## Downloads
+
+Pre-built installers are available for Windows and macOS:
+
+| Platform | Download |
+|----------|----------|
+| Windows (x64) | [MSI Installer](https://github.com/fitz11/rustforged/releases/latest) |
+| Windows (ARM64) | [MSI Installer](https://github.com/fitz11/rustforged/releases/latest) |
+| macOS (Apple Silicon) | [DMG](https://github.com/fitz11/rustforged/releases/latest) |
+| Linux | Build from source (see below) |
+
+The application checks for updates automatically on startup and notifies you when a new version is available.
+
+For detailed installation instructions, see [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
 ## Features
 
 - **Layer-based map editing** - Background, Terrain, Doodad, Token, Annotation, and FogOfWar layers
@@ -290,6 +305,7 @@ cargo check --all-targets && cargo clippy --all-targets -- -D warnings && cargo 
 | `editor/grid.rs` | 13 | Grid snapping edge cases |
 | `session/viewport.rs` | 10 | Point rotation mathematics |
 | `map/persistence.rs` | 9 | Color conversion, serialization |
+| `update/mod.rs` | 11 | Version comparison, manifest parsing, platform selection |
 
 ## Contributing
 
