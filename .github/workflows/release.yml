@@ -162,3 +162,56 @@ jobs:
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
           files: target/aarch64-apple-darwin/release/dmg/*.dmg
+
+  publish-manifest:
+    name: Publish Release Manifest
+    needs: [create-release, build-linux, build-windows-x64, build-windows-arm64, build-macos-arm64]
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Generate release manifest from GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          mkdir -p releases
+
+          # Get asset URLs from the GitHub release
+          RELEASE_DATA=$(gh api repos/${{ github.repository }}/releases/tags/v${VERSION})
+
+          # Extract asset URLs for each platform
+          WIN_X64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("x64.*\\.msi$")) | .browser_download_url' | head -1)
+          WIN_ARM64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("(arm64|aarch64).*\\.msi$")) | .browser_download_url' | head -1)
+          MACOS_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("\\.dmg$")) | .browser_download_url' | head -1)
+
+          # Generate manifest JSON
+          cat > releases/latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "release_url": "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
+            "release_notes": "See the release page for full release notes.",
+            "assets": {
+              "windows-x64": "${WIN_X64_URL:-}",
+              "windows-arm64": "${WIN_ARM64_URL:-}",
+              "macos-aarch64": "${MACOS_URL:-}"
+            }
+          }
+          EOF
+
+          # Remove empty asset entries
+          jq 'del(.assets[] | select(. == ""))' releases/latest.json > releases/latest.tmp && mv releases/latest.tmp releases/latest.json
+
+          echo "Generated manifest:"
+          cat releases/latest.json
+
+      - name: Commit and push manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add releases/latest.json
+          git diff --staged --quiet || git commit -m "Update release manifest for v${{ needs.create-release.outputs.version }}"
+          git push

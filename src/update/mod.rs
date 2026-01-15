@@ -1,7 +1,10 @@
 //! Update checking and auto-update system for Rustforged.
 //!
-//! Checks GitHub Releases API for new versions, downloads installers,
+//! Fetches a release manifest JSON file to check for new versions, downloads installers,
 //! and launches the installer when the user is ready.
+//!
+//! The manifest format is generic and can be hosted anywhere (GitHub Pages, S3, any CDN).
+//! To migrate away from GitHub, simply change `MANIFEST_URL` to point to your new host.
 
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
@@ -9,33 +12,44 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use futures_lite::future;
 use semver::Version;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Current version of the application (from Cargo.toml)
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// GitHub repository for checking releases
-const GITHUB_REPO: &str = "fitz11/rustforged";
+/// URL to the release manifest file.
+/// Change this constant to migrate away from GitHub hosting.
+const MANIFEST_URL: &str =
+    "https://raw.githubusercontent.com/fitz11/rustforged/main/releases/latest.json";
 
-/// GitHub Release asset structure
-#[derive(Debug, Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-}
-
-/// GitHub Releases API response structure
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    html_url: String,
-    #[allow(dead_code)]
-    name: Option<String>,
-    body: Option<String>,
-    prerelease: bool,
-    draft: bool,
+/// Release manifest structure - can be hosted anywhere.
+///
+/// Example JSON:
+/// ```json
+/// {
+///   "version": "1.2.3",
+///   "release_url": "https://github.com/fitz11/rustforged/releases/v1.2.3",
+///   "release_notes": "Bug fixes and improvements...",
+///   "assets": {
+///     "windows-x64": "https://example.com/rustforged-1.2.3-x64.msi",
+///     "windows-arm64": "https://example.com/rustforged-1.2.3-arm64.msi",
+///     "macos-aarch64": "https://example.com/rustforged-1.2.3-aarch64.dmg"
+///   }
+/// }
+/// ```
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct ReleaseManifest {
+    /// Latest version string (semver format, e.g., "1.2.3")
+    pub version: String,
+    /// URL to the release page for manual download
+    pub release_url: String,
+    /// Release notes/changelog (optional)
+    pub release_notes: Option<String>,
+    /// Platform-specific download URLs (key: platform, value: URL)
     #[serde(default)]
-    assets: Vec<GitHubAsset>,
+    pub assets: HashMap<String, String>,
 }
 
 /// State for the update checker
@@ -94,112 +108,105 @@ struct DownloadResult {
     error: Option<String>,
 }
 
-/// Find the installer URL for the current platform
-fn get_installer_url(assets: &[GitHubAsset]) -> Option<String> {
-    #[cfg(target_os = "windows")]
-    let suffix = if cfg!(target_arch = "aarch64") {
-        "arm64.msi"
-    } else {
-        "x64.msi"
-    };
-
-    #[cfg(target_os = "macos")]
-    let suffix = "aarch64.dmg";
-
-    #[cfg(target_os = "linux")]
-    let suffix = ""; // Linux users build from source
-
-    if suffix.is_empty() {
-        return None;
+impl UpdateCheckResult {
+    fn no_update() -> Self {
+        Self {
+            update_available: false,
+            latest_version: None,
+            release_url: None,
+            release_notes: None,
+            download_url: None,
+            error: None,
+        }
     }
 
-    assets
-        .iter()
-        .find(|a| a.name.ends_with(suffix))
-        .map(|a| a.browser_download_url.clone())
+    fn error(msg: String) -> Self {
+        Self {
+            update_available: false,
+            latest_version: None,
+            release_url: None,
+            release_notes: None,
+            download_url: None,
+            error: Some(msg),
+        }
+    }
 }
 
-/// Check for updates against GitHub Releases API
-fn check_github_releases() -> UpdateCheckResult {
-    let url = format!(
-        "https://api.github.com/repos/{}/releases/latest",
-        GITHUB_REPO
-    );
+/// Compare versions, returns true if `latest` is newer than `current`
+fn is_newer_version(latest: &str, current: &str) -> bool {
+    match (Version::parse(latest), Version::parse(current)) {
+        (Ok(latest_v), Ok(current_v)) => latest_v > current_v,
+        _ => false,
+    }
+}
 
-    let response = ureq::get(&url)
+/// Get the platform key for the current build target
+fn current_platform_key() -> &'static str {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        "windows-x64"
+    }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        "windows-arm64"
+    }
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        "macos-aarch64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        "linux-x64"
+    }
+    // Fallback for other configurations (e.g., macOS x86_64)
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )))]
+    {
+        "unknown"
+    }
+}
+
+/// Get download URL for current platform from assets map
+fn get_platform_asset(assets: &HashMap<String, String>) -> Option<String> {
+    assets.get(current_platform_key()).cloned()
+}
+
+/// Check for updates by fetching the release manifest
+fn check_for_updates() -> UpdateCheckResult {
+    let response = ureq::get(MANIFEST_URL)
         .set("User-Agent", "rustforged-update-checker")
-        .set("Accept", "application/vnd.github.v3+json")
         .call();
 
     match response {
-        Ok(resp) => match resp.into_json::<GitHubRelease>() {
-            Ok(release) => {
-                // Skip drafts and prereleases
-                if release.draft || release.prerelease {
-                    return UpdateCheckResult {
-                        update_available: false,
-                        latest_version: None,
-                        release_url: None,
-                        release_notes: None,
-                        download_url: None,
-                        error: None,
-                    };
-                }
-
-                // Parse version (remove 'v' prefix if present)
-                let version_str = release.tag_name.trim_start_matches('v');
-
-                let update_available = match (
-                    Version::parse(version_str),
-                    Version::parse(CURRENT_VERSION),
-                ) {
-                    (Ok(latest), Ok(current)) => latest > current,
-                    _ => false, // If we can't parse versions, assume no update
-                };
-
+        Ok(resp) => match resp.into_json::<ReleaseManifest>() {
+            Ok(manifest) => {
+                let update_available = is_newer_version(&manifest.version, CURRENT_VERSION);
                 let download_url = if update_available {
-                    get_installer_url(&release.assets)
+                    get_platform_asset(&manifest.assets)
                 } else {
                     None
                 };
 
                 UpdateCheckResult {
                     update_available,
-                    latest_version: Some(version_str.to_string()),
-                    release_url: Some(release.html_url),
-                    release_notes: release.body,
+                    latest_version: Some(manifest.version),
+                    release_url: Some(manifest.release_url),
+                    release_notes: manifest.release_notes,
                     download_url,
                     error: None,
                 }
             }
-            Err(e) => UpdateCheckResult {
-                update_available: false,
-                latest_version: None,
-                release_url: None,
-                release_notes: None,
-                download_url: None,
-                error: Some(format!("Failed to parse release info: {}", e)),
-            },
+            Err(e) => UpdateCheckResult::error(format!("Failed to parse manifest: {}", e)),
         },
         Err(ureq::Error::Status(404, _)) => {
-            // No releases yet - this is fine
-            UpdateCheckResult {
-                update_available: false,
-                latest_version: None,
-                release_url: None,
-                release_notes: None,
-                download_url: None,
-                error: None,
-            }
+            // No manifest yet - this is fine
+            UpdateCheckResult::no_update()
         }
-        Err(e) => UpdateCheckResult {
-            update_available: false,
-            latest_version: None,
-            release_url: None,
-            release_notes: None,
-            download_url: None,
-            error: Some(format!("Failed to check for updates: {}", e)),
-        },
+        Err(e) => UpdateCheckResult::error(format!("Failed to check for updates: {}", e)),
     }
 }
 
@@ -295,7 +302,7 @@ fn start_update_check(mut commands: Commands, mut update_state: ResMut<UpdateSta
     update_state.is_checking = true;
 
     let task_pool = AsyncComputeTaskPool::get();
-    let task = task_pool.spawn(async move { check_github_releases() });
+    let task = task_pool.spawn(async move { check_for_updates() });
 
     commands.spawn(UpdateCheckTask(task));
 }
@@ -577,5 +584,131 @@ impl Plugin for UpdateCheckerPlugin {
                 EguiPrimaryContextPass,
                 (update_indicator_ui, update_dialog_ui),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Version comparison tests
+    #[test]
+    fn test_is_newer_version_true() {
+        assert!(is_newer_version("1.1.0", "1.0.0"));
+        assert!(is_newer_version("2.0.0", "1.9.9"));
+        assert!(is_newer_version("1.0.1", "1.0.0"));
+    }
+
+    #[test]
+    fn test_is_newer_version_false() {
+        assert!(!is_newer_version("1.0.0", "1.0.0")); // Same version
+        assert!(!is_newer_version("1.0.0", "1.1.0")); // Older
+        assert!(!is_newer_version("0.9.0", "1.0.0")); // Much older
+    }
+
+    #[test]
+    fn test_is_newer_version_invalid() {
+        assert!(!is_newer_version("invalid", "1.0.0"));
+        assert!(!is_newer_version("1.0.0", "invalid"));
+        assert!(!is_newer_version("", "1.0.0"));
+    }
+
+    // Manifest parsing tests
+    #[test]
+    fn test_manifest_parsing_full() {
+        let json = r#"{
+            "version": "1.2.3",
+            "release_url": "https://example.com/releases/v1.2.3",
+            "release_notes": "New features",
+            "assets": {
+                "windows-x64": "https://example.com/win.msi",
+                "macos-aarch64": "https://example.com/mac.dmg"
+            }
+        }"#;
+
+        let manifest: ReleaseManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.version, "1.2.3");
+        assert_eq!(manifest.release_url, "https://example.com/releases/v1.2.3");
+        assert_eq!(manifest.release_notes, Some("New features".to_string()));
+        assert_eq!(manifest.assets.len(), 2);
+    }
+
+    #[test]
+    fn test_manifest_parsing_minimal() {
+        let json = r#"{
+            "version": "1.0.0",
+            "release_url": "https://example.com"
+        }"#;
+
+        let manifest: ReleaseManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.version, "1.0.0");
+        assert!(manifest.release_notes.is_none());
+        assert!(manifest.assets.is_empty());
+    }
+
+    // Platform asset selection tests
+    #[test]
+    fn test_get_platform_asset_found() {
+        let mut assets = HashMap::new();
+        assets.insert(
+            current_platform_key().to_string(),
+            "https://example.com/installer".to_string(),
+        );
+
+        let result = get_platform_asset(&assets);
+        assert_eq!(result, Some("https://example.com/installer".to_string()));
+    }
+
+    #[test]
+    fn test_get_platform_asset_missing() {
+        let assets = HashMap::new();
+        let result = get_platform_asset(&assets);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_platform_asset_wrong_platform() {
+        let mut assets = HashMap::new();
+        // Insert a platform that doesn't match current
+        assets.insert(
+            "nonexistent-platform".to_string(),
+            "https://example.com/installer".to_string(),
+        );
+
+        let result = get_platform_asset(&assets);
+        assert!(result.is_none());
+    }
+
+    // UpdateCheckResult helper tests
+    #[test]
+    fn test_update_check_result_no_update() {
+        let result = UpdateCheckResult::no_update();
+        assert!(!result.update_available);
+        assert!(result.latest_version.is_none());
+        assert!(result.release_url.is_none());
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_update_check_result_error() {
+        let result = UpdateCheckResult::error("Network error".to_string());
+        assert!(!result.update_available);
+        assert_eq!(result.error, Some("Network error".to_string()));
+    }
+
+    // Platform key tests
+    #[test]
+    fn test_current_platform_key_not_empty() {
+        let key = current_platform_key();
+        assert!(!key.is_empty());
+        // Should be one of the known platforms or "unknown"
+        let valid_keys = [
+            "windows-x64",
+            "windows-arm64",
+            "macos-aarch64",
+            "linux-x64",
+            "unknown",
+        ];
+        assert!(valid_keys.contains(&key));
     }
 }
