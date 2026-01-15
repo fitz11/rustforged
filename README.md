@@ -25,25 +25,41 @@ Rustforged aims to be a lightweight, performant VTT map editor focused on:
 
 ## Installation
 
-### Pre-built Releases
+Rustforged is built from source. You'll need the Rust toolchain installed.
 
-Download the latest release for your platform from the [Releases page](https://github.com/fitz11/rustforged/releases).
+### Prerequisites
 
-### Building from Source
+1. **Install Rust** via [rustup](https://rustup.rs/):
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+   On Windows, download and run [rustup-init.exe](https://win.rustup.rs/).
 
-Requires Rust toolchain (rustc 1.82+, cargo).
+2. **System dependencies** (Linux only):
+   ```bash
+   # Debian/Ubuntu
+   sudo apt install libasound2-dev libudev-dev pkg-config
+
+   # Fedora
+   sudo dnf install alsa-lib-devel systemd-devel
+
+   # Arch
+   sudo pacman -S alsa-lib systemd-libs
+   ```
+
+### Build & Run
 
 ```bash
 # Clone the repository
 git clone https://github.com/fitz11/rustforged.git
 cd rustforged
 
-# Run in development mode (with dynamic linking for faster builds)
+# Run in development mode
 cargo run
 
-# Build optimized release version
+# Or build an optimized release version
 cargo build --release
-# Binary will be at target/release/rustforged
+# Binary will be at target/release/rustforged (or rustforged.exe on Windows)
 ```
 
 ## Controls
