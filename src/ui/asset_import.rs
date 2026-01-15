@@ -98,6 +98,11 @@ pub fn asset_import_ui(
                     .weak()
                     .small(),
             );
+            ui.label(
+                egui::RichText::new("Original filenames and extensions are preserved.")
+                    .weak()
+                    .small(),
+            );
 
             ui.separator();
 
