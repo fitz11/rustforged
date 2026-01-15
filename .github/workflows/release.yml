@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,19 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
+      version: ${{ github.event.inputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          name: Rustforged v${{ steps.get_version.outputs.version }}
+          tag_name: v${{ github.event.inputs.version }}
+          name: Rustforged v${{ github.event.inputs.version }}
           draft: true
           prerelease: false
           generate_release_notes: true
@@ -65,10 +65,11 @@ jobs:
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: v${{ needs.create-release.outputs.version }}
           files: dist/rustforged-${{ needs.create-release.outputs.version }}-linux-x86_64.tar.gz
 
-  build-windows:
-    name: Build Windows
+  build-windows-x64:
+    name: Build Windows x64
     needs: create-release
     runs-on: windows-latest
     steps:
@@ -82,20 +83,72 @@ jobs:
         with:
           prefix-key: v1-release
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
 
-      - name: Package
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist/rustforged-windows
-          Copy-Item target/release/rustforged.exe dist/rustforged-windows/
-          Copy-Item -Recurse assets dist/rustforged-windows/
-          Copy-Item README.md dist/rustforged-windows/
-          Compress-Archive -Path dist/rustforged-windows -DestinationPath dist/rustforged-${{ needs.create-release.outputs.version }}-windows-x86_64.zip
+      - name: Build MSI installer
+        run: cargo packager --release --formats msi
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/rustforged-${{ needs.create-release.outputs.version }}-windows-x86_64.zip
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: target/release/msi/*.msi
 
+  build-windows-arm64:
+    name: Build Windows ARM64
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-release-arm64
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Build MSI installer
+        run: cargo packager --release --target aarch64-pc-windows-msvc --formats msi
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: target/aarch64-pc-windows-msvc/release/msi/*.msi
+
+  build-macos-arm64:
+    name: Build macOS ARM64
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-release-macos
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Build DMG
+        run: cargo packager --release --target aarch64-apple-darwin --formats dmg
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: target/aarch64-apple-darwin/release/dmg/*.dmg
