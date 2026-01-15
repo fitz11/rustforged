@@ -4,11 +4,17 @@
 [package]
 name = "rustforged"
 product-name = "Rustforged"
-# version is read from Cargo.toml automatically
+version = "0.1.0"
+identifier = "com.fitz11.rustforged"
 description = "D&D 5E Virtual Tabletop Map Editor"
 authors = ["fitz11"]
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/fitz11/rustforged"
+out-dir = "target/release/packager"
+
+[[package.binaries]]
+path = "rustforged"
+main = true
 
 [package.icons]
 windows = ["packaging/icons/icon.ico"]
@@ -26,3 +32,4 @@ wix = { enabled = true }
 # macOS 11.0 (Big Sur) minimum for Apple Silicon native support
 minimum-system-version = "11.0"
 category = "public.app-category.games"
+dmg = { enabled = true }
