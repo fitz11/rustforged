@@ -34,6 +34,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 chrono = "0.4"
+dirs = "6"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

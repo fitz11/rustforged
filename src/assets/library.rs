@@ -41,7 +41,7 @@ pub struct AssetLibrary {
 impl Default for AssetLibrary {
     fn default() -> Self {
         Self {
-            library_path: PathBuf::from("assets/library"),
+            library_path: crate::paths::default_library_dir(),
             assets: Vec::new(),
             error: None,
             metadata: LibraryMetadata::default(),
@@ -238,8 +238,8 @@ pub fn scan_asset_library(mut library: ResMut<AssetLibrary>) {
     let library_path = library.library_path.clone();
 
     // Create default library structure if it doesn't exist
-    if library_path == Path::new("assets/library")
-        && let Err(e) = create_library_directory(&library_path)
+    if !library_path.exists()
+        && let Err(e) = crate::paths::setup_default_library()
     {
         warn!("Failed to create default library: {}", e);
     }

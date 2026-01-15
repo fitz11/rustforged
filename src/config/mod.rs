@@ -83,16 +83,9 @@ pub struct UpdateLastMapPathRequest {
     pub path: PathBuf,
 }
 
-/// Get the path to the config file (next to the executable)
+/// Get the path to the config file (platform-appropriate location)
 fn get_config_path() -> PathBuf {
-    // Get the executable's directory
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        return exe_dir.join("config.json");
-    }
-    // Fallback to current directory if exe path fails
-    PathBuf::from("config.json")
+    crate::paths::config_file()
 }
 
 /// Result of loading config from disk

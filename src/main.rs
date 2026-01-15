@@ -4,6 +4,7 @@ mod config;
 mod constants;
 mod editor;
 mod map;
+mod paths;
 mod session;
 pub mod theme;
 mod ui;
@@ -23,8 +24,8 @@ fn setup_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     use tracing_subscriber::prelude::*;
 
     // Create logs directory if it doesn't exist
-    let logs_dir = std::path::Path::new("logs");
-    if std::fs::create_dir_all(logs_dir).is_err() {
+    let logs_dir = paths::logs_dir();
+    if std::fs::create_dir_all(&logs_dir).is_err() {
         eprintln!("Failed to create logs directory");
         return None;
     }
@@ -43,7 +44,7 @@ fn setup_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     }
 
     // Set up file appender
-    let file_appender = tracing_appender::rolling::never(logs_dir, "rustforged.log");
+    let file_appender = tracing_appender::rolling::never(&logs_dir, "rustforged.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Configure file layer (no ANSI colors for file output)
@@ -79,6 +80,11 @@ fn setup_logging() -> Option<()> {
 }
 
 fn main() {
+    // Initialize platform-appropriate directories early
+    if let Err(e) = paths::ensure_directories() {
+        eprintln!("Failed to create app directories: {}", e);
+    }
+
     // Keep the guard alive for the duration of the program
     let _log_guard = setup_logging();
     App::new()
