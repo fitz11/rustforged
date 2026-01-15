@@ -45,10 +45,10 @@ pub fn configure_fog_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     editor_config.render_layers = RenderLayers::layer(1);
 
     // Player fog: layer 2 (player-only, not visible in editor)
-    // Use wider lines for better coverage
+    // Use wider lines for better coverage at high zoom levels
     let (player_config, _) = config_store.config_mut::<FogPlayerGizmoGroup>();
     player_config.render_layers = RenderLayers::layer(2);
-    player_config.line.width = 4.0;
+    player_config.line.width = 8.0;
 }
 
 // ============================================================================
@@ -305,8 +305,8 @@ pub fn render_fog_player(
         get_rotated_viewport_cell_bounds(&session_state, grid_size);
 
     // Dense line spacing for player view - want complete black coverage
-    // Spacing of 1.0 with line_width of 4.0 ensures overlap at typical zoom levels
-    let line_spacing = 1.0;
+    // Spacing of 0.5 with line_width of 8.0 ensures overlap even at max zoom (10x)
+    let line_spacing = 0.5;
     let half_grid = grid_size / 2.0;
 
     // Render filled fog for all cells in viewport that are NOT revealed
