@@ -94,7 +94,7 @@ impl Plugin for EditorPlugin {
                     placement::handle_placement
                         .run_if(tool_is(EditorTool::Place).and(no_dialog_open)),
                     brush::handle_brush.run_if(tool_is(EditorTool::Brush).and(no_dialog_open)),
-                    update_layer_visibility,
+                    update_layer_visibility.run_if(resource_changed::<MapData>),
                 ),
             )
             .add_systems(

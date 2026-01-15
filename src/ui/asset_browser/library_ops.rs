@@ -60,24 +60,56 @@ pub fn export_library_to_zip(library_path: &Path, dest_path: &Path) -> Result<()
     Ok(())
 }
 
+/// Maximum total size of extracted files (500 MB).
+const MAX_EXTRACT_SIZE: u64 = 500 * 1024 * 1024;
+
+/// Check if a zip entry name is safe (no path traversal or absolute paths).
+fn is_safe_path(name: &str) -> bool {
+    // Reject absolute paths
+    if Path::new(name).is_absolute() {
+        return false;
+    }
+    // Reject path traversal attempts
+    for component in Path::new(name).components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Import a library from a zip file to a destination directory.
 pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), String> {
     let file = File::open(zip_path).map_err(|e| format!("Failed to open zip file: {}", e))?;
     let mut archive =
         ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {}", e))?;
 
-    // First pass: check if .library.json exists
+    // First pass: validate archive
     let mut has_library_metadata = false;
+    let mut total_size: u64 = 0;
+
     for i in 0..archive.len() {
         let entry = archive
             .by_index(i)
             .map_err(|e| format!("Failed to read zip entry: {}", e))?;
         let name = entry.name();
+
+        // Security: check for path traversal attacks
+        if !is_safe_path(name) {
+            return Err(format!(
+                "Invalid archive: contains unsafe path '{}'. \
+                 Archive may be malicious.",
+                name
+            ));
+        }
+
         // Check if .library.json is at the root level
         if name == LIBRARY_METADATA_FILE || name == format!("{}/", LIBRARY_METADATA_FILE) {
             has_library_metadata = true;
-            break;
         }
+
+        // Accumulate total decompressed size
+        total_size += entry.size();
     }
 
     if !has_library_metadata {
@@ -86,6 +118,16 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
              This zip file does not contain a valid asset library."
                 .to_string(),
         );
+    }
+
+    // Security: check for zip bombs
+    if total_size > MAX_EXTRACT_SIZE {
+        return Err(format!(
+            "Archive too large: {} MB uncompressed (max {} MB).\n\n\
+             This archive exceeds the maximum allowed size.",
+            total_size / (1024 * 1024),
+            MAX_EXTRACT_SIZE / (1024 * 1024)
+        ));
     }
 
     // Create destination directory

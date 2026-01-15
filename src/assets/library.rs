@@ -161,8 +161,15 @@ fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
 
 /// Recursively scans a directory for image assets
 fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, current_path: &Path) {
-    let Ok(entries) = std::fs::read_dir(current_path) else {
-        return;
+    let entries = match std::fs::read_dir(current_path) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(
+                "Cannot read directory {:?}: {}. Some assets may not be loaded.",
+                current_path, e
+            );
+            return;
+        }
     };
 
     for entry in entries.flatten() {

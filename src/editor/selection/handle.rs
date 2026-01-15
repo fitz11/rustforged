@@ -116,7 +116,7 @@ pub fn handle_selection(
                     .unwrap_or(true)
             })
             .collect();
-        items.sort_by(|a, b| b.1.translation.z.partial_cmp(&a.1.translation.z).unwrap());
+        items.sort_by(|a, b| b.1.translation.z.total_cmp(&a.1.translation.z));
 
         let clicked_item = items
             .iter()
