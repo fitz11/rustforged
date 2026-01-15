@@ -92,8 +92,9 @@ pub fn setup_player_camera(
                 ..OrthographicProjection::default_2d()
             }),
             Transform::from_translation(session_state.viewport_center.extend(1000.0)),
-            // Only render layer 0 (main content), not layer 1 (editor-only)
-            RenderLayers::layer(0),
+            // Render layer 0 (main content) and layer 2 (player-only fog)
+            // Does not see layer 1 (editor-only: annotations, viewport indicator)
+            RenderLayers::from_layers(&[0, 2]),
         ));
 
         info!("Created player camera targeting window {:?}", window_entity);

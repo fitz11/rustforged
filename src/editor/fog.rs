@@ -13,7 +13,7 @@
 //!
 //! Uses two gizmo groups:
 //! - [`FogEditorGizmoGroup`]: Semi-transparent grey for editor view (RenderLayers::layer(1))
-//! - [`FogPlayerGizmoGroup`]: Opaque black for player view (RenderLayers::layer(0))
+//! - [`FogPlayerGizmoGroup`]: Opaque black for player view (RenderLayers::layer(2))
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
@@ -44,9 +44,11 @@ pub fn configure_fog_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (editor_config, _) = config_store.config_mut::<FogEditorGizmoGroup>();
     editor_config.render_layers = RenderLayers::layer(1);
 
-    // Player fog: layer 0 (visible to player camera)
+    // Player fog: layer 2 (player-only, not visible in editor)
+    // Use wider lines for better coverage
     let (player_config, _) = config_store.config_mut::<FogPlayerGizmoGroup>();
-    player_config.render_layers = RenderLayers::layer(0);
+    player_config.render_layers = RenderLayers::layer(2);
+    player_config.line.width = 4.0;
 }
 
 // ============================================================================
@@ -296,19 +298,15 @@ pub fn render_fog_player(
     let grid_size = map_data.grid_size;
     let fog_color = theme::FOG_PLAYER;
 
-    // Calculate viewport bounds from session state
-    let viewport_center = session_state.viewport_center;
-    let viewport_size = session_state.effective_viewport_size();
-    let half_size = viewport_size / 2.0;
-
-    let min_world = viewport_center - half_size;
-    let max_world = viewport_center + half_size;
-
-    let min_cell = crate::map::world_to_cell(min_world - Vec2::splat(grid_size), grid_size);
-    let max_cell = crate::map::world_to_cell(max_world + Vec2::splat(grid_size), grid_size);
+    // Calculate rotation-aware viewport bounds
+    // When viewport is rotated, we need the axis-aligned bounding box that
+    // contains all four corners of the rotated rectangle
+    let (min_cell, max_cell) =
+        get_rotated_viewport_cell_bounds(&session_state, grid_size);
 
     // Dense line spacing for player view - want complete black coverage
-    let line_spacing = 2.0;
+    // Spacing of 1.0 with line_width of 4.0 ensures overlap at typical zoom levels
+    let line_spacing = 1.0;
     let half_grid = grid_size / 2.0;
 
     // Render filled fog for all cells in viewport that are NOT revealed
@@ -334,6 +332,62 @@ pub fn render_fog_player(
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Get the cell bounds for the player viewport, accounting for rotation.
+///
+/// When the viewport is rotated, we need to calculate the axis-aligned bounding
+/// box (AABB) that contains all four corners of the rotated rectangle.
+fn get_rotated_viewport_cell_bounds(
+    session_state: &LiveSessionState,
+    grid_size: f32,
+) -> ((i32, i32), (i32, i32)) {
+    let center = session_state.viewport_center;
+    let size = session_state.viewport_size; // Use raw size, not effective
+    let half_w = size.x / 2.0;
+    let half_h = size.y / 2.0;
+    let rotation = session_state.rotation_radians();
+
+    // Calculate the four corners relative to center (before rotation)
+    let corners_local = [
+        Vec2::new(-half_w, -half_h), // bottom-left
+        Vec2::new(half_w, -half_h),  // bottom-right
+        Vec2::new(half_w, half_h),   // top-right
+        Vec2::new(-half_w, half_h),  // top-left
+    ];
+
+    // Rotate each corner and find the AABB
+    let cos_r = rotation.cos();
+    let sin_r = rotation.sin();
+
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_y = f32::MAX;
+    let mut max_y = f32::MIN;
+
+    for corner in corners_local {
+        // Apply rotation: x' = x*cos - y*sin, y' = x*sin + y*cos
+        let rotated = Vec2::new(
+            corner.x * cos_r - corner.y * sin_r,
+            corner.x * sin_r + corner.y * cos_r,
+        );
+        let world_pos = center + rotated;
+
+        min_x = min_x.min(world_pos.x);
+        max_x = max_x.max(world_pos.x);
+        min_y = min_y.min(world_pos.y);
+        max_y = max_y.max(world_pos.y);
+    }
+
+    // Add padding for cells partially visible at edges
+    let padding = grid_size * 2.0;
+    let min_world = Vec2::new(min_x - padding, min_y - padding);
+    let max_world = Vec2::new(max_x + padding, max_y + padding);
+
+    let min_cell = crate::map::world_to_cell(min_world, grid_size);
+    let max_cell = crate::map::world_to_cell(max_world, grid_size);
+
+    (min_cell, max_cell)
+}
 
 /// Get the cell bounds visible in the camera viewport
 fn get_viewport_cell_bounds(
