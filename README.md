@@ -1,5 +1,9 @@
 # Rustforged
 
+<p align="center">
+  <img src="packaging/icons/Rustforged.png" alt="Rustforged" width="128">
+</p>
+
 A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17 and bevy_egui.
 
 ## Project Goals
