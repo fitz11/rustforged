@@ -37,10 +37,11 @@ pub fn asset_browser_ui(
     mut map_res: MapResources,
     mut dialogs: DialogStates,
 ) -> Result {
-    // Clear thumbnail cache if library path changed
+    // Clear thumbnail cache and update folders if library path changed
     let current_path = library.library_path.clone();
     if browser_state.last_library_path.as_ref() != Some(&current_path) {
         thumbnail_cache.clear();
+        browser_state.discovered_folders = discover_folders(&library);
         browser_state.last_library_path = Some(current_path);
     }
 
@@ -67,11 +68,6 @@ pub fn asset_browser_ui(
 
             ui.separator();
             ui.add_space(4.0);
-
-            // Update discovered folders when library changes
-            if browser_state.last_library_path.as_ref() != Some(&library.library_path) {
-                browser_state.discovered_folders = discover_folders(&library);
-            }
 
             render_folder_tree(ui, &mut browser_state);
 
