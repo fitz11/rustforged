@@ -79,6 +79,7 @@ pub fn default_library_dir() -> PathBuf {
 ///
 /// - Dev mode: `./logs/`
 /// - Installed: `{data_dir}/logs/`
+#[allow(dead_code)]
 pub fn logs_dir() -> PathBuf {
     data_dir()
         .map(|p| p.join("logs"))

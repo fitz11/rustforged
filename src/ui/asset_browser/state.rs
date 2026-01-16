@@ -82,6 +82,8 @@ pub struct AssetBrowserState {
     pub move_error: Option<String>,
     /// New folder name input for move dialog
     pub move_new_folder_name: String,
+    /// Flag to request library refresh (set by UI, consumed by system)
+    pub refresh_requested: bool,
 }
 
 impl Default for AssetBrowserState {
@@ -110,6 +112,7 @@ impl Default for AssetBrowserState {
             move_dialog_open: false,
             move_error: None,
             move_new_folder_name: String::new(),
+            refresh_requested: false,
         }
     }
 }

@@ -5,7 +5,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::assets::{
     create_and_open_library, get_image_dimensions, open_library_directory, AssetLibrary,
-    LibraryAsset, RenameAssetRequest, SelectedAsset, ThumbnailCache,
+    LibraryAsset, RefreshAssetLibrary, RenameAssetRequest, SelectedAsset, ThumbnailCache,
     UpdateLibraryMetadataRequest, THUMBNAIL_SIZE,
 };
 use crate::config::{AppConfig, SetDefaultLibraryRequest};
@@ -34,6 +34,7 @@ pub fn asset_browser_ui(
     mut set_default_events: MessageWriter<SetDefaultLibraryRequest>,
     mut rename_events: MessageWriter<RenameAssetRequest>,
     mut library_metadata_events: MessageWriter<UpdateLibraryMetadataRequest>,
+    mut refresh_events: MessageWriter<RefreshAssetLibrary>,
     mut map_res: MapResources,
     mut dialogs: DialogStates,
 ) -> Result {
@@ -128,6 +129,14 @@ pub fn asset_browser_ui(
         &mut rename_events,
     );
 
+    // Handle library refresh request
+    if browser_state.refresh_requested {
+        browser_state.refresh_requested = false;
+        thumbnail_cache.clear();
+        browser_state.discovered_folders = discover_folders(&library);
+        refresh_events.write(RefreshAssetLibrary);
+    }
+
     Ok(())
 }
 
@@ -182,14 +191,17 @@ fn render_library_section(
     }
 }
 
-/// Render library management buttons (Open, New, Rename).
+/// Render library management buttons (Open, Refresh, New, Rename).
 fn render_library_buttons(
     ui: &mut egui::Ui,
     library: &mut AssetLibrary,
     browser_state: &mut AssetBrowserState,
 ) {
     ui.horizontal(|ui| {
-        if ui.add_sized([65.0, 24.0], egui::Button::new("Open...")).clicked()
+        if ui
+            .add_sized([50.0, 24.0], egui::Button::new("Open"))
+            .on_hover_text("Open existing library folder")
+            .clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .set_title("Open Asset Library")
                 .pick_folder()
@@ -203,7 +215,18 @@ fn render_library_buttons(
             }
         }
 
-        if ui.add_sized([65.0, 24.0], egui::Button::new("New...")).clicked()
+        if ui
+            .add_sized([24.0, 24.0], egui::Button::new("\u{21bb}"))
+            .on_hover_text("Refresh library")
+            .clicked()
+        {
+            browser_state.refresh_requested = true;
+        }
+
+        if ui
+            .add_sized([50.0, 24.0], egui::Button::new("New"))
+            .on_hover_text("Create new library folder")
+            .clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .set_title("Create New Asset Library")
                 .pick_folder()
