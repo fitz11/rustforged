@@ -39,11 +39,8 @@ pub fn rename_asset(
         return Err("A file with that name already exists".to_string());
     }
 
-    // Rename the file
-    std::fs::rename(old_path, &new_path)
-        .map_err(|e| format!("Failed to rename file: {}", e))?;
-
-    // Calculate old and new relative paths for map updates
+    // Calculate old relative path BEFORE rename (while file still exists at old_path)
+    // Must match the path format used in library.rs scan_directory_recursive
     let old_relative =
         if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
             // Internal library - construct relative path
@@ -53,9 +50,18 @@ pub fn rename_asset(
                 .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
             format!("{}/{}", assets_relative.display(), asset_in_lib)
         } else {
-            old_path.to_string_lossy().to_string()
+            // External library - use canonicalized path (matches library scan)
+            old_path
+                .canonicalize()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| old_path.to_string_lossy().to_string())
         };
 
+    // Rename the file
+    std::fs::rename(old_path, &new_path)
+        .map_err(|e| format!("Failed to rename file: {}", e))?;
+
+    // Calculate new relative path AFTER rename (while file exists at new_path)
     let new_relative =
         if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
             let asset_in_lib = new_path
@@ -64,7 +70,11 @@ pub fn rename_asset(
                 .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
             format!("{}/{}", assets_relative.display(), asset_in_lib)
         } else {
-            new_path.to_string_lossy().to_string()
+            // External library - use canonicalized path (matches library scan)
+            new_path
+                .canonicalize()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| new_path.to_string_lossy().to_string())
         };
 
     // Update all map files in the library's maps folder
@@ -148,7 +158,8 @@ pub fn move_asset(
             .map_err(|e| format!("Failed to create target folder: {}", e))?;
     }
 
-    // Calculate relative paths for map updates (same logic as rename_asset)
+    // Calculate old relative path BEFORE move (while file still exists at old_path)
+    // Must match the path format used in library.rs scan_directory_recursive
     let old_relative =
         if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
             let asset_in_lib = old_path
@@ -157,9 +168,18 @@ pub fn move_asset(
                 .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
             format!("{}/{}", assets_relative.display(), asset_in_lib)
         } else {
-            old_path.to_string_lossy().to_string()
+            // External library - use canonicalized path (matches library scan)
+            old_path
+                .canonicalize()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| old_path.to_string_lossy().to_string())
         };
 
+    // Move the file
+    std::fs::rename(old_path, &new_path)
+        .map_err(|e| format!("Failed to move file: {}", e))?;
+
+    // Calculate new relative path AFTER move (while file exists at new_path)
     let new_relative =
         if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
             let asset_in_lib = new_path
@@ -168,12 +188,12 @@ pub fn move_asset(
                 .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
             format!("{}/{}", assets_relative.display(), asset_in_lib)
         } else {
-            new_path.to_string_lossy().to_string()
+            // External library - use canonicalized path (matches library scan)
+            new_path
+                .canonicalize()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| new_path.to_string_lossy().to_string())
         };
-
-    // Move the file
-    std::fs::rename(old_path, &new_path)
-        .map_err(|e| format!("Failed to move file: {}", e))?;
 
     // Update all map files in the library's maps folder
     let maps_dir = library_path.join("maps");
