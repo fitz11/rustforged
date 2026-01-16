@@ -212,9 +212,10 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
             .to_lowercase();
 
         // Calculate folder path relative to library root
+        // Normalize path separators to forward slashes for cross-platform consistency
         let folder_path = current_path
             .strip_prefix(base_path)
-            .map(|p| p.to_string_lossy().to_string())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
 
         // For assets in the Bevy assets folder, use relative path for asset loading
