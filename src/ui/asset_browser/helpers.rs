@@ -58,6 +58,21 @@ pub fn discover_folders(library: &AssetLibrary) -> Vec<String> {
     sorted
 }
 
+/// Sanitize a map name for use as a filename.
+pub fn sanitize_map_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 /// Get a color for the preview square based on file extension.
 pub fn extension_color(ext: &str) -> egui::Color32 {
     match ext {

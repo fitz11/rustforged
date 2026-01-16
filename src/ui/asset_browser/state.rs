@@ -5,7 +5,8 @@ use bevy::prelude::*;
 use std::path::PathBuf;
 
 use crate::map::{
-    CurrentMapFile, LoadMapRequest, MapData, MapDirtyState, OpenMaps, SwitchMapRequest,
+    CurrentMapFile, LoadMapRequest, MapData, MapDirtyState, OpenMaps, SaveMapRequest,
+    SwitchMapRequest,
 };
 
 use super::super::file_menu::FileMenuState;
@@ -20,6 +21,7 @@ pub struct MapResources<'w> {
     pub dirty_state: ResMut<'w, MapDirtyState>,
     pub open_maps: Res<'w, OpenMaps>,
     pub load_events: MessageWriter<'w, LoadMapRequest>,
+    pub save_events: MessageWriter<'w, SaveMapRequest>,
     pub switch_events: MessageWriter<'w, SwitchMapRequest>,
 }
 

@@ -17,7 +17,7 @@ use super::dialogs::{
     render_rename_asset_dialog, render_rename_library_dialog, render_rename_map_dialog,
     render_set_default_dialog, render_success_dialog,
 };
-use super::helpers::{discover_folders, extension_color, scan_maps_directory};
+use super::helpers::{discover_folders, extension_color, sanitize_map_name, scan_maps_directory};
 use super::library_ops::{export_library_to_zip, import_library_from_zip};
 use super::state::{AssetBrowserState, DialogStates, MapResources};
 
@@ -401,8 +401,27 @@ fn render_maps_section(
             .add_sized([45.0, 24.0], egui::Button::new("Save"))
             .clicked()
         {
-            dialogs.menu_state.save_filename = map_res.map_data.name.clone();
-            dialogs.menu_state.show_save_name_dialog = true;
+            // Only prompt for name if map is untitled; otherwise save directly
+            let active_map = map_res.open_maps.maps.get(&map_res.open_maps.active_map_id.unwrap_or(0));
+            if let Some(active) = active_map {
+                if active.name == "Untitled Map" {
+                    dialogs.menu_state.save_filename = active.name.clone();
+                    dialogs.menu_state.show_save_name_dialog = true;
+                } else if let Some(ref existing_path) = active.path {
+                    // Map has been saved before, save to same path
+                    map_res
+                        .save_events
+                        .write(crate::map::SaveMapRequest { path: existing_path.clone() });
+                } else {
+                    // Map has a name but no path yet - save to maps directory
+                    let maps_dir = library.library_path.join("maps");
+                    let filename = sanitize_map_name(&active.name);
+                    let path = maps_dir.join(format!("{}.json", filename));
+                    map_res
+                        .save_events
+                        .write(crate::map::SaveMapRequest { path });
+                }
+            }
         }
         if ui
             .add_sized([55.0, 24.0], egui::Button::new("Rename"))
