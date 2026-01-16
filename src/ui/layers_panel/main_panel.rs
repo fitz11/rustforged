@@ -39,9 +39,11 @@ pub fn layers_panel_ui(
             // Live Session controls (when active)
             render_session_controls(ui, &mut session_state);
 
-            // Help button (bottom center)
+            // Help button and version (bottom center)
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
+                ui.weak(format!("v{}", crate::update::CURRENT_VERSION));
+                ui.add_space(4.0);
                 if ui
                     .add_sized([120.0, 28.0], egui::Button::new("Help (H)"))
                     .clicked()
