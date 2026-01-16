@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::window::WindowCloseRequested;
+use bevy::window::{PrimaryWindow, WindowCloseRequested};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::assets::AssetLibrary;
@@ -223,19 +223,32 @@ pub fn unsaved_changes_dialog_ui(
     Ok(())
 }
 
-/// System to intercept window close requests and show unsaved changes dialog if needed
+/// System to intercept window close requests and show unsaved changes dialog if needed.
+///
+/// With `close_when_requested: false` on WindowPlugin, we must manually handle closing.
+/// If there are unsaved changes, show a confirmation dialog. Otherwise, exit immediately.
 pub fn handle_window_close(
     mut close_events: MessageReader<WindowCloseRequested>,
     mut dialog: ResMut<UnsavedChangesDialog>,
     open_maps: Res<OpenMaps>,
+    mut exit_events: MessageWriter<AppExit>,
+    primary_window: Query<Entity, With<PrimaryWindow>>,
 ) {
-    for _event in close_events.read() {
+    let primary_entity = primary_window.single().ok();
+
+    for event in close_events.read() {
+        // Only handle close requests for the primary window
+        if Some(event.window) != primary_entity {
+            continue;
+        }
+
         // Check if any maps have unsaved changes
         if open_maps.maps.values().any(|m| m.is_dirty) {
             // Show confirmation dialog instead of closing
             dialog.show_close_confirmation = true;
-            // Note: We can't prevent the window from closing in Bevy directly,
-            // so we rely on the dialog to give the user a chance to save
+        } else {
+            // No unsaved changes, exit immediately
+            exit_events.write(AppExit::Success);
         }
     }
 }

@@ -28,6 +28,7 @@ impl Plugin for LiveSessionPlugin {
                     player_window::sync_player_camera.run_if(session_is_active),
                     // No run_if here - needs to run to clean up after session ends
                     player_window::handle_player_window_close,
+                    player_window::handle_player_window_close_request,
                     player_window::handle_graceful_shutdown,
                 ),
             );

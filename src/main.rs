@@ -100,6 +100,8 @@ fn main() {
                             .into(),
                         ..default()
                     }),
+                    // Disable automatic window closing so we can prompt for unsaved changes
+                    close_when_requested: false,
                     ..default()
                 })
                 .set(AssetPlugin {
