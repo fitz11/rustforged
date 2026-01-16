@@ -18,7 +18,7 @@
 //! ## Key Types
 //!
 //! - [`UpdateState`] - Main resource tracking update status
-//! - [`ReleaseManifest`] - Parsed release manifest from remote
+//! - `ReleaseManifest` - Parsed release manifest from remote
 //!
 //! ## Systems
 //!

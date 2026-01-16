@@ -162,24 +162,6 @@ Rustforged uses a plugin-based architecture built on the Bevy Entity Component S
 - **UiPlugin** - egui panels, toolbars, dialogs
 - **LiveSessionPlugin** - Player window, viewport controls
 
-## Logging (Debug Builds)
-
-Debug builds include file-based logging for troubleshooting:
-
-- **Log file**: `logs/rustforged.log`
-- **Default levels**: `info` for Bevy, `debug` for rustforged
-- **Custom filtering**: Set `RUST_LOG` environment variable
-
-```bash
-# Example: Enable trace logging for selection module
-RUST_LOG=rustforged::editor::selection=trace cargo run
-
-# Example: Quiet mode (errors only)
-RUST_LOG=error cargo run
-```
-
-**Note**: Logging is disabled in release builds for performance.
-
 ## User Interface
 
 ### Main Toolbar
@@ -292,10 +274,9 @@ cargo test map::layer
 
 # Run clippy linter
 cargo clippy
-
-# Pre-commit checks (same as CI)
-cargo check --all-targets && cargo clippy --all-targets -- -D warnings && cargo test
 ```
+
+See `CLAUDE.md` for pre-commit checks and development workflow.
 
 ### Test Coverage
 
