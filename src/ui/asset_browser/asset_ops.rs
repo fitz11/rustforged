@@ -148,16 +148,28 @@ pub fn move_asset(
             .map_err(|e| format!("Failed to create target folder: {}", e))?;
     }
 
-    // Calculate relative paths for map updates
-    let old_relative = old_path
-        .strip_prefix(library_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
+    // Calculate relative paths for map updates (same logic as rename_asset)
+    let old_relative =
+        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
+            let asset_in_lib = old_path
+                .strip_prefix(library_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
+            format!("{}/{}", assets_relative.display(), asset_in_lib)
+        } else {
+            old_path.to_string_lossy().to_string()
+        };
 
-    let new_relative = new_path
-        .strip_prefix(library_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
+    let new_relative =
+        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
+            let asset_in_lib = new_path
+                .strip_prefix(library_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
+            format!("{}/{}", assets_relative.display(), asset_in_lib)
+        } else {
+            new_path.to_string_lossy().to_string()
+        };
 
     // Move the file
     std::fs::rename(old_path, &new_path)

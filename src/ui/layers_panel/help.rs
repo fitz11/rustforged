@@ -24,72 +24,75 @@ pub fn help_popup_ui(
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .default_width(400.0)
+        .max_height(800.0)
         .show(ctx, |ui| {
-            ui.heading("Rustforged - D&D 5E VTT Map Editor");
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.heading("Rustforged - D&D 5E VTT Map Editor");
 
-            ui.horizontal(|ui| {
-                ui.label("Version:");
-                ui.strong(crate::update::CURRENT_VERSION);
+                ui.horizontal(|ui| {
+                    ui.label("Version:");
+                    ui.strong(crate::update::CURRENT_VERSION);
 
-                if update_state.update_available
-                    && let Some(ref version) = update_state.latest_version
-                {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 165, 0),
-                        format!("(v{} available)", version),
-                    );
-                }
-            });
+                    if update_state.update_available
+                        && let Some(ref version) = update_state.latest_version
+                    {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 165, 0),
+                            format!("(v{} available)", version),
+                        );
+                    }
+                });
 
-            ui.separator();
+                ui.separator();
 
-            // Tools Section
-            render_tools_section(ui);
+                // Tools Section
+                render_tools_section(ui);
 
-            ui.add_space(10.0);
-            ui.separator();
+                ui.add_space(10.0);
+                ui.separator();
 
-            // Selection Shortcuts
-            render_selection_section(ui);
+                // Selection Shortcuts
+                render_selection_section(ui);
 
-            ui.add_space(10.0);
-            ui.separator();
+                ui.add_space(10.0);
+                ui.separator();
 
-            // Camera Controls
-            render_camera_section(ui);
+                // Camera Controls
+                render_camera_section(ui);
 
-            ui.add_space(10.0);
-            ui.separator();
+                ui.add_space(10.0);
+                ui.separator();
 
-            // Placement
-            render_placement_section(ui);
+                // Placement
+                render_placement_section(ui);
 
-            ui.add_space(10.0);
-            ui.separator();
+                ui.add_space(10.0);
+                ui.separator();
 
-            // Asset Management
-            render_assets_section(ui);
+                // Asset Management
+                render_assets_section(ui);
 
-            ui.add_space(10.0);
-            ui.separator();
+                ui.add_space(10.0);
+                ui.separator();
 
-            // File Operations
-            render_file_section(ui);
+                // File Operations
+                render_file_section(ui);
 
-            ui.add_space(10.0);
-            ui.separator();
+                ui.add_space(10.0);
+                ui.separator();
 
-            ui.horizontal(|ui| {
-                ui.label("GitHub:");
-                ui.hyperlink_to("fitz11/rustforged", "https://github.com/fitz11/rustforged");
-            });
+                ui.horizontal(|ui| {
+                    ui.label("GitHub:");
+                    ui.hyperlink_to("fitz11/rustforged", "https://github.com/fitz11/rustforged");
+                });
 
-            ui.add_space(10.0);
+                ui.add_space(10.0);
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                if ui.button("Close").clicked() {
-                    help_state.is_open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                    if ui.button("Close").clicked() {
+                        help_state.is_open = false;
+                    }
+                });
             });
         });
 
@@ -171,7 +174,7 @@ fn render_selection_section(ui: &mut egui::Ui) {
             ui.label("Fit selected to grid cell");
             ui.end_row();
 
-            ui.strong("C");
+            ui.strong("Shift+G");
             ui.label("Center selected to grid");
             ui.end_row();
 

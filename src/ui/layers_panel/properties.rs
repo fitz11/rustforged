@@ -84,7 +84,7 @@ fn render_multi_selection(
 
     ui.add_space(4.0);
     if ui
-        .add_sized([140.0, 26.0], egui::Button::new("Center to Grid (C)"))
+        .add_sized([140.0, 26.0], egui::Button::new("Center to Grid (Shift+G)"))
         .clicked()
     {
         let grid_size = map_data.grid_size;
@@ -256,7 +256,7 @@ fn render_single_selection(
 
         ui.add_space(4.0);
         if ui
-            .add_sized([140.0, 26.0], egui::Button::new("Center to Grid (C)"))
+            .add_sized([140.0, 26.0], egui::Button::new("Center to Grid (Shift+G)"))
             .clicked()
         {
             let grid_size = map_data.grid_size;
