@@ -100,7 +100,7 @@ jobs:
         run: cargo build --release
 
       - name: Build MSI installer
-        run: cargo packager --release --formats msi
+        run: cargo packager --release --formats wix
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
@@ -132,7 +132,7 @@ jobs:
         run: cargo build --release --target aarch64-pc-windows-msvc
 
       - name: Build MSI installer
-        run: cargo packager --release --target aarch64-pc-windows-msvc --binaries-dir target/aarch64-pc-windows-msvc/release --formats msi
+        run: cargo packager --release --target aarch64-pc-windows-msvc --binaries-dir target/aarch64-pc-windows-msvc/release --formats wix
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1

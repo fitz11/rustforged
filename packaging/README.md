@@ -48,7 +48,7 @@ Run on a Windows machine:
 
 ```bash
 cargo build --release
-cargo packager --release --formats msi
+cargo packager --release --formats wix
 ```
 
 Output: `target/release/packager/Rustforged_<version>_x64_en-US.msi`
@@ -60,7 +60,7 @@ Cross-compile on Windows (requires ARM64 target):
 ```bash
 rustup target add aarch64-pc-windows-msvc
 cargo build --release --target aarch64-pc-windows-msvc
-cargo packager --release --target aarch64-pc-windows-msvc --formats msi
+cargo packager --release --target aarch64-pc-windows-msvc --formats wix
 ```
 
 Output: `target/release/packager/Rustforged_<version>_arm64_en-US.msi`
