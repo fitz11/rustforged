@@ -4,18 +4,19 @@
   <img src="packaging/icons/Rustforged.png" alt="Rustforged" width="128">
 </p>
 
-A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17 and bevy_egui.
+A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.17.3 and bevy_egui 0.38.
 
-## Project Goals
+## Features
 
-Rustforged aims to be a lightweight, performant VTT map editor focused on:
+- **Layer-based map editing** - Background, Terrain, Doodad, Token, Annotation, and Fog of War layers
+- **Asset library management** - Create, open, and organize custom asset libraries
+- **Drawing tools** - Freehand drawing and straight line annotations
+- **Fog of War** - Reveal/hide map areas for players
+- **Grid system** - 70px grid with snap-to-grid placement (hold Shift for free placement)
+- **Live session mode** - Display player view on a secondary monitor with configurable viewport
+- **Map persistence** - Save and load maps as JSON files
 
-- **Layer-based map creation** - Intuitive terrain, doodad, and token placement with proper z-ordering
-- **Live session display** - Show player-facing view on a secondary monitor with fog of war
-- **Portable asset libraries** - Organize and reuse assets across multiple maps
-- **Minimal dependencies** - Built with Rust and Bevy for native performance without browser overhead
-
-## Downloads (Coming Soon!)
+## Downloads
 
 Pre-built installers are available for Windows and macOS:
 
@@ -26,60 +27,18 @@ Pre-built installers are available for Windows and macOS:
 | macOS (Apple Silicon) | [DMG](https://github.com/fitz11/rustforged/releases/latest) |
 | Linux | Build from source (see below) |
 
-The application checks for updates automatically on startup and notifies you when a new version is available.
+## Quick Start
 
-For detailed installation instructions, see [docs/INSTALLATION.md](docs/INSTALLATION.md).
-
-## Features
-
-- **Layer-based map editing** - Background, Terrain, Doodad, Token, Annotation, and FogOfWar layers
-- **Layer visibility & locking** - Toggle layer visibility and lock layers to prevent accidental edits
-- **Asset library management** - Create, open, and organize custom asset libraries
-- **Drawing tools** - Freehand drawing, straight lines, and text annotations
-- **Fog of War** - Reveal/hide map areas for players with circular brush or grid-aligned tools
-- **Grid system** - 70px grid with snap-to-grid placement (hold Shift for free placement)
-- **Map persistence** - Save and load maps as JSON files
-- **Live session mode** - Display player view on a secondary monitor with configurable viewport
-- **Selection with resize handles** - Resize items using edge and corner handles
-
-## Installation
-
-Rustforged is built from source. You'll need the Rust toolchain installed.
-
-### Prerequisites
-
-1. **Install Rust** via [rustup](https://rustup.rs/):
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-   On Windows, download and run [rustup-init.exe](https://win.rustup.rs/).
-
-2. **System dependencies** (Linux only):
-   ```bash
-   # Debian/Ubuntu
-   sudo apt install libasound2-dev libudev-dev pkg-config
-
-   # Fedora
-   sudo dnf install alsa-lib-devel systemd-devel
-
-   # Arch
-   sudo pacman -S alsa-lib systemd-libs
-   ```
-
-### Build & Run
+### Build from Source
 
 ```bash
-# Clone the repository
+# Install Rust via rustup.rs, then:
 git clone https://github.com/fitz11/rustforged.git
 cd rustforged
-
-# Run in development mode
 cargo run
-
-# Or build an optimized release version
-cargo build --release
-# Binary will be at target/release/rustforged (or rustforged.exe on Windows)
 ```
+
+**Linux dependencies:** `libasound2-dev libudev-dev pkg-config` (Debian/Ubuntu)
 
 ## Controls
 
@@ -88,167 +47,59 @@ cargo build --release
 | Action | Control |
 |--------|---------|
 | Pan | Middle-mouse drag |
-| Zoom | Scroll wheel (0.1x - 10x) |
+| Zoom | Scroll wheel |
 
 ### Tool Shortcuts
 
-| Tool | Shortcut | Description |
-|------|----------|-------------|
-| Select | V or S | Select, move, and resize items |
-| Place | P | Single-click asset placement |
-| Brush | B | Continuous placement while dragging |
-| Draw | D | Freehand drawing paths |
-| Line | L | Straight lines between two points |
-| Text | T | Text annotations |
-| Fog | F | Reveal/hide fog of war areas |
-| Cycle Layer | C / Shift+C | Switch between layers (Place/Brush tools) |
+| Key | Tool |
+|-----|------|
+| V / S | Select - Click to select, drag to move |
+| P | Place - Single-click asset placement |
+| B | Brush - Continuous placement while dragging |
+| D | Draw - Freehand annotation paths |
+| L | Line - Straight line annotations |
+| F | Fog - Reveal/hide fog of war areas |
+| C / Shift+C | Cycle layer (Place/Brush tools) |
 
 ### Selection & Editing
 
 | Action | Control |
 |--------|---------|
-| Select item | Left-click |
-| Toggle selection | Ctrl + click |
-| Box select | Drag on empty space |
-| Move selected | Drag selected item or click inside selection |
-| Resize selected | Drag edge or corner handles |
-| Snap while dragging | Hold Shift |
+| Select item | Click |
+| Multi-select | Ctrl+Click or box select |
+| Move selected | Drag |
+| Resize selected | Drag handles |
 | Fit to grid | G |
-| Center to grid | Shift+G |
-| Restore aspect ratio | A |
-| Rotate 90 degrees | R |
-| Delete selected | Delete or Backspace |
-| Copy | Ctrl+C |
-| Cut | Ctrl+X |
-| Paste | Ctrl+V |
+| Rotate 90° | R / Shift+R |
+| Delete | Delete or Backspace |
+| Copy/Cut/Paste | Ctrl+C / Ctrl+X / Ctrl+V |
 
-### Drawing Tools
+### File Operations
 
-| Tool | Usage |
-|------|-------|
-| Draw | Click and drag to draw freehand paths |
-| Line | Click start point, then click end point (right-click to cancel) |
-| Text | Click to place text box |
+| Action | Shortcut |
+|--------|----------|
+| Save | Ctrl+S |
+| Save as | Ctrl+Shift+S |
+| Open | Ctrl+O |
+| New | Ctrl+N |
+| Help | H |
 
-### Fog of War
+## Asset Library
 
-| Action | Control |
-|--------|---------|
-| Reveal (circular brush) | Click and drag |
-| Reveal (single cell) | Shift + click |
+Assets are loaded from `assets/library/` by default with subdirectories: `unsorted/`, `terrain/`, `doodads/`, `tokens/`.
 
-## Architecture
+You can open or create custom asset libraries via the left panel. Maps are saved to `<library>/maps/`.
 
-Rustforged uses a plugin-based architecture built on the Bevy Entity Component System (ECS):
-
-```
-               +-------------+
-               |   main.rs   |
-               +------+------+
-                      |
-    +---------+-------+-------+---------+
-    |         |       |       |         |
-+---v---+ +---v---+ +-v--+ +--v--+ +----v----+
-| Asset | | Editor| | Map| | UI  | | Session |
-| Lib   | | Plugin| |Data| |Plugin| | Plugin  |
-+-------+ +-------+ +----+ +-----+ +---------+
-```
-
-**Plugin responsibilities:**
-
-- **AssetLibraryPlugin** - Asset discovery, thumbnail caching, library management
-- **EditorPlugin** - Camera, tools, selection, annotations, fog of war
-- **MapPlugin** - Map data, layers, placed items, persistence
-- **UiPlugin** - egui panels, toolbars, dialogs
-- **LiveSessionPlugin** - Player window, viewport controls
-
-## User Interface
-
-### Main Toolbar
-
-The top toolbar displays between the side panels and includes:
-- **Tool buttons** with keyboard shortcut hints (e.g., "Select [V]", "Place [P]")
-- **Grid toggle** checkbox
-- **Live Session** controls (Start Session button or LIVE indicator)
-
-### Tool Settings Bar
-
-A secondary toolbar appears below the main toolbar for tools with settings:
-- **Place/Brush tools**: Layer selection dropdown (use L/Shift+L to cycle)
-- **Draw/Line tools**: Color swatches and stroke width
-- **Text tool**: Color swatches and font size
-- **Fog tool**: Brush size slider and opacity control
-
-### Asset Browser (Left Panel)
-
-- **File/Assets menus** for map and asset operations
-- **Asset Library** section with expandable library management
-- **Category tabs** (Unsorted, Terrain, Doodads, Tokens)
-- **Asset list** with thumbnail previews
-- **Selected Asset** section with Rename and Move buttons
-
-| Shortcut | Action |
-|----------|--------|
-| F2 | Rename selected asset |
-| F3 | Rename current map |
-| F4 | Rename library |
-
-### Layers Panel (Right Panel)
-
-- **Layers** section with visibility and lock controls
-- **Properties** section for selected item editing
-- **Live Session** controls when session is active
-
-## Assets
-
-### Default Library
-
-Assets are loaded from `assets/library/` by default, with subdirectories:
-
-- `unsorted/` - Uncategorized assets
-- `terrain/` - Ground tiles, floors, walls
-- `doodads/` - Props, furniture, decorations
-- `tokens/` - Player/NPC tokens
-
-### Custom Asset Libraries
-
-You can use any directory as an asset library:
-
-1. Click the arrow next to "Asset Library" in the left panel to expand options
-2. **Open...** - Select an existing folder with the required subdirectories
-3. **New...** - Select a folder to create a new library (subdirectories are created automatically)
-
-Supported formats: PNG, JPG, JPEG, WebP, GIF, BMP, TIFF
-
-Maps are saved to `<library>/maps/` as JSON files.
-
-## Layer System
-
-| Layer | Z-Order | Purpose |
-|-------|---------|---------|
-| Background | 0 | Base terrain, ground |
-| Terrain | 100 | Floors, walls, structures |
-| Doodad | 200 | Props, furniture, decorations |
-| Token | 300 | Player and NPC tokens |
-| Annotation | 350 | Drawings, lines, text (editor-only) |
-| FogOfWar | 375 | Fog overlay (different in editor vs player) |
-| Play | 400 | Viewport indicator (editor-only) |
-
-### Layer Controls
-
-In the right panel under "Layers":
-- **Visibility checkbox** - Show/hide all items on a layer
-- **Lock button** - Prevent selection and editing of items on a layer
+**Supported formats:** PNG, JPG, JPEG, WebP, GIF, BMP, TIFF
 
 ## Live Session Mode
 
 1. Click "Start Session" in the toolbar
 2. Select which monitor to display the player view
-3. Use the **move handle** (tab above the viewport) to drag the viewport
-4. Resize using corner and edge handles (maintains aspect ratio)
-5. Rotate viewport with the rotation buttons in the right panel
+3. Drag the viewport indicator to frame the player view
+4. Resize using corner handles (maintains aspect ratio)
 
-The player window displays a fullscreen view of the selected viewport area. The viewport indicator and annotations are only visible in the editor. Fog of War appears as black on the player view.
+The player window shows a fullscreen view without annotations or viewport indicator.
 
 ## Dependencies
 
@@ -260,41 +111,14 @@ The player window displays a fullscreen view of the selected viewport area. The 
 | serde / serde_json | 1.x | JSON serialization |
 | rfd | 0.15 | Native file dialogs |
 | ureq | 2.x | HTTP client for update checking |
+| semver | 1.x | Version parsing |
+| open | 5.x | Open URLs in browser |
+| futures-lite | 2.x | Async utilities |
+| zip | 2.x | Archive extraction for updates |
 | tracing-subscriber | 0.3 | Logging framework |
+| tracing-appender | 0.2 | Log file output |
 | chrono | 0.4 | Timestamps in logs |
-
-## Testing
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests for a specific module
-cargo test map::layer
-
-# Run clippy linter
-cargo clippy
-```
-
-See `CLAUDE.md` for pre-commit checks and development workflow.
-
-### Test Coverage
-
-| Module | Tests | Coverage |
-|--------|-------|----------|
-| `map/layer.rs` | 8 | Layer z-ordering, display names, serialization |
-| `assets/asset_type.rs` | 6 | AssetCategory methods, folder paths |
-| `editor/tools.rs` | 10 | EditorTool properties, cursor icons |
-| `session/state.rs` | 26 | Viewport rotation, aspect ratios |
-| `map/map_data.rs` | 18 | MapData defaults, serialization |
-| `editor/grid.rs` | 13 | Grid snapping edge cases |
-| `session/viewport.rs` | 10 | Point rotation mathematics |
-| `map/persistence.rs` | 9 | Color conversion, serialization |
-| `update/mod.rs` | 11 | Version comparison, manifest parsing, platform selection |
-
-## Contributing
-
-See [docs/ALLOWED_WARNINGS.md](docs/ALLOWED_WARNINGS.md) for linter configuration and [docs/TODO.md](docs/TODO.md) for planned features.
+| dirs | 6.x | Platform-specific directories |
 
 ## License
 

@@ -130,10 +130,6 @@ fn render_tools_section(ui: &mut egui::Ui) {
             ui.label("Line - Straight line annotations");
             ui.end_row();
 
-            ui.strong("T");
-            ui.label("Text - Click to add text annotations");
-            ui.end_row();
-
             ui.strong("F");
             ui.label("Fog - Reveal/hide fog of war areas");
             ui.end_row();
