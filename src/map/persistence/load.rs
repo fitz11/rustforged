@@ -245,7 +245,7 @@ pub fn poll_load_tasks(
             dirty_state.last_known_item_count = 0; // Will be updated by detection system
             dirty_state.last_known_annotation_count = 0;
 
-            // Update open maps - create new entry for this map
+            // Update open maps - check if map is already open or replace current
             let map_name = result
                 .path
                 .file_stem()
@@ -253,20 +253,40 @@ pub fn poll_load_tasks(
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let new_id = open_maps.next_id;
-            open_maps.next_id += 1;
+            // Check if this map is already open (by path)
+            let existing_id = open_maps
+                .maps
+                .iter()
+                .find(|(_, m)| m.path.as_ref() == Some(&result.path))
+                .map(|(id, _)| *id);
 
-            open_maps.maps.insert(
-                new_id,
-                OpenMap {
-                    id: new_id,
-                    name: map_name,
-                    path: Some(result.path.clone()),
-                    is_dirty: false,
-                    saved_state: None,
-                },
-            );
-            open_maps.active_map_id = Some(new_id);
+            if let Some(id) = existing_id {
+                // Map already open - just switch to it and update state
+                if let Some(map) = open_maps.maps.get_mut(&id) {
+                    map.is_dirty = false;
+                }
+                open_maps.active_map_id = Some(id);
+            } else {
+                // Map not open - replace the current active map entry
+                if let Some(active_id) = open_maps.active_map_id {
+                    open_maps.maps.remove(&active_id);
+                }
+
+                let new_id = open_maps.next_id;
+                open_maps.next_id += 1;
+
+                open_maps.maps.insert(
+                    new_id,
+                    OpenMap {
+                        id: new_id,
+                        name: map_name,
+                        path: Some(result.path.clone()),
+                        is_dirty: false,
+                        saved_state: None,
+                    },
+                );
+                open_maps.active_map_id = Some(new_id);
+            }
 
             commands.entity(entity).despawn();
         }
