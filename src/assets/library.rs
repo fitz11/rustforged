@@ -49,6 +49,24 @@ impl Default for AssetLibrary {
     }
 }
 
+impl AssetLibrary {
+    /// Build a map from Bevy-loadable path → library-relative path (for save-time conversion).
+    pub fn build_bevy_to_relative_map(&self) -> HashMap<&str, String> {
+        self.assets
+            .iter()
+            .map(|a| (a.relative_path.as_str(), a.library_relative_path()))
+            .collect()
+    }
+
+    /// Build a map from library-relative path → Bevy-loadable path (for load-time resolution).
+    pub fn build_relative_to_bevy_map(&self) -> HashMap<String, &str> {
+        self.assets
+            .iter()
+            .map(|a| (a.library_relative_path(), a.relative_path.as_str()))
+            .collect()
+    }
+}
+
 /// Result of validating/opening an asset library directory
 #[derive(Debug)]
 pub enum LibraryValidation {
@@ -149,6 +167,18 @@ pub struct LibraryAsset {
     pub extension: String,
     /// Full filesystem path for reading metadata
     pub full_path: PathBuf,
+}
+
+impl LibraryAsset {
+    /// Returns a portable, library-relative path like "terrain/stone/floor.png".
+    /// This is stable regardless of where the library lives on disk.
+    pub fn library_relative_path(&self) -> String {
+        if self.folder_path.is_empty() {
+            format!("{}.{}", self.name, self.extension)
+        } else {
+            format!("{}/{}.{}", self.folder_path, self.name, self.extension)
+        }
+    }
 }
 
 /// Scans assets from a library directory into the AssetLibrary resource

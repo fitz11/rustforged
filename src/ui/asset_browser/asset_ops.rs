@@ -39,43 +39,42 @@ pub fn rename_asset(
         return Err("A file with that name already exists".to_string());
     }
 
-    // Calculate old relative path BEFORE rename (while file still exists at old_path)
-    // Must match the path format used in library.rs scan_directory_recursive
-    let old_relative =
-        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
-            // Internal library - construct relative path
-            let asset_in_lib = old_path
-                .strip_prefix(library_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
-            format!("{}/{}", assets_relative.display(), asset_in_lib)
+    // Calculate old library-relative path BEFORE rename
+    // Maps now store library-relative paths (e.g., "terrain/stone/floor.png")
+    let old_relative = {
+        let folder = old_path
+            .parent()
+            .and_then(|p| p.strip_prefix(library_path).ok())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        let stem = old_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if folder.is_empty() {
+            format!("{}.{}", stem, extension)
         } else {
-            // External library - use canonicalized path (matches library scan)
-            old_path
-                .canonicalize()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| old_path.to_string_lossy().to_string())
-        };
+            format!("{}/{}.{}", folder, stem, extension)
+        }
+    };
 
     // Rename the file
     std::fs::rename(old_path, &new_path)
         .map_err(|e| format!("Failed to rename file: {}", e))?;
 
-    // Calculate new relative path AFTER rename (while file exists at new_path)
-    let new_relative =
-        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
-            let asset_in_lib = new_path
-                .strip_prefix(library_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
-            format!("{}/{}", assets_relative.display(), asset_in_lib)
+    // Calculate new library-relative path AFTER rename
+    let new_relative = {
+        let folder = new_path
+            .parent()
+            .and_then(|p| p.strip_prefix(library_path).ok())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        if folder.is_empty() {
+            new_filename.clone()
         } else {
-            // External library - use canonicalized path (matches library scan)
-            new_path
-                .canonicalize()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| new_path.to_string_lossy().to_string())
-        };
+            format!("{}/{}", folder, new_filename)
+        }
+    };
 
     // Update all map files in the library's maps folder
     let maps_dir = library_path.join("maps");
@@ -158,42 +157,31 @@ pub fn move_asset(
             .map_err(|e| format!("Failed to create target folder: {}", e))?;
     }
 
-    // Calculate old relative path BEFORE move (while file still exists at old_path)
-    // Must match the path format used in library.rs scan_directory_recursive
-    let old_relative =
-        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
-            let asset_in_lib = old_path
-                .strip_prefix(library_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| old_path.to_string_lossy().to_string());
-            format!("{}/{}", assets_relative.display(), asset_in_lib)
+    // Calculate old library-relative path BEFORE move
+    // Maps now store library-relative paths (e.g., "terrain/stone/floor.png")
+    let old_relative = {
+        let folder = old_path
+            .parent()
+            .and_then(|p| p.strip_prefix(library_path).ok())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        if folder.is_empty() {
+            filename.to_string()
         } else {
-            // External library - use canonicalized path (matches library scan)
-            old_path
-                .canonicalize()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| old_path.to_string_lossy().to_string())
-        };
+            format!("{}/{}", folder, filename)
+        }
+    };
 
     // Move the file
     std::fs::rename(old_path, &new_path)
         .map_err(|e| format!("Failed to move file: {}", e))?;
 
-    // Calculate new relative path AFTER move (while file exists at new_path)
-    let new_relative =
-        if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(library_path) {
-            let asset_in_lib = new_path
-                .strip_prefix(library_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| new_path.to_string_lossy().to_string());
-            format!("{}/{}", assets_relative.display(), asset_in_lib)
-        } else {
-            // External library - use canonicalized path (matches library scan)
-            new_path
-                .canonicalize()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| new_path.to_string_lossy().to_string())
-        };
+    // Calculate new library-relative path AFTER move
+    let new_relative = if target_folder.is_empty() {
+        filename.to_string()
+    } else {
+        format!("{}/{}", target_folder, filename)
+    };
 
     // Update all map files in the library's maps folder
     let maps_dir = library_path.join("maps");

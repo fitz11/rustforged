@@ -4,7 +4,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::assets::AssetLibrary;
 use crate::config::UpdateLastMapPathRequest;
@@ -116,20 +116,43 @@ pub fn poll_load_tasks(
                 continue;
             };
 
-            // Validate all assets exist using the manifest for efficient lookup
-            let available_assets: HashSet<&str> = asset_library
+            // Build lookup maps for multi-strategy path resolution
+            let relative_to_bevy = asset_library.build_relative_to_bevy_map();
+            let available_bevy_paths: HashSet<&str> = asset_library
                 .assets
                 .iter()
                 .map(|a| a.relative_path.as_str())
                 .collect();
 
-            let missing_assets: Vec<String> = saved_map
-                .asset_manifest
-                .assets
-                .iter()
-                .filter(|path| !available_assets.contains(path.as_str()))
-                .cloned()
-                .collect();
+            // Resolve each manifest path using 3 strategies:
+            // 1. Library-relative match (new format)
+            // 2. Exact Bevy-path match (old format, same location)
+            // 3. Suffix match (old format, moved library)
+            let mut path_mapping: HashMap<String, String> = HashMap::new();
+            let mut missing_assets: Vec<String> = Vec::new();
+
+            for saved_path in &saved_map.asset_manifest.assets {
+                if let Some(&bevy_path) = relative_to_bevy.get(saved_path.as_str()) {
+                    // Strategy 1: library-relative match
+                    path_mapping.insert(saved_path.clone(), bevy_path.to_string());
+                } else if available_bevy_paths.contains(saved_path.as_str()) {
+                    // Strategy 2: exact Bevy-path match (old format, library hasn't moved)
+                    path_mapping.insert(saved_path.clone(), saved_path.clone());
+                } else {
+                    // Strategy 3: suffix match (old format, library has moved)
+                    let mut matched = false;
+                    for (rel_path, &bevy_path) in &relative_to_bevy {
+                        if saved_path.ends_with(rel_path.as_str()) {
+                            path_mapping.insert(saved_path.clone(), bevy_path.to_string());
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if !matched {
+                        missing_assets.push(saved_path.clone());
+                    }
+                }
+            }
 
             if !missing_assets.is_empty() {
                 // Show warning dialog with missing assets
@@ -144,6 +167,14 @@ pub fn poll_load_tasks(
                 );
                 commands.entity(entity).despawn();
                 continue;
+            }
+
+            // Rewrite placed item paths to current Bevy-loadable paths
+            let mut saved_map = saved_map;
+            for item in &mut saved_map.placed_items {
+                if let Some(bevy_path) = path_mapping.get(&item.asset_path) {
+                    item.asset_path = bevy_path.clone();
+                }
             }
 
             // Clear existing items
