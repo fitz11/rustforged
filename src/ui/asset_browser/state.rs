@@ -2,6 +2,7 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy::tasks::Task;
 use std::path::PathBuf;
 
 use crate::map::{
@@ -84,6 +85,18 @@ pub struct AssetBrowserState {
     pub move_new_folder_name: String,
     /// Flag to request library refresh (set by UI, consumed by system)
     pub refresh_requested: bool,
+    /// Pending async file dialog for opening a library
+    pub pending_open_library: Option<Task<Option<PathBuf>>>,
+    /// Pending async file dialog for creating a new library
+    pub pending_create_library: Option<Task<Option<PathBuf>>>,
+    /// Pending async file dialog for exporting a library
+    pub pending_export: Option<Task<Option<PathBuf>>>,
+    /// Pending async file dialog for importing a library (phase 1: pick zip)
+    pub pending_import_zip: Option<Task<Option<PathBuf>>>,
+    /// Intermediate state: path of the picked zip file between import phases
+    pub pending_import_zip_path: Option<PathBuf>,
+    /// Pending async file dialog for importing a library (phase 2: pick destination)
+    pub pending_import_dest: Option<Task<Option<PathBuf>>>,
 }
 
 impl Default for AssetBrowserState {
@@ -113,6 +126,23 @@ impl Default for AssetBrowserState {
             move_error: None,
             move_new_folder_name: String::new(),
             refresh_requested: false,
+            pending_open_library: None,
+            pending_create_library: None,
+            pending_export: None,
+            pending_import_zip: None,
+            pending_import_zip_path: None,
+            pending_import_dest: None,
         }
+    }
+}
+
+impl AssetBrowserState {
+    /// Returns true if any async file dialog task is pending.
+    pub fn any_file_dialog_pending(&self) -> bool {
+        self.pending_open_library.is_some()
+            || self.pending_create_library.is_some()
+            || self.pending_export.is_some()
+            || self.pending_import_zip.is_some()
+            || self.pending_import_dest.is_some()
     }
 }

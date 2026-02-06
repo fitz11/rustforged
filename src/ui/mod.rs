@@ -64,7 +64,10 @@ fn update_dialog_state(
         || load_validation.show
         || save_error.message.is_some()
         || load_error.message.is_some()
-        || async_op.is_busy();
+        || async_op.is_busy()
+        || asset_browser.any_file_dialog_pending()
+        || asset_import.pending_browse.is_some()
+        || settings.pending_browse.is_some();
 }
 
 pub struct UiPlugin;

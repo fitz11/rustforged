@@ -1,5 +1,7 @@
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
 use bevy_egui::{egui, EguiContexts};
+use futures_lite::future;
 use std::path::{Path, PathBuf};
 
 use crate::assets::{AssetLibrary, RefreshAssetLibrary};
@@ -12,6 +14,8 @@ pub struct AssetImportDialog {
     pub import_status: Option<String>,
     /// Files detected as invalid (neither image nor valid map)
     pub invalid_files: Vec<(PathBuf, String)>,
+    /// Pending async file dialog for browsing files
+    pub pending_browse: Option<Task<Option<Vec<PathBuf>>>>,
 }
 
 /// Check if a file is a valid image
@@ -71,6 +75,18 @@ pub fn asset_import_ui(
     mut refresh_events: MessageWriter<RefreshAssetLibrary>,
     library: Res<AssetLibrary>,
 ) -> Result {
+    // Poll pending browse task (before early return so cleanup happens even if closed)
+    if let Some(ref mut task) = dialog.pending_browse
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        dialog.pending_browse = None;
+        if let Some(paths) = result {
+            dialog.files_to_import = paths;
+            dialog.import_status = None;
+            dialog.invalid_files.clear();
+        }
+    }
+
     if !dialog.is_open {
         return Ok(());
     }
@@ -108,22 +124,25 @@ pub fn asset_import_ui(
 
             // Browse button with updated filter
             if ui.button("Browse Files...").clicked()
-                && let Some(paths) = rfd::FileDialog::new()
-                    .add_filter(
-                        "Supported Files",
-                        &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "json"],
-                    )
-                    .add_filter(
-                        "Images",
-                        &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"],
-                    )
-                    .add_filter("Map Files", &["json"])
-                    .set_title("Select files to import")
-                    .pick_files()
+                && dialog.pending_browse.is_none()
             {
-                dialog.files_to_import = paths;
-                dialog.import_status = None;
-                dialog.invalid_files.clear();
+                let task_pool = AsyncComputeTaskPool::get();
+                dialog.pending_browse = Some(task_pool.spawn(async {
+                    rfd::AsyncFileDialog::new()
+                        .add_filter(
+                            "Supported Files",
+                            &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "json"],
+                        )
+                        .add_filter(
+                            "Images",
+                            &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"],
+                        )
+                        .add_filter("Map Files", &["json"])
+                        .set_title("Select files to import")
+                        .pick_files()
+                        .await
+                        .map(|handles| handles.iter().map(|h| h.path().to_path_buf()).collect())
+                }));
             }
 
             if !dialog.files_to_import.is_empty() {
@@ -316,6 +335,7 @@ pub fn asset_import_ui(
         dialog.files_to_import.clear();
         dialog.invalid_files.clear();
         dialog.import_status = None;
+        dialog.pending_browse = None;
     }
 
     Ok(())

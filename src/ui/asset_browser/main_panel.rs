@@ -1,7 +1,9 @@
 //! Main asset browser panel UI.
 
 use bevy::prelude::*;
+use bevy::tasks::AsyncComputeTaskPool;
 use bevy_egui::{egui, EguiContexts};
+use futures_lite::future;
 
 use crate::assets::{
     create_and_open_library, get_image_dimensions, open_library_directory, AssetLibrary,
@@ -140,6 +142,108 @@ pub fn asset_browser_ui(
     Ok(())
 }
 
+/// Poll all pending async file dialog tasks and handle their results.
+fn poll_file_dialog_tasks(
+    library: &mut AssetLibrary,
+    browser_state: &mut AssetBrowserState,
+) {
+    // Poll: Open Library
+    if let Some(ref mut task) = browser_state.pending_open_library
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        browser_state.pending_open_library = None;
+        if let Some(path) = result {
+            if let Err(e) = open_library_directory(library, path.clone()) {
+                warn!("Failed to open library: {}", e);
+            } else {
+                browser_state.show_set_default_dialog = true;
+                browser_state.set_default_dialog_path = Some(path);
+                browser_state.set_as_default_checked = false;
+            }
+        }
+    }
+
+    // Poll: Create Library
+    if let Some(ref mut task) = browser_state.pending_create_library
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        browser_state.pending_create_library = None;
+        if let Some(path) = result {
+            if let Err(e) = create_and_open_library(library, path.clone()) {
+                warn!("Failed to create library: {}", e);
+            } else {
+                browser_state.show_set_default_dialog = true;
+                browser_state.set_default_dialog_path = Some(path);
+                browser_state.set_as_default_checked = false;
+            }
+        }
+    }
+
+    // Poll: Export Library
+    if let Some(ref mut task) = browser_state.pending_export
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        browser_state.pending_export = None;
+        if let Some(dest_path) = result {
+            match export_library_to_zip(&library.library_path, &dest_path) {
+                Ok(()) => {
+                    browser_state.library_operation_success =
+                        Some(format!("Library exported to:\n{}", dest_path.display()));
+                }
+                Err(e) => {
+                    browser_state.library_import_error = Some(e);
+                }
+            }
+        }
+    }
+
+    // Poll: Import Phase 1 (pick zip)
+    if let Some(ref mut task) = browser_state.pending_import_zip
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        browser_state.pending_import_zip = None;
+        if let Some(zip_path) = result {
+            // Store the zip path and spawn phase 2 dialog
+            browser_state.pending_import_zip_path = Some(zip_path);
+            let task_pool = AsyncComputeTaskPool::get();
+            browser_state.pending_import_dest = Some(task_pool.spawn(async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Select Destination Folder")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            }));
+        }
+    }
+
+    // Poll: Import Phase 2 (pick destination)
+    if let Some(ref mut task) = browser_state.pending_import_dest
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        browser_state.pending_import_dest = None;
+        let zip_path = browser_state.pending_import_zip_path.take();
+        if let (Some(zip_path), Some(dest_path)) = (zip_path, result) {
+            match import_library_from_zip(&zip_path, &dest_path) {
+                Ok(()) => {
+                    if let Err(e) = open_library_directory(library, dest_path.clone()) {
+                        browser_state.library_import_error =
+                            Some(format!("Library extracted but failed to open: {}", e));
+                    } else {
+                        browser_state.library_operation_success =
+                            Some("Library imported successfully!".to_string());
+                        browser_state.show_set_default_dialog = true;
+                        browser_state.set_default_dialog_path = Some(dest_path);
+                        browser_state.set_as_default_checked = false;
+                    }
+                }
+                Err(e) => {
+                    browser_state.library_import_error = Some(e);
+                }
+            }
+        }
+    }
+}
+
 /// Render the library management section.
 fn render_library_section(
     ui: &mut egui::Ui,
@@ -149,6 +253,9 @@ fn render_library_section(
     map_res: &mut MapResources,
     _thumbnail_cache: &mut ThumbnailCache,
 ) {
+    // Poll pending async file dialog tasks before rendering buttons
+    poll_file_dialog_tasks(library, browser_state);
+
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         let toggle_text = if browser_state.library_expanded {
@@ -202,17 +309,16 @@ fn render_library_buttons(
             .add_sized([50.0, 24.0], egui::Button::new("Open"))
             .on_hover_text("Open existing library folder")
             .clicked()
-            && let Some(path) = rfd::FileDialog::new()
-                .set_title("Open Asset Library")
-                .pick_folder()
+            && browser_state.pending_open_library.is_none()
         {
-            if let Err(e) = open_library_directory(library, path.clone()) {
-                warn!("Failed to open library: {}", e);
-            } else {
-                browser_state.show_set_default_dialog = true;
-                browser_state.set_default_dialog_path = Some(path);
-                browser_state.set_as_default_checked = false;
-            }
+            let task_pool = AsyncComputeTaskPool::get();
+            browser_state.pending_open_library = Some(task_pool.spawn(async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Open Asset Library")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            }));
         }
 
         if ui
@@ -227,17 +333,16 @@ fn render_library_buttons(
             .add_sized([50.0, 24.0], egui::Button::new("New"))
             .on_hover_text("Create new library folder")
             .clicked()
-            && let Some(path) = rfd::FileDialog::new()
-                .set_title("Create New Asset Library")
-                .pick_folder()
+            && browser_state.pending_create_library.is_none()
         {
-            if let Err(e) = create_and_open_library(library, path.clone()) {
-                warn!("Failed to create library: {}", e);
-            } else {
-                browser_state.show_set_default_dialog = true;
-                browser_state.set_default_dialog_path = Some(path);
-                browser_state.set_as_default_checked = false;
-            }
+            let task_pool = AsyncComputeTaskPool::get();
+            browser_state.pending_create_library = Some(task_pool.spawn(async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Create New Asset Library")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            }));
         }
 
         if ui
@@ -259,49 +364,34 @@ fn render_export_import_buttons(
 ) {
     ui.horizontal(|ui| {
         if ui.add_sized([70.0, 24.0], egui::Button::new("Export...")).clicked()
-            && let Some(dest_path) = rfd::FileDialog::new()
-                .set_title("Export Library as Zip")
-                .set_file_name(format!("{}.zip", library.metadata.name))
-                .add_filter("Zip Archive", &["zip"])
-                .save_file()
+            && browser_state.pending_export.is_none()
         {
-            match export_library_to_zip(&library.library_path, &dest_path) {
-                Ok(()) => {
-                    browser_state.library_operation_success =
-                        Some(format!("Library exported to:\n{}", dest_path.display()));
-                }
-                Err(e) => {
-                    browser_state.library_import_error = Some(e);
-                }
-            }
+            let file_name = format!("{}.zip", library.metadata.name);
+            let task_pool = AsyncComputeTaskPool::get();
+            browser_state.pending_export = Some(task_pool.spawn(async move {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Export Library as Zip")
+                    .set_file_name(file_name)
+                    .add_filter("Zip Archive", &["zip"])
+                    .save_file()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            }));
         }
 
         if ui.add_sized([70.0, 24.0], egui::Button::new("Import...")).clicked()
-            && let Some(zip_path) = rfd::FileDialog::new()
-                .set_title("Import Library from Zip")
-                .add_filter("Zip Archive", &["zip"])
-                .pick_file()
-            && let Some(dest_path) = rfd::FileDialog::new()
-                .set_title("Select Destination Folder")
-                .pick_folder()
+            && browser_state.pending_import_zip.is_none()
+            && browser_state.pending_import_dest.is_none()
         {
-            match import_library_from_zip(&zip_path, &dest_path) {
-                Ok(()) => {
-                    if let Err(e) = open_library_directory(library, dest_path.clone()) {
-                        browser_state.library_import_error =
-                            Some(format!("Library extracted but failed to open: {}", e));
-                    } else {
-                        browser_state.library_operation_success =
-                            Some("Library imported successfully!".to_string());
-                        browser_state.show_set_default_dialog = true;
-                        browser_state.set_default_dialog_path = Some(dest_path);
-                        browser_state.set_as_default_checked = false;
-                    }
-                }
-                Err(e) => {
-                    browser_state.library_import_error = Some(e);
-                }
-            }
+            let task_pool = AsyncComputeTaskPool::get();
+            browser_state.pending_import_zip = Some(task_pool.spawn(async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Import Library from Zip")
+                    .add_filter("Zip Archive", &["zip"])
+                    .pick_file()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            }));
         }
     });
 }

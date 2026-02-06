@@ -1,5 +1,7 @@
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
 use bevy_egui::{egui, EguiContexts};
+use futures_lite::future;
 use std::path::PathBuf;
 
 use crate::assets::{AssetLibrary, UpdateLibraryMetadataRequest};
@@ -18,6 +20,8 @@ pub struct SettingsDialogState {
     pub library_name: String,
     /// Whether library name has been changed
     pub library_name_changed: bool,
+    /// Pending async file dialog for browsing folders
+    pub pending_browse: Option<Task<Option<PathBuf>>>,
 }
 
 impl SettingsDialogState {
@@ -50,6 +54,17 @@ pub fn settings_dialog_ui(
     mut save_events: MessageWriter<SaveConfigRequest>,
     mut metadata_events: MessageWriter<UpdateLibraryMetadataRequest>,
 ) -> Result {
+    // Poll pending browse task (before early return so cleanup happens even if closed)
+    if let Some(ref mut task) = dialog_state.pending_browse
+        && let Some(result) = future::block_on(future::poll_once(task))
+    {
+        dialog_state.pending_browse = None;
+        if let Some(path) = result {
+            dialog_state.default_library_path = path.to_string_lossy().to_string();
+            dialog_state.has_changes = true;
+        }
+    }
+
     if !dialog_state.is_open {
         return Ok(());
     }
@@ -184,14 +199,16 @@ pub fn settings_dialog_ui(
             });
         });
 
-    // Handle browse button
-    if should_browse
-        && let Some(path) = rfd::FileDialog::new()
-            .set_title("Select Default Asset Library")
-            .pick_folder()
-    {
-        dialog_state.default_library_path = path.to_string_lossy().to_string();
-        dialog_state.has_changes = true;
+    // Handle browse button - spawn async dialog
+    if should_browse && dialog_state.pending_browse.is_none() {
+        let task_pool = AsyncComputeTaskPool::get();
+        dialog_state.pending_browse = Some(task_pool.spawn(async {
+            rfd::AsyncFileDialog::new()
+                .set_title("Select Default Asset Library")
+                .pick_folder()
+                .await
+                .map(|h| h.path().to_path_buf())
+        }));
     }
 
     // Handle clear button
@@ -233,6 +250,7 @@ pub fn settings_dialog_ui(
     // Handle close
     if should_close {
         dialog_state.is_open = false;
+        dialog_state.pending_browse = None;
         // Reset state from config
         dialog_state.load_from_config(&config);
         dialog_state.load_library_info(&library);
