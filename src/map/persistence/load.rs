@@ -139,13 +139,22 @@ pub fn poll_load_tasks(
                     // Strategy 2: exact Bevy-path match (old format, library hasn't moved)
                     path_mapping.insert(saved_path.clone(), saved_path.clone());
                 } else {
-                    // Strategy 3: suffix match (old format, library has moved)
+                    // Strategy 3: suffix match (old format, library has moved or cross-platform)
+                    // Normalize backslashes for cross-platform matching (Windows → Mac/Linux)
+                    let normalized = saved_path.replace('\\', "/");
                     let mut matched = false;
                     for (rel_path, &bevy_path) in &relative_to_bevy {
-                        if saved_path.ends_with(rel_path.as_str()) {
-                            path_mapping.insert(saved_path.clone(), bevy_path.to_string());
-                            matched = true;
-                            break;
+                        // Check that the suffix match falls on a path separator boundary
+                        if normalized.ends_with(rel_path.as_str()) {
+                            let prefix_len = normalized.len() - rel_path.len();
+                            if prefix_len == 0
+                                || normalized.as_bytes()[prefix_len - 1] == b'/'
+                            {
+                                path_mapping
+                                    .insert(saved_path.clone(), bevy_path.to_string());
+                                matched = true;
+                                break;
+                            }
                         }
                     }
                     if !matched {
