@@ -28,6 +28,8 @@ pub fn enumerate_monitors(
                 .clone()
                 .unwrap_or_else(|| format!("Monitor {}", index + 1)),
             physical_size: UVec2::new(monitor.physical_width, monitor.physical_height),
+            physical_position: monitor.physical_position,
+            scale_factor: monitor.scale_factor,
             index,
         });
     }
@@ -42,9 +44,12 @@ pub fn enumerate_monitors(
                 let name = handle
                     .name()
                     .unwrap_or_else(|| format!("Monitor {}", index + 1));
+                let position = handle.position();
                 new_monitors.push(MonitorInfo {
                     name,
                     physical_size: UVec2::new(size.width, size.height),
+                    physical_position: IVec2::new(position.x, position.y),
+                    scale_factor: handle.scale_factor(),
                     index,
                 });
             } else {

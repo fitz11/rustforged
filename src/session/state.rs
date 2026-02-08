@@ -10,6 +10,12 @@ pub type ViewportDragMode = DragMode;
 pub struct MonitorInfo {
     pub name: String,
     pub physical_size: UVec2,
+    /// Used on macOS to manually position the player window (avoids Space creation)
+    #[allow(dead_code)]
+    pub physical_position: IVec2,
+    /// Used on macOS to set the correct scale factor for the player window
+    #[allow(dead_code)]
+    pub scale_factor: f64,
     pub index: usize,
 }
 
@@ -96,6 +102,8 @@ mod tests {
         MonitorInfo {
             name: "Test Monitor".to_string(),
             physical_size: UVec2::new(width, height),
+            physical_position: IVec2::ZERO,
+            scale_factor: 1.0,
             index: 0,
         }
     }

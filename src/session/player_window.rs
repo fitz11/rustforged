@@ -1,6 +1,8 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{RenderTarget, ScalingMode};
 use bevy::prelude::*;
+#[cfg(target_os = "macos")]
+use bevy::window::WindowResolution;
 use bevy::window::{Monitor, WindowCloseRequested, WindowMode, WindowRef};
 
 use super::state::LiveSessionState;
@@ -35,27 +37,61 @@ pub fn create_player_window(
         .nth(monitor_info.index)
         .map(|(e, _)| e);
 
-    // Spawn the player window
-    let mut window = Window {
-        title: "Player View".into(),
-        decorations: false,
-        ..default()
-    };
-
-    // Set fullscreen mode with the selected monitor
-    if let Some(entity) = monitor_entity {
-        window.mode = WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Entity(entity));
-    } else {
-        // Fallback to primary monitor fullscreen
-        window.mode = WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary);
-    }
-
+    // Spawn the player window with platform-specific strategy
+    let window = create_platform_window(monitor_info, monitor_entity);
     commands.spawn((window, PlayerWindow));
 
     info!(
         "Created player window for monitor: {} ({}x{})",
         monitor_info.name, monitor_info.physical_size.x, monitor_info.physical_size.y
     );
+}
+
+/// Create the player window with platform-specific strategy.
+///
+/// On macOS, `BorderlessFullscreen` causes the OS to create a new Space (virtual desktop),
+/// which pulls the main editor window to the external monitor. Instead, we create a regular
+/// borderless window manually positioned and sized to cover the target monitor.
+///
+/// On other platforms, `BorderlessFullscreen` works correctly.
+#[allow(unused_variables)]
+fn create_platform_window(
+    monitor_info: &super::state::MonitorInfo,
+    monitor_entity: Option<Entity>,
+) -> Window {
+    #[cfg(target_os = "macos")]
+    {
+        let scale = monitor_info.scale_factor as f32;
+        Window {
+            title: "Player View".into(),
+            decorations: false,
+            resizable: false,
+            mode: WindowMode::Windowed,
+            position: bevy::window::WindowPosition::At(monitor_info.physical_position),
+            resolution: WindowResolution::new(
+                monitor_info.physical_size.x,
+                monitor_info.physical_size.y,
+            )
+            .with_scale_factor_override(scale),
+            window_level: bevy::window::WindowLevel::AlwaysOnTop,
+            ..default()
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mode = if let Some(entity) = monitor_entity {
+            WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Entity(entity))
+        } else {
+            WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary)
+        };
+        Window {
+            title: "Player View".into(),
+            decorations: false,
+            mode,
+            ..default()
+        }
+    }
 }
 
 /// Set up the camera for the player window once it's created
