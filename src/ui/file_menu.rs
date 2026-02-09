@@ -174,15 +174,19 @@ pub fn missing_map_warning_ui(
 
 /// Renders the unsaved changes confirmation dialog when closing the app
 pub fn unsaved_changes_dialog_ui(
+    mut commands: Commands,
     mut contexts: EguiContexts,
     mut dialog: ResMut<UnsavedChangesDialog>,
     open_maps: Res<OpenMaps>,
     mut menu_state: ResMut<FileMenuState>,
     mut exit_events: MessageWriter<AppExit>,
+    primary_window: Query<Entity, With<PrimaryWindow>>,
 ) -> Result {
     if !dialog.show_close_confirmation {
         return Ok(());
     }
+
+    let mut should_exit = false;
 
     egui::Window::new("Unsaved Changes")
         .collapsible(false)
@@ -211,7 +215,7 @@ pub fn unsaved_changes_dialog_ui(
 
                 if ui.button("Discard & Close").clicked() {
                     dialog.show_close_confirmation = false;
-                    exit_events.write(AppExit::Success);
+                    should_exit = true;
                 }
 
                 if ui.button("Cancel").clicked() {
@@ -219,6 +223,14 @@ pub fn unsaved_changes_dialog_ui(
                 }
             });
         });
+
+    if should_exit {
+        // Despawn the primary window so the OS can release it (prevents macOS hang)
+        if let Ok(entity) = primary_window.single() {
+            commands.entity(entity).despawn();
+        }
+        exit_events.write(AppExit::Success);
+    }
 
     Ok(())
 }
@@ -228,6 +240,7 @@ pub fn unsaved_changes_dialog_ui(
 /// With `close_when_requested: false` on WindowPlugin, we must manually handle closing.
 /// If there are unsaved changes, show a confirmation dialog. Otherwise, exit immediately.
 pub fn handle_window_close(
+    mut commands: Commands,
     mut close_events: MessageReader<WindowCloseRequested>,
     mut dialog: ResMut<UnsavedChangesDialog>,
     open_maps: Res<OpenMaps>,
@@ -247,7 +260,10 @@ pub fn handle_window_close(
             // Show confirmation dialog instead of closing
             dialog.show_close_confirmation = true;
         } else {
-            // No unsaved changes, exit immediately
+            // Despawn the primary window so the OS can release it (prevents macOS hang)
+            if let Some(entity) = primary_entity {
+                commands.entity(entity).despawn();
+            }
             exit_events.write(AppExit::Success);
         }
     }

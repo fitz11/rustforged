@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>Rustforged</string>
     <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
+    <string>icon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>dev.squishygoose.rustforged</string>
     <key>CFBundleInfoDictionaryVersion</key>

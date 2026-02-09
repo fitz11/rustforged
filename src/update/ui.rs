@@ -54,7 +54,7 @@ pub fn update_indicator_ui(
 }
 
 /// UI system to show the update dialog
-#[allow(clippy::too_many_lines, unused_mut)]
+#[allow(clippy::too_many_lines, unused_mut, unused_variables)]
 pub fn update_dialog_ui(
     mut contexts: EguiContexts,
     mut update_state: ResMut<UpdateState>,
