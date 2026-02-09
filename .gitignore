@@ -1,5 +1,7 @@
 /target
 /logs
 /releases
+/library
+config.json
 CLAUDE.md
 *.DS_Store

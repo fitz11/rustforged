@@ -113,11 +113,11 @@ pub fn setup_player_camera(
             Camera2d,
             PlayerCamera,
             Camera {
-                target: RenderTarget::Window(WindowRef::Entity(window_entity)),
                 order: 1,
                 clear_color: ClearColorConfig::Custom(Color::BLACK),
                 ..default()
             },
+            RenderTarget::Window(WindowRef::Entity(window_entity)),
             Projection::Orthographic(OrthographicProjection {
                 scaling_mode: ScalingMode::Fixed {
                     width: viewport_size.x,

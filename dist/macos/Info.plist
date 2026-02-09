@@ -7,11 +7,11 @@
     <key>CFBundleDisplayName</key>
     <string>Rustforged</string>
     <key>CFBundleExecutable</key>
-    <string>rustforged</string>
+    <string>Rustforged</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.rustforged.app</string>
+    <string>dev.squishygoose.rustforged</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -19,7 +19,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.1.1</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>

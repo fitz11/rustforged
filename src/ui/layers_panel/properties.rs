@@ -21,7 +21,6 @@ pub type SelectedQuery<'w, 's> = Query<
 >;
 
 /// Renders the properties section for selected items.
-#[allow(clippy::too_many_arguments)]
 pub fn render_properties(
     ui: &mut egui::Ui,
     map_data: &MapData,
@@ -53,9 +52,7 @@ fn render_multi_selection(
     images: &Assets<Image>,
 ) {
     let selected_count = selected_query.iter().count();
-    ui.label(
-        egui::RichText::new(format!("{} items selected", selected_count)).size(14.0),
-    );
+    ui.label(egui::RichText::new(format!("{} items selected", selected_count)).size(14.0));
     ui.add_space(8.0);
 
     // Multi-selection: show fit-to-grid and center-to-grid buttons
@@ -210,7 +207,11 @@ fn render_single_selection(
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Rotation:").size(14.0));
             if ui
-                .add(egui::DragValue::new(&mut rotation_deg).speed(1.0).suffix("°"))
+                .add(
+                    egui::DragValue::new(&mut rotation_deg)
+                        .speed(1.0)
+                        .suffix("°"),
+                )
                 .changed()
             {
                 transform.rotation = Quat::from_rotation_z(rotation_deg.to_radians());
