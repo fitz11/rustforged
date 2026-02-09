@@ -1,7 +1,7 @@
 [package]
 name = "rustforged"
-version = "0.1.0"
-edition = "2024"
+version = "0.1.1"
+edition = "2026"
 description = "D&D 5E Virtual Tabletop map editor"
 repository = "https://github.com/fitz11/rustforged"
 keywords = ["vtt", "dnd", "bevy", "tabletop", "rpg"]
@@ -30,7 +30,7 @@ ureq = { version = "2", features = ["json"] }
 semver = "1"
 open = "5"
 futures-lite = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "7", default-features = false, features = ["deflate"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 chrono = "0.4"
@@ -59,3 +59,16 @@ debug = 0
 opt-level = 3
 lto = "thin"
 strip = true
+
+[package.metadata.packager]
+before-packing-command = "cargo build --release"
+product-name = "Rustforged"
+version = "0.1.1"
+identifier = "dev.squishygoose.rustforged"
+description = "D&D 5E Virtual Tabletop Map Editor"
+authors = ["fitz11"]
+publisher = "squishygoose"
+license-file = "LICENSE-MIT"
+homepage = "https://github.com/fitz11/rustforged"
+out-dir = "target/release/packager"
+icons = ["packaging/icons/icon.ico", "packaging/icons/icon.icns"]
