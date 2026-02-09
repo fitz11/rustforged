@@ -278,7 +278,7 @@ fn render_library_section(
         path_str.to_string()
     };
     ui.label(egui::RichText::new(display_path).small().weak())
-        .on_hover_text(path_str.as_ref());
+        .on_hover_text(&*path_str);
 
     // Show error if any
     if let Some(ref error) = library.error {
@@ -599,7 +599,7 @@ fn render_maps_section(
 
                         if ui
                             .add(egui::Button::new(button_text).frame(false))
-                            .on_hover_text(map_path.to_string_lossy().as_ref())
+                            .on_hover_text(&*map_path.to_string_lossy())
                             .clicked()
                             && !is_current
                         {

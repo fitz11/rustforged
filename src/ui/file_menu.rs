@@ -151,7 +151,7 @@ pub fn missing_map_warning_ui(
                     path_str.to_string()
                 };
                 ui.label(egui::RichText::new(display_path).weak())
-                    .on_hover_text(path_str.as_ref());
+                    .on_hover_text(&*path_str);
                 ui.add_space(10.0);
             }
 

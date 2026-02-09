@@ -92,7 +92,7 @@ pub fn settings_dialog_ui(
                 ui.horizontal(|ui| {
                     ui.label("Path:");
                     ui.label(
-                        egui::RichText::new(library.library_path.to_string_lossy().as_ref()).weak(),
+                        egui::RichText::new(&*library.library_path.to_string_lossy()).weak(),
                     );
                 });
 
@@ -176,7 +176,7 @@ pub fn settings_dialog_ui(
 
                 if let Some(ref path) = config.data.last_map_path {
                     let display = path.to_string_lossy();
-                    ui.label(display.as_ref());
+                    ui.label(&*display);
                 } else {
                     ui.label(egui::RichText::new("No map recorded").weak().italics());
                 }
