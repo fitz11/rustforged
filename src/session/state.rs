@@ -11,12 +11,14 @@ pub struct MonitorInfo {
     pub name: String,
     pub physical_size: UVec2,
     /// Used on macOS to manually position the player window (avoids Space creation)
-    #[allow(dead_code)]
     pub physical_position: IVec2,
     /// Used on macOS to set the correct scale factor for the player window
-    #[allow(dead_code)]
     pub scale_factor: f64,
-    pub index: usize,
+    /// The Bevy entity for this monitor (used for BorderlessFullscreen on non-macOS)
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    pub entity: Option<Entity>,
+    /// Scale factor of the primary monitor (needed for macOS position correction)
+    pub primary_scale_factor: f64,
 }
 
 impl MonitorInfo {
@@ -90,7 +92,8 @@ mod tests {
             physical_size: UVec2::new(width, height),
             physical_position: IVec2::ZERO,
             scale_factor: 1.0,
-            index: 0,
+            entity: None,
+            primary_scale_factor: 1.0,
         }
     }
 

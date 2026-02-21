@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::window::Monitor;
+use bevy::window::{Monitor, PrimaryMonitor};
 use bevy::winit::WinitMonitors;
 use bevy_egui::{egui, EguiContexts};
 
@@ -10,6 +10,7 @@ use crate::session::{LiveSessionState, MonitorInfo, MonitorSelectionDialog};
 pub fn enumerate_monitors(
     winit_monitors: Option<Res<WinitMonitors>>,
     monitors_query: Query<(Entity, &Monitor)>,
+    primary_query: Query<&Monitor, With<PrimaryMonitor>>,
     mut dialog: ResMut<MonitorSelectionDialog>,
 ) {
     // Only enumerate when dialog is open
@@ -20,8 +21,15 @@ pub fn enumerate_monitors(
     // Re-enumerate each frame in case monitors weren't ready initially
     let mut new_monitors = Vec::new();
 
+    // Get the primary monitor's scale factor (needed for macOS position correction)
+    let primary_scale = primary_query
+        .iter()
+        .next()
+        .map(|m| m.scale_factor)
+        .unwrap_or(1.0);
+
     // First try to use the Monitor entities (Bevy's preferred approach)
-    for (index, (_entity, monitor)) in monitors_query.iter().enumerate() {
+    for (index, (entity, monitor)) in monitors_query.iter().enumerate() {
         new_monitors.push(MonitorInfo {
             name: monitor
                 .name
@@ -30,7 +38,8 @@ pub fn enumerate_monitors(
             physical_size: UVec2::new(monitor.physical_width, monitor.physical_height),
             physical_position: monitor.physical_position,
             scale_factor: monitor.scale_factor,
-            index,
+            entity: Some(entity),
+            primary_scale_factor: primary_scale,
         });
     }
 
@@ -38,6 +47,10 @@ pub fn enumerate_monitors(
     if new_monitors.is_empty()
         && let Some(winit_monitors) = winit_monitors
     {
+        let fallback_primary_scale = winit_monitors
+            .nth(0)
+            .map(|h| h.scale_factor())
+            .unwrap_or(1.0);
         for index in 0..10 {
             if let Some(handle) = winit_monitors.nth(index) {
                 let size = handle.size();
@@ -50,7 +63,8 @@ pub fn enumerate_monitors(
                     physical_size: UVec2::new(size.width, size.height),
                     physical_position: IVec2::new(position.x, position.y),
                     scale_factor: handle.scale_factor(),
-                    index,
+                    entity: None,
+                    primary_scale_factor: fallback_primary_scale,
                 });
             } else {
                 break;

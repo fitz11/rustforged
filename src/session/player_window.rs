@@ -3,7 +3,7 @@ use bevy::camera::{RenderTarget, ScalingMode};
 use bevy::prelude::*;
 #[cfg(target_os = "macos")]
 use bevy::window::WindowResolution;
-use bevy::window::{Monitor, WindowCloseRequested, WindowMode, WindowRef};
+use bevy::window::{WindowCloseRequested, WindowMode, WindowRef};
 
 use super::state::LiveSessionState;
 
@@ -20,7 +20,6 @@ pub fn create_player_window(
     mut commands: Commands,
     session_state: Res<LiveSessionState>,
     existing_windows: Query<Entity, With<PlayerWindow>>,
-    monitors: Query<(Entity, &Monitor)>,
 ) {
     // Only create if session just became active and no player window exists
     if !session_state.is_active || !existing_windows.is_empty() {
@@ -31,14 +30,8 @@ pub fn create_player_window(
         return;
     };
 
-    // Find the monitor entity by index
-    let monitor_entity = monitors
-        .iter()
-        .nth(monitor_info.index)
-        .map(|(e, _)| e);
-
     // Spawn the player window with platform-specific strategy
-    let window = create_platform_window(monitor_info, monitor_entity);
+    let window = create_platform_window(monitor_info);
     commands.spawn((window, PlayerWindow));
 
     info!(
@@ -53,26 +46,45 @@ pub fn create_player_window(
 /// which pulls the main editor window to the external monitor. Instead, we create a regular
 /// borderless window manually positioned and sized to cover the target monitor.
 ///
+/// winit on macOS has a coordinate mismatch: `MonitorHandle::position()` encodes the logical
+/// position using the monitor's own scale factor, but `set_outer_position()` decodes it using
+/// the window's scale factor (typically the primary monitor's). We compensate by adjusting:
+///   adjusted_position = physical_position * primary_scale / monitor_scale
+///
 /// On other platforms, `BorderlessFullscreen` works correctly.
-#[allow(unused_variables)]
-fn create_platform_window(
-    monitor_info: &super::state::MonitorInfo,
-    monitor_entity: Option<Entity>,
-) -> Window {
+fn create_platform_window(monitor_info: &super::state::MonitorInfo) -> Window {
     #[cfg(target_os = "macos")]
     {
-        let scale = monitor_info.scale_factor as f32;
+        let primary_scale = monitor_info.primary_scale_factor;
+        let monitor_scale = monitor_info.scale_factor;
+
+        // Adjust position to compensate for winit's macOS scale factor mismatch.
+        // The physical_position was encoded with the monitor's scale, but winit will
+        // decode it with the primary monitor's scale, so we pre-correct.
+        let adjusted_x =
+            (monitor_info.physical_position.x as f64 * primary_scale / monitor_scale) as i32;
+        let adjusted_y =
+            (monitor_info.physical_position.y as f64 * primary_scale / monitor_scale) as i32;
+        let position = bevy::window::WindowPosition::At(IVec2::new(adjusted_x, adjusted_y));
+
+        // Use the target monitor's logical (point) dimensions for the window size.
+        // We must NOT use scale_factor_override here: with an override, bevy_winit passes
+        // a PhysicalSize to winit, which macOS interprets using the primary monitor's
+        // scale factor (since the window starts there before being repositioned). This
+        // causes the same coordinate mismatch as the position bug. Without an override,
+        // bevy_winit passes a LogicalSize, which macOS interprets as points consistently
+        // regardless of which monitor the window initially appears on. Bevy will auto-detect
+        // the correct scale factor once the window lands on the target monitor.
+        let logical_w = (monitor_info.physical_size.x as f64 / monitor_scale) as u32;
+        let logical_h = (monitor_info.physical_size.y as f64 / monitor_scale) as u32;
+
         Window {
             title: "Player View".into(),
             decorations: false,
             resizable: false,
             mode: WindowMode::Windowed,
-            position: bevy::window::WindowPosition::At(monitor_info.physical_position),
-            resolution: WindowResolution::new(
-                monitor_info.physical_size.x,
-                monitor_info.physical_size.y,
-            )
-            .with_scale_factor_override(scale),
+            position,
+            resolution: WindowResolution::new(logical_w, logical_h),
             window_level: bevy::window::WindowLevel::AlwaysOnTop,
             ..default()
         }
@@ -80,7 +92,7 @@ fn create_platform_window(
 
     #[cfg(not(target_os = "macos"))]
     {
-        let mode = if let Some(entity) = monitor_entity {
+        let mode = if let Some(entity) = monitor_info.entity {
             WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Entity(entity))
         } else {
             WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary)
