@@ -14,6 +14,12 @@ pub struct FileMenuState {
     pub show_new_confirmation: bool,
     pub show_save_name_dialog: bool,
     pub save_filename: String,
+    /// Set when the user chose "Save First" in the New Map dialog: once the
+    /// triggered save completes successfully, a new map should be created.
+    pub pending_new_after_save: bool,
+    /// Tracks that the pending save has actually started (is_saving observed),
+    /// so we can detect the save->idle transition that signals completion.
+    pub saw_save_start: bool,
 }
 
 /// Renders the dialog windows for file operations (triggered from asset_browser menu)
@@ -23,6 +29,8 @@ pub fn file_menu_ui(
     mut save_events: MessageWriter<SaveMapRequest>,
     mut new_events: MessageWriter<NewMapRequest>,
     mut load_error: ResMut<MapLoadError>,
+    async_op: Res<AsyncMapOperation>,
+    save_error: Res<MapSaveError>,
     library: Res<AssetLibrary>,
 ) -> Result {
     // New map confirmation dialog
@@ -36,9 +44,12 @@ pub fn file_menu_ui(
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button("Save First").clicked() {
-                        // Open save dialog, keep new confirmation for after save
+                        // Open save dialog and arm the deferred "create new map"
+                        // so it fires once the save completes successfully.
                         menu_state.show_save_name_dialog = true;
                         menu_state.show_new_confirmation = false;
+                        menu_state.pending_new_after_save = true;
+                        menu_state.saw_save_start = false;
                     }
                     if ui.button("Create New").clicked() {
                         new_events.write(NewMapRequest);
@@ -89,9 +100,26 @@ pub fn file_menu_ui(
                     }
                     if ui.button("Cancel").clicked() {
                         menu_state.show_save_name_dialog = false;
+                        // User backed out of the save; abandon the deferred new map.
+                        menu_state.pending_new_after_save = false;
+                        menu_state.saw_save_start = false;
                     }
                 });
             });
+    }
+
+    // Deferred "New Map after Save First": wait for the triggered save to
+    // start and finish, then create the new map only if the save succeeded.
+    if menu_state.pending_new_after_save {
+        if async_op.is_saving {
+            menu_state.saw_save_start = true;
+        } else if menu_state.saw_save_start {
+            menu_state.pending_new_after_save = false;
+            menu_state.saw_save_start = false;
+            if save_error.message.is_none() {
+                new_events.write(NewMapRequest);
+            }
+        }
     }
 
     // Load error dialog
