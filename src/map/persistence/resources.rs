@@ -78,6 +78,20 @@ pub struct MapDirtyState {
     /// Count of entities when map was last saved/loaded (for change detection)
     pub last_known_item_count: usize,
     pub last_known_annotation_count: usize,
+    /// Number of frames for which change detection should be ignored. Set after
+    /// a load/new/switch despawns+respawns entities so the resulting Added/
+    /// Removed/Changed wave doesn't immediately re-mark a clean map as dirty.
+    pub suppress_detection: u32,
+}
+
+impl MapDirtyState {
+    /// Suppress change detection for the next couple of frames. Used after
+    /// programmatic entity churn (load/new/switch) so the spawn/despawn wave
+    /// isn't mistaken for user edits. Two frames covers either ordering of the
+    /// (unordered) detection systems relative to the spawning system.
+    pub fn suppress_change_detection(&mut self) {
+        self.suppress_detection = 2;
+    }
 }
 
 /// Represents a map that's open in memory

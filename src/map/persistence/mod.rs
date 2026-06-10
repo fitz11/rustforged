@@ -57,7 +57,9 @@ pub use resources::{
 pub use helpers::ensure_maps_directory;
 
 // Re-exports - Systems
-pub use dirty::{detect_item_additions, detect_item_removals, detect_item_transforms};
+pub use dirty::{
+    decay_dirty_suppression, detect_item_additions, detect_item_removals, detect_item_transforms,
+};
 pub use load::{load_map_system, poll_load_tasks};
 pub use map_state::{new_map_system, switch_map_system};
 pub use save::{poll_save_tasks, save_map_system};

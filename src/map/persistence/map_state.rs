@@ -49,6 +49,8 @@ pub fn new_map_system(
         dirty_state.is_dirty = false;
         dirty_state.last_known_item_count = 0;
         dirty_state.last_known_annotation_count = 0;
+        // Ignore the despawn wave so the freshly-cleared map stays clean.
+        dirty_state.suppress_change_detection();
 
         // Replace the current active map entry (consistent with load_map_system).
         // "New Map" discards the current map rather than leaving an orphaned,
@@ -281,6 +283,8 @@ pub fn switch_map_system(
             dirty_state.is_dirty = target_map.is_dirty;
             dirty_state.last_known_item_count = 0; // Will be updated by detect_map_changes
             dirty_state.last_known_annotation_count = 0;
+            // Ignore the despawn/respawn wave from switching maps.
+            dirty_state.suppress_change_detection();
 
             // Update active map
             open_maps.active_map_id = Some(target_id);

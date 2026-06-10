@@ -284,6 +284,8 @@ pub fn poll_load_tasks(
             dirty_state.is_dirty = false;
             dirty_state.last_known_item_count = 0; // Will be updated by detection system
             dirty_state.last_known_annotation_count = 0;
+            // Ignore the spawn wave from loading so the map stays clean.
+            dirty_state.suppress_change_detection();
 
             // Update open maps - check if map is already open or replace current
             let map_name = result

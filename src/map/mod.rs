@@ -48,10 +48,16 @@ impl Plugin for MapPlugin {
                     persistence::switch_map_system.run_if(on_message::<SwitchMapRequest>),
                     persistence::poll_save_tasks,
                     persistence::poll_load_tasks,
-                    // Change detection using Bevy's Added/Changed/Removed filters
-                    persistence::detect_item_additions,
-                    persistence::detect_item_removals,
-                    persistence::detect_item_transforms,
+                    // Change detection using Bevy's Added/Changed/Removed filters.
+                    // Chained so suppression decays only after all three have
+                    // observed the current frame's suppression value.
+                    (
+                        persistence::detect_item_additions,
+                        persistence::detect_item_removals,
+                        persistence::detect_item_transforms,
+                        persistence::decay_dirty_suppression,
+                    )
+                        .chain(),
                 ),
             );
     }
