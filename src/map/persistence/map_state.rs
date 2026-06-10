@@ -50,6 +50,13 @@ pub fn new_map_system(
         dirty_state.last_known_item_count = 0;
         dirty_state.last_known_annotation_count = 0;
 
+        // Replace the current active map entry (consistent with load_map_system).
+        // "New Map" discards the current map rather than leaving an orphaned,
+        // stateless tab in the open-maps list.
+        if let Some(active_id) = open_maps.active_map_id {
+            open_maps.maps.remove(&active_id);
+        }
+
         // Create new entry in open maps
         let new_id = open_maps.next_id;
         open_maps.next_id += 1;
