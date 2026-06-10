@@ -44,8 +44,10 @@ pub fn handle_placement(
         return;
     };
 
-    // Snap to grid unless Shift is held
-    let snap_enabled = grid_settings.snap_enabled && !keyboard.pressed(KeyCode::ShiftLeft);
+    // Snap to grid unless Shift is held (either Shift key)
+    let shift_held =
+        keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let snap_enabled = grid_settings.snap_enabled && !shift_held;
     let final_pos = super::grid::snap_to_grid(world_pos, map_data.grid_size, snap_enabled);
 
     // Use the selected layer instead of deriving from asset category
