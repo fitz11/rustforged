@@ -3,7 +3,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::editor::fog::FogState;
 use crate::editor::{AnnotationSettings, CurrentTool, EditorTool, SelectedLayer};
-use crate::map::{Layer, MapData};
+use crate::map::{Layer, MapData, MapDirtyState};
 use crate::session::{LiveSessionState, MonitorSelectionDialog};
 
 /// Main toolbar showing tools and session controls
@@ -11,6 +11,7 @@ pub fn toolbar_ui(
     mut contexts: EguiContexts,
     mut current_tool: ResMut<CurrentTool>,
     mut map_data: ResMut<MapData>,
+    mut dirty_state: ResMut<MapDirtyState>,
     session_state: Res<LiveSessionState>,
     mut dialog: ResMut<MonitorSelectionDialog>,
 ) -> Result {
@@ -46,7 +47,9 @@ pub fn toolbar_ui(
                 ui.add_space(8.0);
 
                 // Grid toggle
-                ui.checkbox(&mut map_data.grid_visible, "Grid");
+                if ui.checkbox(&mut map_data.grid_visible, "Grid").changed() {
+                    dirty_state.is_dirty = true;
+                }
 
                 // Right-aligned session controls
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

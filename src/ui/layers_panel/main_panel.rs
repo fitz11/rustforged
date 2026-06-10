@@ -28,7 +28,7 @@ pub fn layers_panel_ui(
         .default_width(200.0)
         .show(contexts.ctx_mut()?, |ui| {
             // Layers section
-            render_layers(ui, &mut map_data);
+            render_layers(ui, &mut map_data, &mut dirty_state);
 
             // Fog of War controls
             render_fog_controls(ui, &mut map_data, &mut fog_data, &mut dirty_state);
