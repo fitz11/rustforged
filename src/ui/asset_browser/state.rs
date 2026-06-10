@@ -20,7 +20,7 @@ pub struct MapResources<'w> {
     pub map_data: ResMut<'w, MapData>,
     pub current_map_file: Res<'w, CurrentMapFile>,
     pub dirty_state: ResMut<'w, MapDirtyState>,
-    pub open_maps: Res<'w, OpenMaps>,
+    pub open_maps: ResMut<'w, OpenMaps>,
     pub load_events: MessageWriter<'w, LoadMapRequest>,
     pub save_events: MessageWriter<'w, SaveMapRequest>,
     pub switch_events: MessageWriter<'w, SwitchMapRequest>,

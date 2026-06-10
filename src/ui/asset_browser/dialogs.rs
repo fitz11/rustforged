@@ -256,7 +256,12 @@ pub fn render_rename_map_dialog(
     if do_rename {
         let new_name = browser_state.rename_map_new_name.trim().to_string();
         if !new_name.is_empty() {
-            map_res.map_data.name = new_name;
+            map_res.map_data.name = new_name.clone();
+            // Keep the open-maps entry in sync so the maps list and the Save
+            // dialog (which read from OpenMaps) reflect the new name.
+            if let Some(active_map) = map_res.open_maps.active_map_mut() {
+                active_map.name = new_name;
+            }
             map_res.dirty_state.is_dirty = true;
             browser_state.rename_map_dialog_open = false;
         }
