@@ -22,7 +22,7 @@ pub fn file_menu_ui(
     mut menu_state: ResMut<FileMenuState>,
     mut save_events: MessageWriter<SaveMapRequest>,
     mut new_events: MessageWriter<NewMapRequest>,
-    load_error: Res<MapLoadError>,
+    mut load_error: ResMut<MapLoadError>,
     library: Res<AssetLibrary>,
 ) -> Result {
     // New map confirmation dialog
@@ -96,6 +96,7 @@ pub fn file_menu_ui(
 
     // Load error dialog
     if let Some(error) = &load_error.message {
+        let mut dismiss = false;
         egui::Window::new("Load Error")
             .collapsible(false)
             .resizable(true)
@@ -104,7 +105,14 @@ pub fn file_menu_ui(
                 egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
                     ui.colored_label(egui::Color32::RED, error);
                 });
+                ui.add_space(8.0);
+                if ui.button("OK").clicked() {
+                    dismiss = true;
+                }
             });
+        if dismiss {
+            load_error.message = None;
+        }
     }
 
     Ok(())
