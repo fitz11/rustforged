@@ -101,7 +101,14 @@ pub fn execute_undo(
     }
 }
 
-/// Execute a redo operation (same as executing the original command)
+/// Execute a redo operation and return the reverse command for undo.
+///
+/// The redo stack stores the *inverse* commands produced by `execute_undo`, so
+/// redoing is the same inversion operation as undoing: inverting a stored
+/// inverse re-applies the original action and yields the original command back
+/// for the undo stack. Delegating to `execute_undo` keeps the two perfectly
+/// symmetric and avoids the fragile content-based entity matching that a
+/// separate forward implementation required.
 pub fn execute_redo(
     command: &EditorCommand,
     commands: &mut Commands,
@@ -111,94 +118,13 @@ pub fn execute_redo(
     lines_query: &Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
     texts_query: &Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
 ) -> Option<EditorCommand> {
-    // Redo is the opposite of undo - execute the command forward
-    match command {
-        EditorCommand::PlaceItems { items } => {
-            let mut new_items = Vec::new();
-            for item in items {
-                let entity = spawn_placed_item(commands, asset_server, item);
-                new_items.push(PlacedItemData {
-                    entity,
-                    asset_path: item.asset_path.clone(),
-                    layer: item.layer,
-                    z_index: item.z_index,
-                    transform: item.transform,
-                });
-            }
-            Some(EditorCommand::PlaceItems { items: new_items })
-        }
-        EditorCommand::DeleteItems { items } => {
-            for item in items {
-                commands.entity(item.entity).despawn();
-            }
-            Some(EditorCommand::DeleteItems {
-                items: items.clone(),
-            })
-        }
-        EditorCommand::MoveItems { transforms } => {
-            let mut reverse_transforms = Vec::new();
-            for (entity, old_transform, new_transform) in transforms {
-                if let Ok((_, _, _)) = items_query.get(*entity) {
-                    commands
-                        .entity(*entity)
-                        .insert(Transform::from(*new_transform));
-                    reverse_transforms.push((*entity, *new_transform, *old_transform));
-                }
-            }
-            Some(EditorCommand::MoveItems {
-                transforms: reverse_transforms,
-            })
-        }
-        EditorCommand::CreatePath { entity: _, path } => {
-            let entity = spawn_path(commands, path);
-            Some(EditorCommand::CreatePath {
-                entity,
-                path: path.clone(),
-            })
-        }
-        EditorCommand::DeletePath { path } => {
-            // Find and delete the matching path
-            for (entity, existing_path) in paths_query.iter() {
-                if existing_path.points == path.points {
-                    commands.entity(entity).despawn();
-                    break;
-                }
-            }
-            Some(EditorCommand::DeletePath { path: path.clone() })
-        }
-        EditorCommand::CreateLine { entity: _, line } => {
-            let entity = spawn_line(commands, line);
-            Some(EditorCommand::CreateLine {
-                entity,
-                line: line.clone(),
-            })
-        }
-        EditorCommand::DeleteLine { line } => {
-            // Find and delete the matching line
-            for (entity, existing_line) in lines_query.iter() {
-                if existing_line.start == line.start && existing_line.end == line.end {
-                    commands.entity(entity).despawn();
-                    break;
-                }
-            }
-            Some(EditorCommand::DeleteLine { line: line.clone() })
-        }
-        EditorCommand::CreateText { entity: _, text } => {
-            let entity = spawn_text(commands, text);
-            Some(EditorCommand::CreateText {
-                entity,
-                text: text.clone(),
-            })
-        }
-        EditorCommand::DeleteText { text } => {
-            // Find and delete the matching text
-            for (entity, _, existing_text) in texts_query.iter() {
-                if existing_text.content == text.text {
-                    commands.entity(entity).despawn();
-                    break;
-                }
-            }
-            Some(EditorCommand::DeleteText { text: text.clone() })
-        }
-    }
+    execute_undo(
+        command,
+        commands,
+        asset_server,
+        items_query,
+        paths_query,
+        lines_query,
+        texts_query,
+    )
 }
