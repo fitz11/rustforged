@@ -1,6 +1,9 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
+use bevy_egui::EguiContexts;
+
+use super::params::is_cursor_over_ui;
 
 #[derive(Component)]
 pub struct EditorCamera;
@@ -31,8 +34,9 @@ pub fn camera_pan(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: MessageReader<bevy::input::mouse::MouseMotion>,
     mut camera_query: Query<(&mut Transform, &CameraZoom), With<EditorCamera>>,
+    mut contexts: EguiContexts,
 ) {
-    if !mouse_button.pressed(MouseButton::Middle) {
+    if !mouse_button.pressed(MouseButton::Middle) || is_cursor_over_ui(&mut contexts) {
         mouse_motion.clear();
         return;
     }
@@ -51,7 +55,13 @@ pub fn camera_pan(
 pub fn camera_zoom(
     mut scroll_events: MessageReader<MouseWheel>,
     mut camera_query: Query<&mut CameraZoom, With<EditorCamera>>,
+    mut contexts: EguiContexts,
 ) {
+    if is_cursor_over_ui(&mut contexts) {
+        scroll_events.clear();
+        return;
+    }
+
     let Ok(mut zoom) = camera_query.single_mut() else {
         return;
     };
