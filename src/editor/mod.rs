@@ -66,6 +66,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<annotations::AnnotationSettings>()
             .init_resource::<clipboard::Clipboard>()
             .init_resource::<history::CommandHistory>()
+            .add_message::<history::RecordEditorCommand>()
             .init_resource::<fog::FogState>()
             .init_resource::<brush::BrushState>()
             // Register gizmo groups for editor-only rendering
@@ -141,6 +142,7 @@ impl Plugin for EditorPlugin {
                     clipboard::handle_paste.run_if(no_dialog_open),
                     history::handle_undo.run_if(no_dialog_open),
                     history::handle_redo.run_if(no_dialog_open),
+                    history::record_commands,
                 ),
             )
             .add_systems(

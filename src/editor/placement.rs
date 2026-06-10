@@ -5,6 +5,7 @@ use bevy_egui::EguiContexts;
 use crate::assets::SelectedAsset;
 use crate::map::{MapData, PlacedItem};
 
+use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
 use super::params::{is_cursor_over_ui, CameraParams};
 use super::tools::{CurrentTool, EditorTool, SelectedLayer};
 use super::GridSettings;
@@ -22,6 +23,7 @@ pub fn handle_placement(
     asset_server: Res<AssetServer>,
     camera: CameraParams,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     if current_tool.tool != EditorTool::Place {
         return;
@@ -63,14 +65,29 @@ pub fn handle_placement(
         RenderLayers::layer(1)
     };
 
-    commands.spawn((
-        Sprite::from_image(texture),
-        Transform::from_translation(final_pos.extend(z)),
-        PlacedItem {
-            asset_path: asset.relative_path.clone(),
-            layer,
-            z_index: 0,
+    let transform = Transform::from_translation(final_pos.extend(z));
+    let entity = commands
+        .spawn((
+            Sprite::from_image(texture),
+            transform,
+            PlacedItem {
+                asset_path: asset.relative_path.clone(),
+                layer,
+                z_index: 0,
+            },
+            render_layer,
+        ))
+        .id();
+
+    history_writer.write(RecordEditorCommand {
+        command: EditorCommand::PlaceItems {
+            items: vec![PlacedItemData {
+                entity,
+                asset_path: asset.relative_path.clone(),
+                layer,
+                z_index: 0,
+                transform: TransformData::from(&transform),
+            }],
         },
-        render_layer,
-    ));
+    });
 }

@@ -16,6 +16,15 @@ pub fn spawn_placed_item(
 ) -> Entity {
     let texture_handle: Handle<Image> = asset_server.load(&data.asset_path);
 
+    // Match placement: player-visible layers render on layer 0, editor-only
+    // layers (GM, FogOfWar) on layer 1. Using a fixed [0, 1] here would leak
+    // GM/fog items into the player view when an action is undone/redone.
+    let render_layer = if data.layer.is_player_visible() {
+        RenderLayers::layer(0)
+    } else {
+        RenderLayers::layer(1)
+    };
+
     commands
         .spawn((
             Sprite::from_image(texture_handle),
@@ -25,7 +34,7 @@ pub fn spawn_placed_item(
                 layer: data.layer,
                 z_index: data.z_index,
             },
-            RenderLayers::from_layers(&[0, 1]),
+            render_layer,
         ))
         .id()
 }

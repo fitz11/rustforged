@@ -5,6 +5,7 @@ use bevy_egui::EguiContexts;
 
 use crate::map::{Layer, MapData};
 
+use super::super::history::{EditorCommand, LineData, RecordEditorCommand};
 use super::super::params::{is_cursor_over_ui, CameraParams};
 use super::super::tools::{CurrentTool, EditorTool};
 use super::components::{AnnotationMarker, DrawnLine};
@@ -21,6 +22,7 @@ pub fn handle_line(
     map_data: Res<MapData>,
     camera: CameraParams,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     if current_tool.tool != EditorTool::Line {
         line_state.start_point = None;
@@ -44,16 +46,32 @@ pub fn handle_line(
         if let Some(start) = line_state.start_point {
             // Second click - create line
             let z = Layer::Annotation.z_base();
-            commands.spawn((
-                Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                DrawnLine {
-                    start,
-                    end: world_pos,
-                    color: settings.stroke_color,
-                    stroke_width: settings.stroke_width,
+            let color = settings.stroke_color;
+            let stroke_width = settings.stroke_width;
+            let entity = commands
+                .spawn((
+                    Transform::from_translation(Vec3::new(0.0, 0.0, z)),
+                    DrawnLine {
+                        start,
+                        end: world_pos,
+                        color,
+                        stroke_width,
+                    },
+                    AnnotationMarker,
+                ))
+                .id();
+
+            history_writer.write(RecordEditorCommand {
+                command: EditorCommand::CreateLine {
+                    entity,
+                    line: LineData {
+                        start,
+                        end: world_pos,
+                        color,
+                        stroke_width,
+                    },
                 },
-                AnnotationMarker,
-            ));
+            });
             line_state.start_point = None;
         } else {
             // First click - set start point

@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
+use crate::editor::history::{EditorCommand, RecordEditorCommand, TransformData};
 use crate::editor::params::{is_cursor_over_ui, CameraParams};
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::map::{MapData, PlacedItem};
@@ -20,6 +21,7 @@ pub fn handle_drag(
     mut drag_state: ResMut<DragState>,
     map_data: Res<MapData>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
     // Mutable annotation queries for moving
     mut paths_query: Query<&mut DrawnPath, With<AnnotationMarker>>,
     mut lines_query: Query<&mut DrawnLine, With<AnnotationMarker>>,
@@ -35,11 +37,35 @@ pub fn handle_drag(
         return;
     }
 
-    // Stop dragging on mouse release
+    // Stop dragging on mouse release, recording the net transform change of any
+    // placed items as a single MoveItems command (covers move/resize/rotate).
     if mouse_button.just_released(MouseButton::Left) {
+        let mut transforms = Vec::new();
+        for (entity, start) in &drag_state.entity_start_transforms {
+            if let Ok(current) = items_query.get(*entity) {
+                // Only record entities that actually changed.
+                if current.translation != start.translation
+                    || current.rotation != start.rotation
+                    || current.scale != start.scale
+                {
+                    transforms.push((
+                        *entity,
+                        TransformData::from(start),
+                        TransformData::from(current),
+                    ));
+                }
+            }
+        }
+        if !transforms.is_empty() {
+            history_writer.write(RecordEditorCommand {
+                command: EditorCommand::MoveItems { transforms },
+            });
+        }
+
         drag_state.is_dragging = false;
         drag_state.mode = SelectionDragMode::None;
         drag_state.original_bounds = None;
+        drag_state.entity_start_transforms.clear();
         return;
     }
 

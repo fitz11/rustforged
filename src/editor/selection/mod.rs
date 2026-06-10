@@ -64,6 +64,9 @@ pub struct DragState {
     pub original_bounds: Option<(Vec2, Vec2)>,
     /// Maps entity to its starting position when drag began (for PlacedItems)
     pub entity_start_positions: Vec<(Entity, Vec2)>,
+    /// Full starting transform for each placed item when drag began, used to
+    /// record a MoveItems undo command on release.
+    pub entity_start_transforms: Vec<(Entity, Transform)>,
     /// Maps entity to its original scale when drag began (for resizing)
     pub entity_start_scales: Vec<(Entity, Vec3)>,
     /// Maps entity to its original rotation when drag began (for rotating)

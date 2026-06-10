@@ -3,16 +3,21 @@
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
-use crate::map::{MapData, Selected};
+use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
+use crate::editor::history::{
+    EditorCommand, LineData, PathData, PlacedItemData, RecordEditorCommand, TextData, TransformData,
+};
+use crate::map::{MapData, PlacedItem, Selected};
 
 use super::hit_detection::get_sprite_half_size;
 
 pub fn handle_fit_to_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<(&mut Transform, &Sprite), With<Selected>>,
+    mut selected_query: Query<(Entity, &mut Transform, &Sprite), With<Selected>>,
     map_data: Res<MapData>,
     images: Res<Assets<Image>>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
@@ -27,10 +32,12 @@ pub fn handle_fit_to_grid(
         return;
     }
 
-    for (mut transform, sprite) in selected_query.iter_mut() {
+    let mut moves = Vec::new();
+    for (entity, mut transform, sprite) in selected_query.iter_mut() {
         let original_size = get_sprite_half_size(sprite, &images) * 2.0;
 
         if original_size.x > 0.0 && original_size.y > 0.0 {
+            let old = TransformData::from(&*transform);
             // Calculate scale to fit into one grid cell
             let grid_size = map_data.grid_size;
             let scale_x = grid_size / original_size.x;
@@ -39,16 +46,20 @@ pub fn handle_fit_to_grid(
             // Use uniform scaling (the smaller of the two to fit within the cell)
             let uniform_scale = scale_x.min(scale_y);
             transform.scale = Vec3::new(uniform_scale, uniform_scale, 1.0);
+            moves.push((entity, old, TransformData::from(&*transform)));
         }
     }
+
+    record_moves(&mut history_writer, moves);
 }
 
 /// Center selected items to the nearest grid cell center when Shift+G is pressed
 pub fn handle_center_to_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<&mut Transform, With<Selected>>,
+    mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
     map_data: Res<MapData>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
@@ -66,7 +77,9 @@ pub fn handle_center_to_grid(
     let grid_size = map_data.grid_size;
     let half = grid_size / 2.0;
 
-    for mut transform in selected_query.iter_mut() {
+    let mut moves = Vec::new();
+    for (entity, mut transform, has_placed) in selected_query.iter_mut() {
+        let old = TransformData::from(&*transform);
         let pos = transform.translation.truncate();
         // Snap to nearest grid cell center
         let snapped = Vec2::new(
@@ -75,15 +88,21 @@ pub fn handle_center_to_grid(
         );
         transform.translation.x = snapped.x;
         transform.translation.y = snapped.y;
+        if has_placed {
+            moves.push((entity, old, TransformData::from(&*transform)));
+        }
     }
+
+    record_moves(&mut history_writer, moves);
 }
 
 /// Restore selected items to their original aspect ratio when A is pressed
 /// Uses the larger of the two scale values to preserve the largest dimension
 pub fn handle_restore_aspect_ratio(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<&mut Transform, With<Selected>>,
+    mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
@@ -97,20 +116,28 @@ pub fn handle_restore_aspect_ratio(
         return;
     }
 
-    for mut transform in selected_query.iter_mut() {
+    let mut moves = Vec::new();
+    for (entity, mut transform, has_placed) in selected_query.iter_mut() {
+        let old = TransformData::from(&*transform);
         // Restore original aspect ratio by making scale uniform
         // Use the larger scale value to preserve the largest dimension
         let uniform_scale = transform.scale.x.abs().max(transform.scale.y.abs());
         transform.scale.x = uniform_scale;
         transform.scale.y = uniform_scale;
+        if has_placed {
+            moves.push((entity, old, TransformData::from(&*transform)));
+        }
     }
+
+    record_moves(&mut history_writer, moves);
 }
 
 /// Rotate selected items by 90 degrees when R is pressed (clockwise) or Shift+R (counter-clockwise)
 pub fn handle_rotate_90(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<&mut Transform, With<Selected>>,
+    mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
@@ -125,16 +152,52 @@ pub fn handle_rotate_90(
     let angle = if shift_held { 90.0_f32 } else { -90.0_f32 };
     let rotation_delta = Quat::from_rotation_z(angle.to_radians());
 
-    for mut transform in selected_query.iter_mut() {
+    let mut moves = Vec::new();
+    for (entity, mut transform, has_placed) in selected_query.iter_mut() {
+        let old = TransformData::from(&*transform);
         transform.rotation *= rotation_delta;
+        if has_placed {
+            moves.push((entity, old, TransformData::from(&*transform)));
+        }
+    }
+
+    record_moves(&mut history_writer, moves);
+}
+
+/// Emit a MoveItems command for any entries whose transform actually changed.
+fn record_moves(
+    history_writer: &mut MessageWriter<RecordEditorCommand>,
+    transforms: Vec<(Entity, TransformData, TransformData)>,
+) {
+    let changed: Vec<_> = transforms
+        .into_iter()
+        .filter(|(_, old, new)| {
+            old.translation != new.translation
+                || old.rotation != new.rotation
+                || old.scale != new.scale
+        })
+        .collect();
+
+    if !changed.is_empty() {
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::MoveItems {
+                transforms: changed,
+            },
+        });
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn handle_deletion(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     selected_query: Query<Entity, With<Selected>>,
+    selected_items: Query<(Entity, &Transform, &PlacedItem), With<Selected>>,
+    selected_paths: Query<(Entity, &DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
+    selected_lines: Query<(Entity, &DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
+    selected_texts: Query<(Entity, &Transform, &TextAnnotation), (With<Selected>, With<AnnotationMarker>)>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
@@ -146,10 +209,62 @@ pub fn handle_deletion(
     let should_delete =
         keyboard.just_pressed(KeyCode::Delete) || keyboard.just_pressed(KeyCode::Backspace);
 
-    if should_delete {
-        for entity in selected_query.iter() {
-            commands.entity(entity).despawn();
-        }
+    if !should_delete {
+        return;
+    }
+
+    // Record before despawning. Placed items become a single DeleteItems command;
+    // each annotation becomes its own Delete* command.
+    let deleted_items: Vec<PlacedItemData> = selected_items
+        .iter()
+        .map(|(entity, transform, item)| PlacedItemData {
+            entity,
+            asset_path: item.asset_path.clone(),
+            layer: item.layer,
+            z_index: item.z_index,
+            transform: TransformData::from(transform),
+        })
+        .collect();
+
+    if !deleted_items.is_empty() {
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::DeleteItems {
+                items: deleted_items,
+            },
+        });
+    }
+
+    for (_, path) in selected_paths.iter() {
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::DeletePath {
+                path: PathData::from(path),
+            },
+        });
+    }
+
+    for (_, line) in selected_lines.iter() {
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::DeleteLine {
+                line: LineData::from(line),
+            },
+        });
+    }
+
+    for (_, transform, text) in selected_texts.iter() {
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::DeleteText {
+                text: TextData {
+                    text: text.content.clone(),
+                    position: transform.translation.truncate(),
+                    color: text.color,
+                    font_size: text.font_size,
+                },
+            },
+        });
+    }
+
+    for entity in selected_query.iter() {
+        commands.entity(entity).despawn();
     }
 }
 

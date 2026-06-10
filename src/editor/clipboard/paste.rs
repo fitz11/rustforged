@@ -7,6 +7,9 @@ use bevy_egui::EguiContexts;
 use crate::map::{Layer, MapData, PlacedItem, Selected};
 
 use super::super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
+use super::super::history::{
+    EditorCommand, LineData, PathData, PlacedItemData, RecordEditorCommand, TextData, TransformData,
+};
 use super::super::params::CameraParams;
 use super::helpers::{array_to_color, saved_path_center};
 use super::types::Clipboard;
@@ -22,6 +25,7 @@ pub fn handle_paste(
     camera: CameraParams,
     selected_query: Query<Entity, With<Selected>>,
     map_data: Res<MapData>,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Check for Ctrl+V
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
@@ -51,6 +55,9 @@ pub fn handle_paste(
         commands.entity(entity).remove::<Selected>();
     }
 
+    // Accumulate pasted placed items so the batch is one undo step.
+    let mut pasted_items: Vec<PlacedItemData> = Vec::new();
+
     // Paste placed items
     for clip_item in &clipboard.placed_items {
         // Check if target layer is locked
@@ -77,21 +84,40 @@ pub fn handle_paste(
             RenderLayers::layer(1)
         };
 
-        commands.spawn((
-            Sprite::from_image(texture),
-            Transform {
-                translation: new_pos.extend(z),
-                rotation: Quat::from_rotation_z(clip_item.saved.rotation),
-                scale: clip_item.saved.scale.extend(1.0),
+        let transform = Transform {
+            translation: new_pos.extend(z),
+            rotation: Quat::from_rotation_z(clip_item.saved.rotation),
+            scale: clip_item.saved.scale.extend(1.0),
+        };
+        let entity = commands
+            .spawn((
+                Sprite::from_image(texture),
+                transform,
+                PlacedItem {
+                    asset_path: clip_item.saved.asset_path.clone(),
+                    layer: clip_item.saved.layer,
+                    z_index: clip_item.saved.z_index,
+                },
+                render_layer,
+                Selected, // Auto-select pasted item
+            ))
+            .id();
+
+        pasted_items.push(PlacedItemData {
+            entity,
+            asset_path: clip_item.saved.asset_path.clone(),
+            layer: clip_item.saved.layer,
+            z_index: clip_item.saved.z_index,
+            transform: TransformData::from(&transform),
+        });
+    }
+
+    if !pasted_items.is_empty() {
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::PlaceItems {
+                items: pasted_items,
             },
-            PlacedItem {
-                asset_path: clip_item.saved.asset_path.clone(),
-                layer: clip_item.saved.layer,
-                z_index: clip_item.saved.z_index,
-            },
-            render_layer,
-            Selected, // Auto-select pasted item
-        ));
+        });
     }
 
     // Check if annotation layer is locked
@@ -121,16 +147,31 @@ pub fn handle_paste(
             .map(|p| *p + translation)
             .collect();
 
-        commands.spawn((
-            Transform::from_translation(Vec3::new(0.0, 0.0, annotation_z)),
-            DrawnPath {
-                points: new_points,
-                color: array_to_color(clip_path.saved.color),
-                stroke_width: clip_path.saved.stroke_width,
+        let color = array_to_color(clip_path.saved.color);
+        let stroke_width = clip_path.saved.stroke_width;
+        let entity = commands
+            .spawn((
+                Transform::from_translation(Vec3::new(0.0, 0.0, annotation_z)),
+                DrawnPath {
+                    points: new_points.clone(),
+                    color,
+                    stroke_width,
+                },
+                AnnotationMarker,
+                Selected,
+            ))
+            .id();
+
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::CreatePath {
+                entity,
+                path: PathData {
+                    points: new_points,
+                    color,
+                    stroke_width,
+                },
             },
-            AnnotationMarker,
-            Selected,
-        ));
+        });
     }
 
     // Paste lines
@@ -138,32 +179,67 @@ pub fn handle_paste(
         let line_center = (clip_line.saved.start + clip_line.saved.end) / 2.0;
         let translation = paste_pos + clip_line.offset - line_center;
 
-        commands.spawn((
-            Transform::from_translation(Vec3::new(0.0, 0.0, annotation_z)),
-            DrawnLine {
-                start: clip_line.saved.start + translation,
-                end: clip_line.saved.end + translation,
-                color: array_to_color(clip_line.saved.color),
-                stroke_width: clip_line.saved.stroke_width,
+        let start = clip_line.saved.start + translation;
+        let end = clip_line.saved.end + translation;
+        let color = array_to_color(clip_line.saved.color);
+        let stroke_width = clip_line.saved.stroke_width;
+        let entity = commands
+            .spawn((
+                Transform::from_translation(Vec3::new(0.0, 0.0, annotation_z)),
+                DrawnLine {
+                    start,
+                    end,
+                    color,
+                    stroke_width,
+                },
+                AnnotationMarker,
+                Selected,
+            ))
+            .id();
+
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::CreateLine {
+                entity,
+                line: LineData {
+                    start,
+                    end,
+                    color,
+                    stroke_width,
+                },
             },
-            AnnotationMarker,
-            Selected,
-        ));
+        });
     }
 
     // Paste text annotations
     for clip_text in &clipboard.texts {
         let new_pos = paste_pos + clip_text.offset;
 
-        commands.spawn((
-            Transform::from_translation(new_pos.extend(annotation_z)),
-            TextAnnotation {
-                content: clip_text.saved.content.clone(),
-                font_size: clip_text.saved.font_size,
-                color: array_to_color(clip_text.saved.color),
+        let content = clip_text.saved.content.clone();
+        let font_size = clip_text.saved.font_size;
+        let color = array_to_color(clip_text.saved.color);
+        let entity = commands
+            .spawn((
+                Transform::from_translation(new_pos.extend(annotation_z)),
+                TextAnnotation {
+                    content: content.clone(),
+                    font_size,
+                    color,
+                },
+                AnnotationMarker,
+                Selected,
+            ))
+            .id();
+
+        history_writer.write(RecordEditorCommand {
+            command: EditorCommand::CreateText {
+                entity,
+                text: TextData {
+                    text: content,
+                    position: new_pos,
+                    color,
+                    font_size,
+                },
             },
-            AnnotationMarker,
-            Selected,
-        ));
+        });
     }
 }

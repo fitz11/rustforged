@@ -17,6 +17,7 @@ use crate::assets::SelectedAsset;
 use crate::map::{MapData, PlacedItem};
 
 use super::grid::snap_to_grid;
+use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
 use super::params::{is_cursor_over_ui, CameraParams};
 use super::tools::SelectedLayer;
 
@@ -43,6 +44,22 @@ pub struct BrushState {
     pub is_brushing: bool,
     /// The bounds of the last placed item (to avoid placement while cursor is inside)
     pub last_placed_bounds: Option<PlacedBounds>,
+    /// Items placed during the current brush stroke, accumulated so the whole
+    /// stroke is recorded as a single undo step on release.
+    pub stroke_items: Vec<PlacedItemData>,
+}
+
+impl BrushState {
+    /// Emit the accumulated stroke (if any) as one PlaceItems command and reset.
+    fn flush_stroke(&mut self, history_writer: &mut MessageWriter<RecordEditorCommand>) {
+        if !self.stroke_items.is_empty() {
+            history_writer.write(RecordEditorCommand {
+                command: EditorCommand::PlaceItems {
+                    items: std::mem::take(&mut self.stroke_items),
+                },
+            });
+        }
+    }
 }
 
 /// Handle brush tool input for continuous asset placement
@@ -59,6 +76,7 @@ pub fn handle_brush(
     camera: CameraParams,
     mut brush_state: ResMut<BrushState>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // Don't process if cursor is over UI
     if is_cursor_over_ui(&mut contexts) {
@@ -67,14 +85,18 @@ pub fn handle_brush(
 
     // Handle mouse press - start brushing
     if mouse_button.just_pressed(MouseButton::Left) {
+        // Flush any leftover stroke (e.g. a previous release that happened over
+        // UI) before beginning a new one.
+        brush_state.flush_stroke(&mut history_writer);
         brush_state.is_brushing = true;
         brush_state.last_placed_bounds = None;
     }
 
-    // Handle mouse release - stop brushing
+    // Handle mouse release - stop brushing and record the stroke
     if mouse_button.just_released(MouseButton::Left) {
         brush_state.is_brushing = false;
         brush_state.last_placed_bounds = None;
+        brush_state.flush_stroke(&mut history_writer);
     }
 
     // Only proceed if actively brushing
@@ -147,20 +169,32 @@ pub fn handle_brush(
         RenderLayers::layer(1)
     };
 
-    commands.spawn((
-        Sprite::from_image(texture),
-        Transform {
-            translation: final_pos.extend(z),
-            scale,
-            ..default()
-        },
-        PlacedItem {
-            asset_path: asset.relative_path.clone(),
-            layer,
-            z_index: 0,
-        },
-        render_layer,
-    ));
+    let transform = Transform {
+        translation: final_pos.extend(z),
+        scale,
+        ..default()
+    };
+    let entity = commands
+        .spawn((
+            Sprite::from_image(texture),
+            transform,
+            PlacedItem {
+                asset_path: asset.relative_path.clone(),
+                layer,
+                z_index: 0,
+            },
+            render_layer,
+        ))
+        .id();
+
+    // Accumulate for the current stroke; recorded as one undo step on release.
+    brush_state.stroke_items.push(PlacedItemData {
+        entity,
+        asset_path: asset.relative_path.clone(),
+        layer,
+        z_index: 0,
+        transform: TransformData::from(&transform),
+    });
 }
 
 #[cfg(test)]

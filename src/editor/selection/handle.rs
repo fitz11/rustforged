@@ -218,7 +218,10 @@ pub fn handle_selection(
                 drag_state.drag_start_world = world_pos;
                 drag_state.entity_start_positions =
                     vec![(entity, transform.translation.truncate())];
+                drag_state.entity_start_transforms = vec![(entity, *transform)];
                 drag_state.entity_start_scales = vec![(entity, transform.scale)];
+                drag_state.entity_start_rotations.clear();
+                drag_state.entity_start_half_sizes.clear();
                 drag_state.annotation_drag_data.clear();
             }
         } else {
@@ -255,6 +258,7 @@ fn start_selection_drag(
     drag_state.drag_start_world = world_pos;
     drag_state.original_bounds = bounds;
     drag_state.entity_start_positions.clear();
+    drag_state.entity_start_transforms.clear();
     drag_state.entity_start_scales.clear();
     drag_state.entity_start_rotations.clear();
     drag_state.entity_start_half_sizes.clear();
@@ -276,6 +280,7 @@ fn start_selection_drag(
             drag_state
                 .entity_start_positions
                 .push((entity, t.translation.truncate()));
+            drag_state.entity_start_transforms.push((entity, *t));
             drag_state.entity_start_scales.push((entity, t.scale));
             drag_state
                 .entity_start_rotations
@@ -329,6 +334,7 @@ fn start_drag_for_entity(
     drag_state.mode = SelectionDragMode::Move;
     drag_state.drag_start_world = world_pos;
     drag_state.entity_start_positions.clear();
+    drag_state.entity_start_transforms.clear();
     drag_state.entity_start_scales.clear();
     drag_state.annotation_drag_data.clear();
 
@@ -337,6 +343,7 @@ fn start_drag_for_entity(
         drag_state
             .entity_start_positions
             .push((entity, t.translation.truncate()));
+        drag_state.entity_start_transforms.push((entity, *t));
         drag_state.entity_start_scales.push((entity, t.scale));
     }
     // Check if it's a path

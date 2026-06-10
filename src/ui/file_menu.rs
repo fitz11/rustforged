@@ -23,6 +23,7 @@ pub struct FileMenuState {
 }
 
 /// Renders the dialog windows for file operations (triggered from asset_browser menu)
+#[allow(clippy::too_many_arguments)]
 pub fn file_menu_ui(
     mut contexts: EguiContexts,
     mut menu_state: ResMut<FileMenuState>,

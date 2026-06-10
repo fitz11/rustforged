@@ -28,6 +28,7 @@ mod command_history;
 mod commands;
 mod data_types;
 mod execute;
+mod recording;
 mod spawn_helpers;
 mod systems;
 
@@ -36,8 +37,10 @@ mod tests;
 
 // Re-exports
 pub use command_history::CommandHistory;
+pub use commands::EditorCommand;
+pub use data_types::{LineData, PathData, PlacedItemData, TextData, TransformData};
+pub use recording::{record_commands, RecordEditorCommand};
 pub use systems::{handle_redo, handle_undo};
 
 /// Maximum number of commands to keep in history
-#[allow(dead_code)]
 pub(crate) const MAX_HISTORY_SIZE: usize = 100;

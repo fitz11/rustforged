@@ -7,6 +7,7 @@ use bevy_egui::EguiContexts;
 use crate::map::Layer;
 
 use super::super::camera::EditorCamera;
+use super::super::history::{EditorCommand, PathData, RecordEditorCommand};
 use super::super::tools::EditorTool;
 use super::components::{AnnotationMarker, DrawnPath};
 use super::layer_helpers::is_annotation_layer_locked;
@@ -18,11 +19,12 @@ pub fn handle_draw(
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
     mut contexts: EguiContexts,
+    mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     if res.current_tool.tool != EditorTool::Draw {
         // If we were drawing but switched tools, finalize
         if res.draw_state.is_drawing && res.draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings);
+            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings, &mut history_writer);
         }
         res.draw_state.is_drawing = false;
         res.draw_state.current_points.clear();
@@ -70,7 +72,7 @@ pub fn handle_draw(
     } else if res.mouse_button.just_released(MouseButton::Left) && res.draw_state.is_drawing {
         res.draw_state.is_drawing = false;
         if res.draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings);
+            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings, &mut history_writer);
         }
         res.draw_state.current_points.clear();
     }
@@ -80,15 +82,32 @@ fn spawn_drawn_path(
     commands: &mut Commands,
     draw_state: &DrawState,
     settings: &AnnotationSettings,
+    history_writer: &mut MessageWriter<RecordEditorCommand>,
 ) {
     let z = Layer::Annotation.z_base();
-    commands.spawn((
-        Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-        DrawnPath {
-            points: draw_state.current_points.clone(),
-            color: settings.stroke_color,
-            stroke_width: settings.stroke_width,
+    let points = draw_state.current_points.clone();
+    let color = settings.stroke_color;
+    let stroke_width = settings.stroke_width;
+    let entity = commands
+        .spawn((
+            Transform::from_translation(Vec3::new(0.0, 0.0, z)),
+            DrawnPath {
+                points: points.clone(),
+                color,
+                stroke_width,
+            },
+            AnnotationMarker,
+        ))
+        .id();
+
+    history_writer.write(RecordEditorCommand {
+        command: EditorCommand::CreatePath {
+            entity,
+            path: PathData {
+                points,
+                color,
+                stroke_width,
+            },
         },
-        AnnotationMarker,
-    ));
+    });
 }
