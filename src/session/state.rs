@@ -60,20 +60,6 @@ impl LiveSessionState {
         self.rotation_degrees = (self.rotation_degrees - 90 + 360) % 360;
     }
 
-    /// Check if viewport is in portrait orientation (90 or 270 degrees)
-    pub fn is_portrait(&self) -> bool {
-        self.rotation_degrees == 90 || self.rotation_degrees == 270
-    }
-
-    /// Get the effective viewport size accounting for rotation
-    /// (swaps width/height when rotated 90 or 270 degrees)
-    pub fn effective_viewport_size(&self) -> Vec2 {
-        if self.is_portrait() {
-            Vec2::new(self.viewport_size.y, self.viewport_size.x)
-        } else {
-            self.viewport_size
-        }
-    }
 }
 
 
@@ -249,72 +235,6 @@ mod tests {
         assert_eq!(state.rotation_degrees, 90);
         state.rotate_ccw();
         assert_eq!(state.rotation_degrees, 0);
-    }
-
-    #[test]
-    fn test_is_portrait() {
-        let mut state = LiveSessionState {
-            rotation_degrees: 0,
-            ..Default::default()
-        };
-        assert!(!state.is_portrait());
-
-        state.rotation_degrees = 90;
-        assert!(state.is_portrait());
-
-        state.rotation_degrees = 180;
-        assert!(!state.is_portrait());
-
-        state.rotation_degrees = 270;
-        assert!(state.is_portrait());
-    }
-
-    #[test]
-    fn test_effective_viewport_size_landscape() {
-        let state = LiveSessionState {
-            viewport_size: Vec2::new(1920.0, 1080.0),
-            rotation_degrees: 0,
-            ..Default::default()
-        };
-
-        let effective = state.effective_viewport_size();
-        assert_eq!(effective, Vec2::new(1920.0, 1080.0));
-    }
-
-    #[test]
-    fn test_effective_viewport_size_portrait_90() {
-        let state = LiveSessionState {
-            viewport_size: Vec2::new(1920.0, 1080.0),
-            rotation_degrees: 90,
-            ..Default::default()
-        };
-
-        let effective = state.effective_viewport_size();
-        assert_eq!(effective, Vec2::new(1080.0, 1920.0));
-    }
-
-    #[test]
-    fn test_effective_viewport_size_180() {
-        let state = LiveSessionState {
-            viewport_size: Vec2::new(1920.0, 1080.0),
-            rotation_degrees: 180,
-            ..Default::default()
-        };
-
-        let effective = state.effective_viewport_size();
-        assert_eq!(effective, Vec2::new(1920.0, 1080.0));
-    }
-
-    #[test]
-    fn test_effective_viewport_size_portrait_270() {
-        let state = LiveSessionState {
-            viewport_size: Vec2::new(1920.0, 1080.0),
-            rotation_degrees: 270,
-            ..Default::default()
-        };
-
-        let effective = state.effective_viewport_size();
-        assert_eq!(effective, Vec2::new(1080.0, 1920.0));
     }
 
     // ViewportDragMode tests

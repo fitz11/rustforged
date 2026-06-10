@@ -154,13 +154,17 @@ pub fn sync_player_camera(
         // Apply rotation (negative because camera rotation is inverse of content rotation)
         transform.rotation = Quat::from_rotation_z(-session_state.rotation_radians());
 
-        // Update projection to match viewport size
-        // Use effective size which accounts for rotation
-        let effective_size = session_state.effective_viewport_size();
+        // Update projection to match the viewport size. Use the raw (unrotated)
+        // size, NOT the width/height-swapped effective size: the camera rotation
+        // above already reorients the content, and the player window's aspect
+        // equals the monitor aspect that viewport_size is kept at. Feeding the
+        // swapped size to ScalingMode::Fixed (which does not preserve aspect)
+        // stretched the rotated view by ~aspect^2 at 90/270 degrees.
+        let size = session_state.viewport_size;
         if let Projection::Orthographic(ref mut ortho) = *projection {
             ortho.scaling_mode = ScalingMode::Fixed {
-                width: effective_size.x,
-                height: effective_size.y,
+                width: size.x,
+                height: size.y,
             };
         }
     }
