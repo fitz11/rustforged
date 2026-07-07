@@ -1,0 +1,11 @@
+{
+  "version": "0.1.2",
+  "release_url": "https://github.com/fitz11/rustforged/releases/tag/v0.1.2",
+  "release_notes": "See the release page for full release notes.",
+  "assets": {
+    "windows-x64": "https://github.com/fitz11/rustforged/releases/download/v0.1.2/rustforged_0.1.2_x64_en-US.msi",
+    "windows-arm64": "https://github.com/fitz11/rustforged/releases/download/v0.1.2/rustforged_0.1.2_arm64-setup.exe",
+    "macos-aarch64": "https://github.com/fitz11/rustforged/releases/download/v0.1.2/Rustforged_0.1.2_aarch64.dmg",
+    "macos-x86_64": "https://github.com/fitz11/rustforged/releases/download/v0.1.2/Rustforged_0.1.2_x64.dmg"
+  }
+}

@@ -407,6 +407,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add releases/latest.json
+          # -f: the /releases dir is gitignored (local build artifacts), but the manifest
+          # itself must be tracked so the in-app update checker can read it from the repo.
+          git add -f releases/latest.json
           git diff --staged --quiet || git commit -m "Update release manifest for v${{ needs.create-release.outputs.version }}"
           git push
