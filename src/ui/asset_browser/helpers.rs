@@ -33,7 +33,7 @@ pub fn scan_maps_directory(maps_dir: &std::path::Path) -> Vec<(String, PathBuf)>
         })
         .unwrap_or_default();
 
-    maps.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    maps.sort_by_key(|a| a.0.to_lowercase());
     maps
 }
 
