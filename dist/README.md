@@ -18,8 +18,10 @@ cargo-packager from `[package.metadata.packager]` in the root `Cargo.toml`. Ther
 no hand-written `Info.plist` — cargo-packager builds a correct one from that config,
 so the version can never drift out of sync with the crate version.
 
-When code signing is set up, add the signing/notarization fields under
-`[package.metadata.packager.macos]` in `Cargo.toml` (see `packaging/README.md`).
+Code signing and notarization are handled by the CI release jobs via `APPLE_*`
+repository secrets, not by `Cargo.toml` (the certificate and notarization credentials
+cannot be stored in package metadata). See `packaging/README.md` for the secret list
+and setup steps.
 
 ## Linux
 

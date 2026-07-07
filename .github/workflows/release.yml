@@ -236,7 +236,26 @@ jobs:
         run: cargo build --release --target aarch64-apple-darwin
 
       - name: Build DMG
-        run: cargo packager --release --target aarch64-apple-darwin --binaries-dir target/aarch64-apple-darwin/release --formats dmg
+        # When the APPLE_* secrets are present, cargo-packager signs the .app with the
+        # Developer ID cert (hardened runtime on) and notarizes+staples the DMG via the
+        # App Store Connect API key. If the secrets are empty (e.g. a fork), it silently
+        # falls back to an unsigned build, so this step never hard-fails on missing creds.
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          # notarytool needs the .p8 key as a file on disk; materialize it from the
+          # base64 secret and point cargo-packager at it via APPLE_API_KEY_PATH.
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            echo "$APPLE_API_KEY_P8" | base64 --decode > "$KEY_PATH"
+            export APPLE_API_KEY_PATH="$KEY_PATH"
+          fi
+          cargo packager --release --target aarch64-apple-darwin --binaries-dir target/aarch64-apple-darwin/release --formats dmg
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
@@ -271,7 +290,21 @@ jobs:
         run: cargo build --release --target x86_64-apple-darwin
 
       - name: Build DMG
-        run: cargo packager --release --target x86_64-apple-darwin --binaries-dir target/x86_64-apple-darwin/release --formats dmg
+        # See build-macos-arm64 for how signing/notarization is wired; identical here.
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            echo "$APPLE_API_KEY_P8" | base64 --decode > "$KEY_PATH"
+            export APPLE_API_KEY_PATH="$KEY_PATH"
+          fi
+          cargo packager --release --target x86_64-apple-darwin --binaries-dir target/x86_64-apple-darwin/release --formats dmg
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1

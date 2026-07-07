@@ -5,3 +5,9 @@
 config.json
 CLAUDE.md
 *.DS_Store
+
+# Local Apple signing credentials — NEVER commit. These live only here and in
+# GitHub Actions secrets; the working-tree copies are for local reference/backup.
+.secrets/
+*.p12
+*.p8

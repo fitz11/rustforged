@@ -210,17 +210,34 @@ To enable code signing later:
    certificate-thumbprint = "YOUR_CERT_THUMBPRINT"
    ```
 
-### macOS
+### macOS (implemented)
 
-1. Enroll in Apple Developer Program ($99/year)
-2. Create a Developer ID Application certificate and notarization credentials
-3. Add them to GitHub secrets
-4. Configure in `Cargo.toml` (cargo-packager supports signing and notarization natively):
-   ```toml
-   [package.metadata.packager.macos]
-   signing-identity = "Developer ID Application: Your Name (TEAMID)"
-   # notarization credentials are supplied via env vars / config; see cargo-packager docs
-   ```
+The `build-macos-*` jobs in `.github/workflows/release.yml` sign and notarize
+automatically when the following repository secrets are present. cargo-packager
+signs the `.app` with the Developer ID certificate (hardened runtime enabled) and
+notarizes + staples the DMG using an App Store Connect API key. If the secrets are
+absent, the jobs fall back to an unsigned build.
+
+| Secret | Contents |
+|--------|----------|
+| `APPLE_CERTIFICATE` | base64 of the exported Developer ID Application `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | password set when exporting the `.p12` |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: David Fitzsimmons (TEAMID)` |
+| `APPLE_API_ISSUER` | App Store Connect API key Issuer ID (UUID) |
+| `APPLE_API_KEY` | App Store Connect API Key ID |
+| `APPLE_API_KEY_P8` | base64 of the downloaded `AuthKey_XXXX.p8` |
+
+The workflow reads these as `APPLE_*` environment variables (cargo-packager's native
+signing/notarization interface) and writes the `.p8` to disk at build time, pointing
+`APPLE_API_KEY_PATH` at it. No signing fields live in `Cargo.toml` — the certificate,
+its password, and the notarization credentials cannot be stored there by design.
+
+To (re)generate the credentials:
+
+1. Enroll in the Apple Developer Program ($99/year).
+2. Create a **Developer ID Application** certificate (CSR → portal → install → export `.p12`).
+3. Create an **App Store Connect API key** (Users and Access → Integrations → App Store Connect API).
+4. Add the six secrets above via `gh secret set`.
 
 ## Troubleshooting
 
