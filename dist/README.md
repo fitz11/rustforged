@@ -6,17 +6,20 @@ This directory contains platform-specific configuration files for packaging and 
 
 ```
 dist/
-├── windows/     # Windows installer configuration (WiX MSI)
-├── macos/       # macOS app bundle configuration
-│   └── Info.plist
 └── linux/       # Linux desktop integration
     └── rustforged.desktop
 ```
 
 ## macOS
 
-- `Info.plist` - App bundle metadata for creating a proper .app bundle
-- When code signing is set up, add signing configuration here
+The macOS `.app`/`.dmg` metadata (bundle identifier, version, copyright, minimum
+system version, `NSHighResolutionCapable`, etc.) is generated entirely by
+cargo-packager from `[package.metadata.packager]` in the root `Cargo.toml`. There is
+no hand-written `Info.plist` — cargo-packager builds a correct one from that config,
+so the version can never drift out of sync with the crate version.
+
+When code signing is set up, add the signing/notarization fields under
+`[package.metadata.packager.macos]` in `Cargo.toml` (see `packaging/README.md`).
 
 ## Linux
 

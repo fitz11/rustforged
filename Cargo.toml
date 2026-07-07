@@ -1,6 +1,6 @@
 [package]
 name = "rustforged"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "D&D 5E Virtual Tabletop map editor"
 repository = "https://github.com/fitz11/rustforged"
@@ -69,19 +69,24 @@ opt-level = 3
 lto = "thin"
 strip = true
 
+# `version` is intentionally omitted: cargo-packager fills it from [package].version
+# above, so the release version lives in exactly one place. Do not re-add it here.
 [package.metadata.packager]
 before_packaging_command = "cargo build --release"
 product-name = "Rustforged"
-version = "0.1.1"
 identifier = "dev.squishygoose.rustforged"
 description = "D&D 5E Virtual Tabletop Map Editor"
 authors = ["fitz11"]
 publisher = "squishygoose"
+copyright = "Copyright © 2026 Rustforged Contributors"
 license-file = "LICENSE-MIT"
 homepage = "https://github.com/fitz11/rustforged"
 out-dir = "target/release/packager"
 icons = ["packaging/icons/icon.ico", "packaging/icons/icon.icns"]
 
+# The Info.plist is generated entirely from the config above. cargo-packager already
+# sets NSHighResolutionCapable, CFBundleShortVersionString (from the crate version),
+# CFBundleIdentifier, and NSHumanReadableCopyright, so no hand-written plist is needed.
 [package.metadata.packager.macos]
 backgroundApp = false
-infoPlistPath = "dist/macos/Info.plist"
+minimum-system-version = "10.15"

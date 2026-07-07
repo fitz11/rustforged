@@ -28,35 +28,28 @@ if [[ ! -f "packaging/icons/icon.icns" ]]; then
     exit 1
 fi
 
-# Determine architecture
-ARCH=$(uname -m)
-if [[ "$ARCH" == "arm64" ]]; then
-    TARGET="aarch64-apple-darwin"
-    ARCH_NAME="arm64"
-else
-    TARGET="x86_64-apple-darwin"
-    ARCH_NAME="x64"
-fi
+# Build a DMG for both Apple Silicon and Intel. Either architecture can be built from
+# either kind of Mac (the Xcode toolchain and Rust both cross-compile between them).
+TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
 
-echo "Target: $TARGET"
+for TARGET in "${TARGETS[@]}"; do
+    echo ""
+    echo "=== $TARGET ==="
 
-# Ensure target is installed
-if ! rustup target list --installed | grep -q "$TARGET"; then
-    echo "Installing Rust target: $TARGET"
-    rustup target add "$TARGET"
-fi
+    # Ensure target is installed
+    if ! rustup target list --installed | grep -q "$TARGET"; then
+        echo "Installing Rust target: $TARGET"
+        rustup target add "$TARGET"
+    fi
 
-# Build release binary
-echo ""
-echo "Building release binary..."
-cargo build --release --target "$TARGET"
+    echo "Building release binary..."
+    cargo build --release --target "$TARGET"
 
-# Create DMG installer
-echo ""
-echo "Creating DMG installer..."
-cargo packager --release --target "$TARGET" --binaries-dir "target/$TARGET/release" --formats dmg
+    echo "Creating DMG installer..."
+    cargo packager --release --target "$TARGET" --binaries-dir "target/$TARGET/release" --formats dmg
+done
 
-# Find and report output
+# Find and report output (aarch64 -> *_aarch64.dmg, x86_64 -> *_x64.dmg)
 DMG_DIR="target/release/packager"
 if [[ -d "$DMG_DIR" ]] && ls "$DMG_DIR"/*.dmg 1> /dev/null 2>&1; then
     echo ""

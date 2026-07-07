@@ -8,10 +8,17 @@ Rustforged uses [cargo-packager](https://github.com/crabnebula-dev/cargo-package
 
 | Platform | Format | Output |
 |----------|--------|--------|
-| Windows x64 | MSI | `target/release/packager/*.msi` |
-| Windows ARM64 | MSI | `target/release/packager/*.msi` |
-| macOS ARM64 | DMG | `target/release/packager/*.dmg` |
+| Windows x64 | MSI | `target/release/packager/Rustforged_<version>_x64_en-US.msi` |
+| Windows ARM64 | MSI | `target/release/packager/Rustforged_<version>_arm64_en-US.msi` |
+| macOS Apple Silicon | DMG | `target/release/packager/Rustforged_<version>_aarch64.dmg` |
+| macOS Intel | DMG | `target/release/packager/Rustforged_<version>_x64.dmg` |
 | Linux x64 | tar.gz | Built manually (no installer) |
+
+> **Configuration lives in `Cargo.toml`.** All packaging settings are under
+> `[package.metadata.packager]` (and `[package.metadata.packager.macos]`) in the
+> repository-root `Cargo.toml` — there is **no** separate `packager.toml`. The version,
+> description, and authors are inherited from the `[package]` section, so they are never
+> duplicated.
 
 ## Directory Structure
 
@@ -65,16 +72,34 @@ cargo packager --release --target aarch64-pc-windows-msvc --formats wix
 
 Output: `target/release/packager/Rustforged_<version>_arm64_en-US.msi`
 
-### macOS (Apple Silicon)
+### macOS (both architectures)
 
-Run on a Mac with Apple Silicon:
+Run on any Mac. The `scripts/build-macos.sh` helper builds **both** Apple Silicon and
+Intel DMGs in one go (either arch can be built from either kind of Mac):
 
 ```bash
-cargo build --release
-cargo packager --release --formats dmg
+./scripts/build-macos.sh
 ```
 
-Output: `target/release/packager/Rustforged_<version>_aarch64.dmg`
+To build a single architecture by hand:
+
+```bash
+# Apple Silicon
+rustup target add aarch64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo packager --release --target aarch64-apple-darwin \
+  --binaries-dir target/aarch64-apple-darwin/release --formats dmg
+
+# Intel
+rustup target add x86_64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+cargo packager --release --target x86_64-apple-darwin \
+  --binaries-dir target/x86_64-apple-darwin/release --formats dmg
+```
+
+Output:
+- `target/release/packager/Rustforged_<version>_aarch64.dmg` (Apple Silicon)
+- `target/release/packager/Rustforged_<version>_x64.dmg` (Intel)
 
 ### Linux
 
@@ -93,38 +118,37 @@ tar -czvf rustforged-linux-x86_64.tar.gz -C dist rustforged
 
 ### Configuration
 
-The `packager.toml` file in the repository root uses a flat structure (no `[package]` wrapper):
+Packaging is configured in the repository-root **`Cargo.toml`** under the
+`[package.metadata.packager]` tables (cargo-packager reads Cargo metadata directly —
+there is no standalone `packager.toml`):
 
 ```toml
-# Top-level fields
+[package]
 name = "rustforged"
+version = "0.1.2"                       # single source of truth for the release version
+description = "D&D 5E Virtual Tabletop map editor"
+
+[package.metadata.packager]
+# `version`, `description`, and `authors` are inherited from [package] when omitted here,
+# so the version is never duplicated.
 product-name = "Rustforged"
-version = "0.1.0"
-identifier = "com.fitz11.rustforged"
-out-dir = "target/release/packager"
-binaries-dir = "target/release"
-
-# Icons as a flat array (not per-platform)
+identifier = "dev.squishygoose.rustforged"
+publisher = "squishygoose"
+copyright = "Copyright © 2026 Rustforged Contributors"
 icons = ["packaging/icons/icon.ico", "packaging/icons/icon.icns"]
+out-dir = "target/release/packager"
 
-# Resources as array of {src, target} objects
-resources = [{ src = "assets", target = "assets" }]
-
-# Binaries section
-[[binaries]]
-path = "rustforged"
-main = true
-
-# Platform-specific settings
-[macos]
-minimum-system-version = "11.0"
+[package.metadata.packager.macos]
+minimum-system-version = "10.15"        # Intel-inclusive floor; keeps LSMinimumSystemVersion correct
 ```
 
-Key format notes:
-- All fields are at the top level (no `[package]` section)
-- `icons` is a flat array, not a table with `windows`/`macos` keys
-- `resources` is an array of objects with `src` and `target` fields
-- `binaries-dir` must point to where `cargo build --release` outputs the binary
+Key notes:
+- Fields use camelCase or kebab-case (both accepted, e.g. `product-name` / `productName`).
+- `version` is intentionally omitted from `[package.metadata.packager]` so it tracks
+  `[package].version` — do not add it back.
+- The macOS `Info.plist` is **generated** from this config. cargo-packager already sets
+  `NSHighResolutionCapable`, `CFBundleShortVersionString` (from the version),
+  `CFBundleIdentifier`, and `NSHumanReadableCopyright` — there is no hand-written plist.
 
 ### What Gets Bundled
 
@@ -180,21 +204,22 @@ To enable code signing later:
 
 1. Obtain a code signing certificate (EV or standard)
 2. Add certificate to GitHub secrets
-3. Configure in `packager.toml`:
+3. Configure in `Cargo.toml`:
    ```toml
-   [windows]
+   [package.metadata.packager.windows]
    certificate-thumbprint = "YOUR_CERT_THUMBPRINT"
    ```
 
 ### macOS
 
 1. Enroll in Apple Developer Program ($99/year)
-2. Create signing certificate and notarization credentials
-3. Add to GitHub secrets
-4. Configure in `packager.toml`:
+2. Create a Developer ID Application certificate and notarization credentials
+3. Add them to GitHub secrets
+4. Configure in `Cargo.toml` (cargo-packager supports signing and notarization natively):
    ```toml
-   [macos]
+   [package.metadata.packager.macos]
    signing-identity = "Developer ID Application: Your Name (TEAMID)"
+   # notarization credentials are supplied via env vars / config; see cargo-packager docs
    ```
 
 ## Troubleshooting
@@ -225,19 +250,18 @@ macOS DMGs can only be built on macOS. Use GitHub Actions or a Mac.
 
 ### "Couldn't detect a valid configuration file" error
 
-This usually means the `packager.toml` format is invalid. Common issues:
-- Using `[package]` wrapper (fields should be at top level)
-- Using `[icons]` table instead of `icons = [...]` array
-- Placing fields after `[[binaries]]` section (they become part of that table)
+cargo-packager reads its config from `[package.metadata.packager]` in `Cargo.toml`. If it
+can't find the config, check that:
+- You are running `cargo packager` from the crate root (where `Cargo.toml` lives).
+- The `[package.metadata.packager]` table is present and uses valid keys (unknown keys are
+  rejected — `deny_unknown_fields`).
 
 Run with verbose mode to see the actual parse error:
 ```bash
 cargo packager --release -v
 ```
 
-### Assets not included in installer
+### macOS build only produces one architecture
 
-Check `packager.toml` has resources defined as an array (at the top level, before `[[binaries]]`):
-```toml
-resources = [{ src = "assets", target = "assets" }]
-```
+Pass an explicit `--target`. Building both DMGs requires two runs (one per target), which
+is exactly what `scripts/build-macos.sh` and the CI `build-macos-*` jobs do.
