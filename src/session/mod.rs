@@ -1,3 +1,4 @@
+mod keep_awake;
 mod player_window;
 pub mod state;
 mod viewport;
@@ -16,11 +17,13 @@ impl Plugin for LiveSessionPlugin {
         app.init_resource::<LiveSessionState>()
             .init_resource::<ViewportDragState>()
             .init_resource::<MonitorSelectionDialog>()
+            .init_resource::<keep_awake::KeepAwakeGuard>()
             .init_gizmo_group::<viewport::ViewportGizmoGroup>()
             .add_systems(Startup, viewport::configure_viewport_gizmos)
             .add_systems(
                 Update,
                 (
+                    keep_awake::sync_keep_awake.run_if(resource_changed::<LiveSessionState>),
                     viewport::draw_viewport_indicator.run_if(session_is_active),
                     viewport::handle_viewport_interaction.run_if(session_is_active),
                     player_window::create_player_window.run_if(resource_changed::<LiveSessionState>),
