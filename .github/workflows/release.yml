@@ -14,10 +14,15 @@ on:
         required: true
         type: string
       include_windows:
-        description: "Build Windows installers"
+        description: "Build Windows x64 installer"
         required: false
         type: boolean
         default: true
+      include_windows_arm64:
+        description: "Build Windows ARM64 installer (manual only)"
+        required: false
+        type: boolean
+        default: false
       include_mac:
         description: "Build macOS DMGs (costly runners)"
         required: false
@@ -37,7 +42,7 @@ jobs:
     name: Lint & Test (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -67,7 +72,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Determine version
         id: version
@@ -111,7 +116,7 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -150,7 +155,7 @@ jobs:
     if: ${{ github.event_name == 'push' || inputs.include_windows }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -178,11 +183,12 @@ jobs:
   build-windows-arm64:
     name: Build Windows ARM64
     needs: create-release
-    # Auto on tag push; on manual runs only when include_windows is checked.
-    if: ${{ github.event_name == 'push' || inputs.include_windows }}
+    # Manual-only: never runs automatically on a tag push. Trigger via workflow_dispatch
+    # with include_windows_arm64 checked. (Windows x64 is the only auto Windows build.)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_windows_arm64 }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -200,14 +206,17 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target aarch64-pc-windows-msvc
 
-      - name: Build MSI installer
-        run: cargo packager --release --target aarch64-pc-windows-msvc --binaries-dir target/aarch64-pc-windows-msvc/release --formats wix
+      # NSIS (.exe), not WiX (.msi): cargo-packager bundles WiX 3.11, whose candle.exe
+      # does not support `-arch arm64` (that landed in WiX 3.14), so an arm64 MSI build
+      # fails immediately in candle. NSIS supports arm64 and doesn't use candle.
+      - name: Build NSIS installer
+        run: cargo packager --release --target aarch64-pc-windows-msvc --binaries-dir target/aarch64-pc-windows-msvc/release --formats nsis
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
-          files: target/release/packager/*.msi
+          files: target/release/packager/*-setup.exe
 
   build-macos-arm64:
     name: Build macOS ARM64
@@ -217,7 +226,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_mac }}
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -281,7 +290,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_mac }}
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -353,7 +362,7 @@ jobs:
       && needs.build-macos-arm64.result != 'failure'
       && needs.build-macos-x64.result != 'failure' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
 
@@ -369,7 +378,7 @@ jobs:
 
           # Extract asset URLs for each platform
           WIN_X64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("x64.*\\.msi$")) | .browser_download_url' | head -1)
-          WIN_ARM64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("(arm64|aarch64).*\\.msi$")) | .browser_download_url' | head -1)
+          WIN_ARM64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("(arm64|aarch64).*setup\\.exe$")) | .browser_download_url' | head -1)
           MACOS_ARM64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("aarch64\\.dmg$")) | .browser_download_url' | head -1)
           MACOS_X64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("_x64\\.dmg$")) | .browser_download_url' | head -1)
 
