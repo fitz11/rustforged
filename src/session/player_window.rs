@@ -119,9 +119,14 @@ pub fn setup_player_camera(
             },
             RenderTarget::Window(WindowRef::Entity(window_entity)),
             Projection::Orthographic(OrthographicProjection {
-                scaling_mode: ScalingMode::Fixed {
-                    width: viewport_size.x,
-                    height: viewport_size.y,
+                // AutoMax keeps the projection aspect equal to the window's aspect,
+                // so world units map to pixels uniformly on both axes and grid cells
+                // stay square in every orientation. (ScalingMode::Fixed stretches to
+                // fill and would skew cells whenever viewport_size's aspect differed
+                // from the real window framebuffer.)
+                scaling_mode: ScalingMode::AutoMax {
+                    max_width: viewport_size.x,
+                    max_height: viewport_size.y,
                 },
                 near: -1000.0,
                 far: 1000.0,
@@ -154,17 +159,19 @@ pub fn sync_player_camera(
         // Apply rotation (negative because camera rotation is inverse of content rotation)
         transform.rotation = Quat::from_rotation_z(-session_state.rotation_radians());
 
-        // Update projection to match the viewport size. Use the raw (unrotated)
-        // size, NOT the width/height-swapped effective size: the camera rotation
-        // above already reorients the content, and the player window's aspect
-        // equals the monitor aspect that viewport_size is kept at. Feeding the
-        // swapped size to ScalingMode::Fixed (which does not preserve aspect)
-        // stretched the rotated view by ~aspect^2 at 90/270 degrees.
+        // Keep the projection aspect-preserving so grid cells render square in
+        // every orientation. AutoMax bounds the visible region to the viewport
+        // rectangle while deriving the projection aspect from the window itself,
+        // giving a uniform world-to-pixel scale on both axes. This is what keeps
+        // squares square regardless of rotation or any mismatch between the
+        // monitor's reported aspect and the actual window framebuffer; the earlier
+        // ScalingMode::Fixed relied on those aspects matching exactly and skewed
+        // cells (and stretched by ~aspect^2 when fed rotation-swapped dimensions).
         let size = session_state.viewport_size;
         if let Projection::Orthographic(ref mut ortho) = *projection {
-            ortho.scaling_mode = ScalingMode::Fixed {
-                width: size.x,
-                height: size.y,
+            ortho.scaling_mode = ScalingMode::AutoMax {
+                max_width: size.x,
+                max_height: size.y,
             };
         }
     }
