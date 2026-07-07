@@ -3,7 +3,6 @@
 /releases
 /library
 config.json
-CLAUDE.md
 *.DS_Store
 
 # Local Apple signing credentials — NEVER commit. These live only here and in
