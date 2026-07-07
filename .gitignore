@@ -11,3 +11,9 @@ CLAUDE.md
 .secrets/
 *.p12
 *.p8
+
+# Local environment file with signing config (sourced by scripts/build-macos.sh).
+# .env.example is the committed template; the real .env stays local.
+.env
+.env.*
+!.env.example

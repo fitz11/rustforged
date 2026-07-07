@@ -212,32 +212,42 @@ To enable code signing later:
 
 ### macOS (implemented)
 
-The `build-macos-*` jobs in `.github/workflows/release.yml` sign and notarize
-automatically when the following repository secrets are present. cargo-packager
-signs the `.app` with the Developer ID certificate (hardened runtime enabled) and
-notarizes + staples the DMG using an App Store Connect API key. If the secrets are
-absent, the jobs fall back to an unsigned build.
+The `build-macos-*` jobs in `.github/workflows/release.yml` sign and notarize the DMG.
+The **signing identity is configured in `Cargo.toml`** under
+`[package.metadata.packager.macos]` (`signing-identity`) — cargo-packager only signs
+when that field is set and does **not** read an `APPLE_SIGNING_IDENTITY` env var. The
+certificate itself and the notarization credentials come from repository secrets:
 
 | Secret | Contents |
 |--------|----------|
 | `APPLE_CERTIFICATE` | base64 of the exported Developer ID Application `.p12` |
 | `APPLE_CERTIFICATE_PASSWORD` | password set when exporting the `.p12` |
-| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: David Fitzsimmons (TEAMID)` |
 | `APPLE_API_ISSUER` | App Store Connect API key Issuer ID (UUID) |
 | `APPLE_API_KEY` | App Store Connect API Key ID |
 | `APPLE_API_KEY_P8` | base64 of the downloaded `AuthKey_XXXX.p8` |
 
-The workflow reads these as `APPLE_*` environment variables (cargo-packager's native
-signing/notarization interface) and writes the `.p8` to disk at build time, pointing
-`APPLE_API_KEY_PATH` at it. No signing fields live in `Cargo.toml` — the certificate,
-its password, and the notarization credentials cannot be stored there by design.
+At build time cargo-packager imports the `.p12` from `APPLE_CERTIFICATE` /
+`APPLE_CERTIFICATE_PASSWORD` into a temporary keychain, signs the `.app` + DMG using the
+`signing-identity` from `Cargo.toml`, then notarizes + staples via the App Store Connect
+API key (the workflow writes the `.p8` to disk and sets `APPLE_API_KEY_PATH`). The macOS
+jobs are owner-only (`workflow_dispatch` + `include_mac`), so these secrets are always
+present when they run; a missing/invalid cert fails codesign rather than producing an
+unsigned DMG.
+
+> An earlier `APPLE_SIGNING_IDENTITY` secret is no longer used (identity moved to
+> `Cargo.toml`); it can be deleted with `gh secret delete APPLE_SIGNING_IDENTITY`.
 
 To (re)generate the credentials:
 
 1. Enroll in the Apple Developer Program ($99/year).
-2. Create a **Developer ID Application** certificate (CSR → portal → install → export `.p12`).
+2. Create a **Developer ID Application** certificate (CSR → portal → install → export `.p12`)
+   and set its identity string as `signing-identity` in `Cargo.toml`.
 3. Create an **App Store Connect API key** (Users and Access → Integrations → App Store Connect API).
-4. Add the six secrets above via `gh secret set`.
+4. Add the five secrets above via `gh secret set`.
+
+For **local** signed builds, run `./scripts/build-macos.sh` — it sources a gitignored
+`.env` (see `.env.example`) for the notarization key and signs with the cert already in
+your login keychain. No `.p12` import is needed locally.
 
 ## Troubleshooting
 

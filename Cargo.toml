@@ -90,3 +90,11 @@ icons = ["packaging/icons/icon.ico", "packaging/icons/icon.icns"]
 [package.metadata.packager.macos]
 backgroundApp = false
 minimum-system-version = "10.15"
+# Code-signing identity. cargo-packager ONLY signs when this is set here — it does not
+# read an APPLE_SIGNING_IDENTITY env var (unlike Tauri). The string is not secret (it is
+# embedded in every signed binary). Signing needs the matching Developer ID cert either
+# in the local login keychain (local builds) or imported at build time from the
+# APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD env vars (CI). Notarization credentials
+# are read separately from the environment (APPLE_API_KEY / APPLE_API_ISSUER /
+# APPLE_API_KEY_PATH, or APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID).
+signing-identity = "Developer ID Application: David Fitzsimmons (59JTRDC64H)"

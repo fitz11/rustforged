@@ -236,14 +236,16 @@ jobs:
         run: cargo build --release --target aarch64-apple-darwin
 
       - name: Build DMG
-        # When the APPLE_* secrets are present, cargo-packager signs the .app with the
-        # Developer ID cert (hardened runtime on) and notarizes+staples the DMG via the
-        # App Store Connect API key. If the secrets are empty (e.g. a fork), it silently
-        # falls back to an unsigned build, so this step never hard-fails on missing creds.
+        # The signing identity lives in Cargo.toml ([package.metadata.packager.macos]) —
+        # cargo-packager does not read an identity env var. Here it imports the Developer ID
+        # cert from APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD into a temporary keychain,
+        # signs the .app + DMG, then notarizes + staples via the App Store Connect API key.
+        # These jobs are owner-only (workflow_dispatch + include_mac) so the secrets are
+        # always present; a missing/invalid cert fails codesign rather than silently
+        # producing an unsigned DMG.
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
@@ -256,6 +258,14 @@ jobs:
             export APPLE_API_KEY_PATH="$KEY_PATH"
           fi
           cargo packager --release --target aarch64-apple-darwin --binaries-dir target/aarch64-apple-darwin/release --formats dmg
+          # cargo-packager notarizes + staples the .app but not the DMG itself; notarize +
+          # staple the DMG so a downloaded disk image opens without a Gatekeeper warning.
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            for dmg in target/release/packager/*_aarch64.dmg; do
+              xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+              xcrun stapler staple "$dmg"
+            done
+          fi
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
@@ -294,7 +304,6 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
@@ -305,6 +314,14 @@ jobs:
             export APPLE_API_KEY_PATH="$KEY_PATH"
           fi
           cargo packager --release --target x86_64-apple-darwin --binaries-dir target/x86_64-apple-darwin/release --formats dmg
+          # cargo-packager notarizes + staples the .app but not the DMG itself; notarize +
+          # staple the DMG so a downloaded disk image opens without a Gatekeeper warning.
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            for dmg in target/release/packager/*_x64.dmg; do
+              xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+              xcrun stapler staple "$dmg"
+            done
+          fi
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
