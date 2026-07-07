@@ -37,37 +37,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # CI gate: lint & test on Linux before we cut a release.
-  test:
-    name: Lint & Test (Linux)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: v1-release
-
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Run tests
-        run: cargo test
-
+  # No lint/test gate here: CI (.github/workflows/ci.yml) already lints & tests every
+  # push to main, and release tags are cut from already-CI'd main commits, so re-running
+  # the full ~20 min Linux lint+test build on every release would be pure duplication.
   create-release:
     name: Create Release
-    needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -115,6 +89,9 @@ jobs:
     name: Build Linux
     needs: create-release
     runs-on: ubuntu-latest
+    # Modern linker: clang driver + mold for much faster linking.
+    env:
+      RUSTFLAGS: "-Clinker=clang -Clink-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v5
 
@@ -124,12 +101,13 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          sudo apt-get install -y mold clang libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-release
+          cache-on-failure: true
 
       - name: Build release binary
         run: cargo build --release
@@ -154,6 +132,10 @@ jobs:
     # Auto on tag push; on manual runs only when include_windows is checked.
     if: ${{ github.event_name == 'push' || inputs.include_windows }}
     runs-on: windows-latest
+    # Modern linker: LLVM lld (lld-link) instead of MSVC link.exe. LLVM is preinstalled
+    # on windows-latest, so lld-link is on PATH.
+    env:
+      RUSTFLAGS: "-Clinker=lld-link"
     steps:
       - uses: actions/checkout@v5
 
@@ -164,6 +146,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-release
+          cache-on-failure: true
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -187,6 +170,9 @@ jobs:
     # with include_windows_arm64 checked. (Windows x64 is the only auto Windows build.)
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_windows_arm64 }}
     runs-on: windows-latest
+    # Modern linker: LLVM lld (lld-link). lld-link cross-links the arm64 target fine.
+    env:
+      RUSTFLAGS: "-Clinker=lld-link"
     steps:
       - uses: actions/checkout@v5
 
@@ -199,6 +185,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-release-arm64
+          cache-on-failure: true
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -237,6 +224,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-release-macos-arm64
+          cache-on-failure: true
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -301,6 +289,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-release-macos-x64
+          cache-on-failure: true
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked

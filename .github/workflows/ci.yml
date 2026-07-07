@@ -23,8 +23,8 @@ env:
   CARGO_TERM_COLOR: always
   # Reduce noise in CI logs
   CARGO_INCREMENTAL: 0
-  # Use CI profile for faster builds
-  CARGO_PROFILE: ci
+  # Modern linker: clang driver + mold for faster linking (mold installed below).
+  RUSTFLAGS: "-Clinker=clang -Clink-arg=-fuse-ld=mold"
 
 jobs:
   ci:
@@ -41,7 +41,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          sudo apt-get install -y mold clang libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

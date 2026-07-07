@@ -53,26 +53,38 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
-# Fast CI builds - prioritize compile speed over runtime performance
+# Fastest-possible CI compile: no optimization, no debuginfo, no LTO, and maximum
+# codegen-unit parallelism — for BOTH the workspace crate and every dependency. CI only
+# compile-checks, lints, and runs tests, so runtime perf is irrelevant. These explicit
+# overrides ensure nothing leaks through from dev (opt-level 1 / deps opt-level 3).
+# (debug-assertions/overflow-checks stay on via dev inheritance — they catch bugs in
+# tests and cost ~nothing at compile time. CARGO_INCREMENTAL=0 is set in the CI job.)
 [profile.ci]
 inherits = "dev"
 opt-level = 0
 debug = 0
+lto = false
+codegen-units = 256
 
 [profile.ci.package."*"]
 opt-level = 0
 debug = 0
 
-# Optimized release builds
+# Optimized release builds. opt-level 2 (not 3) is a deliberate CI/runtime tradeoff:
+# noticeably faster codegen for a negligible runtime difference in a Bevy GUI app.
 [profile.release]
-opt-level = 3
+opt-level = 2
 lto = "thin"
 strip = true
 
 # `version` is intentionally omitted: cargo-packager fills it from [package].version
 # above, so the release version lives in exactly one place. Do not re-add it here.
 [package.metadata.packager]
-before_packaging_command = "cargo build --release"
+# No before_packaging_command on purpose: every path that runs `cargo packager`
+# (the release workflow jobs and scripts/build-macos.sh) already builds the binary
+# with the correct --target first. A before-command here runs `cargo build --release`
+# for the HOST into target/release, which the cross-compiled packaging jobs never use
+# (they package from --binaries-dir target/<triple>/release) — a full redundant build.
 product-name = "Rustforged"
 identifier = "dev.squishygoose.rustforged"
 description = "D&D 5E Virtual Tabletop Map Editor"
