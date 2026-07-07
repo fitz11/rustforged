@@ -1,31 +1,96 @@
 name: Release
 
 on:
+  # CD: automatically build & release on a version tag pushed to main.
+  # Linux + Windows build automatically; macOS is manual-only (see below).
+  push:
+    tags:
+      - "v*"
+  # Manual runs let you pick which (costly) runners fire.
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.1.0)'
+        description: "Version to release (e.g., 0.1.0)"
         required: true
         type: string
+      include_windows:
+        description: "Build Windows installers"
+        required: false
+        type: boolean
+        default: true
+      include_mac:
+        description: "Build macOS DMGs (costly runners)"
+        required: false
+        type: boolean
+        default: false
+
+# Release + manifest push need write access to repo contents.
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
-    name: Create Release
+  # CI gate: lint & test on Linux before we cut a release.
+  test:
+    name: Lint & Test (Linux)
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ github.event.inputs.version }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-release
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test
+
+  create-release:
+    name: Create Release
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag push: derive version from the tag name (strip leading "v").
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # Manual run: use the provided input.
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not determine release version"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION"
 
       - name: Verify version matches Cargo.toml
         run: |
           CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          if [ "$CARGO_VERSION" != "${{ github.event.inputs.version }}" ]; then
-            echo "::error::Version mismatch: Cargo.toml has $CARGO_VERSION but workflow input is ${{ github.event.inputs.version }}"
+          if [ "$CARGO_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Version mismatch: Cargo.toml has $CARGO_VERSION but release version is ${{ steps.version.outputs.version }}"
             echo "Please update Cargo.toml before releasing."
             exit 1
           fi
@@ -35,8 +100,8 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.event.inputs.version }}
-          name: Rustforged v${{ github.event.inputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Rustforged v${{ steps.version.outputs.version }}
           draft: true
           prerelease: false
           generate_release_notes: true
@@ -81,6 +146,8 @@ jobs:
   build-windows-x64:
     name: Build Windows x64
     needs: create-release
+    # Auto on tag push; on manual runs only when include_windows is checked.
+    if: ${{ github.event_name == 'push' || inputs.include_windows }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,6 +178,8 @@ jobs:
   build-windows-arm64:
     name: Build Windows ARM64
     needs: create-release
+    # Auto on tag push; on manual runs only when include_windows is checked.
+    if: ${{ github.event_name == 'push' || inputs.include_windows }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,6 +212,9 @@ jobs:
   build-macos-arm64:
     name: Build macOS ARM64
     needs: create-release
+    # macOS runners are costly: manual (workflow_dispatch) runs only, and only
+    # when include_mac is checked. Never runs automatically on a tag push.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_mac }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -175,6 +247,9 @@ jobs:
   build-macos-x64:
     name: Build macOS Intel (x86_64)
     needs: create-release
+    # macOS runners are costly: manual (workflow_dispatch) runs only, and only
+    # when include_mac is checked. Never runs automatically on a tag push.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_mac }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -206,9 +281,27 @@ jobs:
 
   publish-manifest:
     name: Publish Release Manifest
-    needs: [create-release, build-linux, build-windows-x64, build-windows-arm64, build-macos-arm64, build-macos-x64]
+    needs:
+      [
+        create-release,
+        build-linux,
+        build-windows-x64,
+        build-windows-arm64,
+        build-macos-arm64,
+        build-macos-x64,
+      ]
     runs-on: ubuntu-latest
-    if: success()
+    # Run as long as nothing was cancelled and the always-on jobs succeeded.
+    # Optional platform jobs may be skipped (macOS on tags, either on manual
+    # runs) — a skip must not block the manifest, but a real failure should.
+    if: >-
+      ${{ !cancelled()
+      && needs.create-release.result == 'success'
+      && needs.build-linux.result == 'success'
+      && needs.build-windows-x64.result != 'failure'
+      && needs.build-windows-arm64.result != 'failure'
+      && needs.build-macos-arm64.result != 'failure'
+      && needs.build-macos-x64.result != 'failure' }}
     steps:
       - uses: actions/checkout@v4
         with:
