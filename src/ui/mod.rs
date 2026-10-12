@@ -11,11 +11,7 @@ mod toolbar;
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
 
-use crate::config::{ConfigResetNotification, MissingMapWarning};
-use crate::map::{
-    AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, SaveConflictDialog,
-};
-use crate::session::MonitorSelectionDialog;
+use crate::map::AsyncMapOperation;
 
 /// Resource that tracks whether any modal dialog is currently open.
 /// Editor input handlers should check this to avoid processing input
@@ -29,65 +25,43 @@ pub struct DialogState {
     pub text_input_focused: bool,
 }
 
-/// Records whether egui wants the keyboard (a text field has focus) for this frame's
-/// shortcut systems.
-fn track_text_input_focus(
-    mut contexts: bevy_egui::EguiContexts,
-    mut dialog_state: ResMut<DialogState>,
-) {
-    dialog_state.text_input_focused = contexts
-        .ctx_mut()
-        .is_ok_and(|ctx| ctx.egui_wants_keyboard_input());
-}
-
 /// Docked panels of the main editor layout. Each panel takes space from what the panels
 /// before it left over, so systems adding more panels should run after this set.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorPanels;
 
-/// System to aggregate all dialog open states into a single resource.
-/// Runs in First schedule before input handlers.
-#[allow(clippy::too_many_arguments)]
+/// Works out, at the start of each frame, whether a dialog is open and whether a text field
+/// has the keyboard, for the editor's input systems.
+///
+/// Every dialog is an egui window, so "a dialog is open" is "egui showed a window last
+/// frame": a new dialog is covered without being listed here. Native file pickers aren't
+/// egui windows, and a save or load in progress blocks input too.
 fn update_dialog_state(
-    file_menu: Res<file_menu::FileMenuState>,
+    mut contexts: bevy_egui::EguiContexts,
     asset_browser: Res<asset_browser::AssetBrowserState>,
     asset_import: Res<asset_import::AssetImportDialog>,
     settings: Res<settings_dialog::SettingsDialogState>,
-    help: Res<layers_panel::HelpWindowState>,
-    monitor_dialog: Res<MonitorSelectionDialog>,
-    missing_map: Res<MissingMapWarning>,
-    config_reset: Res<ConfigResetNotification>,
-    unsaved_changes: Res<map_actions::UnsavedChangesPrompt>,
     open_map_picker: Res<map_actions::OpenMapPicker>,
-    asset_report: Res<MapAssetReport>,
-    save_conflict: Res<SaveConflictDialog>,
-    save_error: Res<MapSaveError>,
-    load_error: Res<MapLoadError>,
     async_op: Res<AsyncMapOperation>,
     mut dialog_state: ResMut<DialogState>,
 ) {
-    dialog_state.any_modal_open = file_menu.show_save_name_dialog
-        || asset_browser.rename_dialog_open
-        || asset_browser.rename_map_dialog_open
-        || asset_browser.rename_library_dialog_open
-        || asset_browser.move_dialog_open
-        || asset_browser.show_set_default_dialog
-        || asset_import.is_open
-        || settings.is_open
-        || help.is_open
-        || monitor_dialog.is_open
-        || missing_map.show
-        || config_reset.show
-        || unsaved_changes.pending.is_some()
-        || open_map_picker.is_open()
-        || asset_report.show
-        || save_conflict.conflict.is_some()
-        || save_error.message.is_some()
-        || load_error.message.is_some()
-        || async_op.is_busy()
-        || asset_browser.any_file_dialog_pending()
+    let ctx = contexts.ctx_mut().ok();
+    let egui_window_open = ctx.as_ref().is_some_and(|ctx| {
+        ctx.memory(|memory| {
+            memory
+                .areas()
+                .visible_layer_ids()
+                .iter()
+                .any(|layer| layer.order == bevy_egui::egui::Order::Middle)
+        })
+    });
+    let native_picker_open = asset_browser.any_file_dialog_pending()
         || asset_import.pending_browse.is_some()
-        || settings.pending_browse.is_some();
+        || settings.pending_browse.is_some()
+        || open_map_picker.is_open();
+
+    dialog_state.any_modal_open = egui_window_open || native_picker_open || async_op.is_busy();
+    dialog_state.text_input_focused = ctx.is_some_and(|ctx| ctx.egui_wants_keyboard_input());
 }
 
 pub struct UiPlugin;
@@ -168,6 +142,6 @@ impl Plugin for UiPlugin {
                 ),
             )
             // Update dialog state at the start of each frame
-            .add_systems(First, (update_dialog_state, track_text_input_focus));
+            .add_systems(First, update_dialog_state);
     }
 }
