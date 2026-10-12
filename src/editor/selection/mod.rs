@@ -12,6 +12,7 @@ mod drag;
 mod gizmos;
 mod handle;
 mod hit_detection;
+pub(crate) use hit_detection::item_world_bounds;
 mod resize;
 mod shortcuts;
 

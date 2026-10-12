@@ -13,6 +13,11 @@ pub enum EditorCommand {
     /// Things changed in place, as (before, after): moved, resized, rotated, or edited
     /// in the Properties panel
     Change(Vec<(MapObject, MapObject)>),
+    /// Fog cells that were revealed, and cells that were covered again
+    Fog {
+        revealed: Vec<(i32, i32)>,
+        hidden: Vec<(i32, i32)>,
+    },
 }
 
 impl EditorCommand {
@@ -25,6 +30,11 @@ impl EditorCommand {
         (!pairs.is_empty()).then_some(Self::Change(pairs))
     }
 
+    /// A `Fog` step, or `None` if no cell changed.
+    pub fn fog(revealed: Vec<(i32, i32)>, hidden: Vec<(i32, i32)>) -> Option<Self> {
+        (!revealed.is_empty() || !hidden.is_empty()).then_some(Self::Fog { revealed, hidden })
+    }
+
     /// Every object the command remembers, mutably.
     pub fn objects_mut(&mut self) -> Box<dyn Iterator<Item = &mut MapObject> + '_> {
         match self {
@@ -32,6 +42,7 @@ impl EditorCommand {
             Self::Change(pairs) => {
                 Box::new(pairs.iter_mut().flat_map(|(before, after)| [before, after]))
             }
+            Self::Fog { .. } => Box::new(std::iter::empty()),
         }
     }
 }

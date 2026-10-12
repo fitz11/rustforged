@@ -3,7 +3,7 @@
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
-use crate::map::ItemId;
+use crate::map::{FogOfWarData, ItemId};
 
 use super::commands::EditorCommand;
 
@@ -17,6 +17,7 @@ pub fn execute(
     commands: &mut Commands,
     asset_server: &AssetServer,
     entities: &HashMap<ItemId, Entity>,
+    fog: &mut FogOfWarData,
 ) -> EditorCommand {
     match command {
         EditorCommand::Add(objects) => {
@@ -45,6 +46,18 @@ pub fn execute(
                     .map(|(before, after)| (after.clone(), before.clone()))
                     .collect(),
             )
+        }
+        EditorCommand::Fog { revealed, hidden } => {
+            for cell in revealed {
+                fog.fog_cell(*cell);
+            }
+            for cell in hidden {
+                fog.reveal_cell(*cell);
+            }
+            EditorCommand::Fog {
+                revealed: hidden.clone(),
+                hidden: revealed.clone(),
+            }
         }
     }
 }

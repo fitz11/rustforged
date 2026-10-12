@@ -87,7 +87,7 @@ pub fn handle_tool_shortcuts(
     selected_query: Query<Entity, With<Selected>>,
 ) {
     // Not in the middle of a drag or stroke: the tool doing it has to see it through
-    if mouse_button.pressed(MouseButton::Left) {
+    if mouse_button.any_pressed([MouseButton::Left, MouseButton::Right]) {
         return;
     }
 

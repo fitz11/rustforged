@@ -189,6 +189,25 @@ impl SelectedObjects<'_, '_> {
     }
 }
 
+/// The area the map's placed items cover, for revealing all its fog or framing it
+#[derive(SystemParam)]
+pub struct MapExtent<'w, 's> {
+    items: Query<'w, 's, (&'static Transform, &'static Sprite), With<PlacedItem>>,
+    images: Res<'w, Assets<Image>>,
+}
+
+impl MapExtent<'_, '_> {
+    /// The box (min, max) around every placed item, or None for an empty map
+    pub fn bounds(&self) -> Option<(Vec2, Vec2)> {
+        self.items
+            .iter()
+            .map(|(transform, sprite)| {
+                super::selection::item_world_bounds(transform, sprite, &self.images)
+            })
+            .reduce(|(min_a, max_a), (min_b, max_b)| (min_a.min(min_b), max_a.max(max_b)))
+    }
+}
+
 /// Check if the cursor is over egui UI (docked panels, windows, or areas)
 pub fn is_cursor_over_ui(contexts: &mut EguiContexts) -> bool {
     contexts.ctx_mut().is_ok_and(|ctx| is_pointer_over_ui(ctx))

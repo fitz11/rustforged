@@ -8,6 +8,7 @@ use crate::config::AppConfig;
 use crate::editor::SelectionEdit;
 use crate::editor::fog::FogState;
 use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
+use crate::editor::params::MapExtent;
 use crate::map::{FogOfWarData, MapData, MapDirtyState, MissingAsset, Selected};
 use crate::session::LiveSessionState;
 use crate::ui::panel_layout::DockedPanel;
@@ -41,6 +42,7 @@ pub fn layers_panel_ui(
     mut unfinished_edit: Local<Option<MapObject>>,
     stack: OtherItemsStack,
     mut fog_state: ResMut<FogState>,
+    map_extent: MapExtent,
 ) -> Result {
     let missing: Vec<Entity> = missing_query.iter().collect();
     let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
@@ -63,14 +65,16 @@ pub fn layers_panel_ui(
                 ui,
                 map_data.bypass_change_detection(),
                 fog_data.bypass_change_detection(),
+                map_extent.bounds(),
             );
             if layers_changed || fog_change.map {
                 map_data.set_changed();
                 dirty_state.mark_dirty();
             }
-            if fog_change.fog {
+            if let Some(command) = fog_change.fog {
                 fog_data.set_changed();
                 dirty_state.mark_dirty();
+                edit_events.1.write(RecordEditorCommand { command });
             }
 
             // Properties section

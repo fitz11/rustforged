@@ -301,9 +301,11 @@ pub fn tool_settings_ui(
                         ui.add_space(8.0);
 
                         ui.label(
-                            egui::RichText::new("Shift+Click: Single cell mode")
-                                .color(egui::Color32::GRAY)
-                                .size(11.0),
+                            egui::RichText::new(
+                                "Drag: reveal  ·  Right-drag: cover  ·  Shift+Drag: rectangle",
+                            )
+                            .color(egui::Color32::GRAY)
+                            .size(11.0),
                         );
                     }
                     _ => {}

@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use crate::input::{command_held, shift_held};
-use crate::map::{ItemId, MapDirtyState};
+use crate::map::{FogOfWarData, ItemId, MapDirtyState};
 
 use super::command_history::CommandHistory;
 use super::execute::execute;
@@ -22,6 +22,7 @@ pub fn handle_undo_redo(
     asset_server: Res<AssetServer>,
     ids: Query<(Entity, &ItemId)>,
     mut dirty_state: ResMut<MapDirtyState>,
+    mut fog: ResMut<FogOfWarData>,
 ) {
     if !command_held(&keyboard) {
         return;
@@ -43,7 +44,7 @@ pub fn handle_undo_redo(
     };
 
     let entities = ids.iter().map(|(entity, id)| (*id, entity)).collect();
-    let inverse = execute(&command, &mut commands, &asset_server, &entities);
+    let inverse = execute(&command, &mut commands, &asset_server, &entities, &mut fog);
     if undo {
         history.push_redo(inverse);
     } else {

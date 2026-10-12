@@ -82,7 +82,7 @@ fn reset_tool_state_on_tool_change(
     line_state.start_point = None;
     draw_state.is_drawing = false;
     draw_state.current_points.clear();
-    fog_state.is_erasing = false;
+    fog_state.stroke = None;
     brush_state.finish_stroke(&mut history_writer);
     // A note being typed is kept
     if text_state.editing_entity.is_some() {

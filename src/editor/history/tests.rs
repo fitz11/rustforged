@@ -113,6 +113,7 @@ fn history_app() -> App {
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<CommandHistory>()
         .init_resource::<MapDirtyState>()
+        .init_resource::<crate::map::FogOfWarData>()
         .add_systems(Update, handle_undo_redo);
     app
 }
@@ -275,4 +276,42 @@ fn test_replacing_the_map_clears_history() {
     app.world_mut().write_message(MapReplaced);
     app.update();
     assert!(!app.world().resource::<CommandHistory>().can_undo());
+}
+
+#[test]
+fn test_undo_and_redo_fog() {
+    use crate::map::FogOfWarData;
+
+    let mut app = history_app();
+    // A stroke revealed (1, 1); a Reset then covered it and (2, 2)
+    app.world_mut()
+        .resource_mut::<FogOfWarData>()
+        .reveal_cell((2, 2));
+    record(
+        &mut app,
+        EditorCommand::Fog {
+            revealed: vec![(1, 1)],
+            hidden: vec![],
+        },
+    );
+    record(
+        &mut app,
+        EditorCommand::Fog {
+            revealed: vec![],
+            hidden: vec![(1, 1), (2, 2)],
+        },
+    );
+
+    undo(&mut app); // the reset
+    let fog = app.world().resource::<FogOfWarData>();
+    assert!(fog.is_cell_revealed((1, 1)) && fog.is_cell_revealed((2, 2)));
+    undo(&mut app); // the stroke
+    let fog = app.world().resource::<FogOfWarData>();
+    assert!(!fog.is_cell_revealed((1, 1)) && fog.is_cell_revealed((2, 2)));
+    redo(&mut app);
+    assert!(
+        app.world()
+            .resource::<FogOfWarData>()
+            .is_cell_revealed((1, 1))
+    );
 }

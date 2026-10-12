@@ -43,7 +43,6 @@ impl FogOfWarData {
     }
 
     /// Add fog to a cell (hide it)
-    #[allow(dead_code)]
     pub fn fog_cell(&mut self, cell: (i32, i32)) {
         self.revealed_cells.remove(&cell);
     }

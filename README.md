@@ -76,7 +76,7 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 | D | Draw: freehand annotation paths |
 | L | Line: straight line annotations |
 | T | Text: click to type a note, click a note to edit it |
-| F | Fog: drag to reveal fog of war |
+| F | Fog: drag to reveal fog of war, right-drag to cover it |
 | C / Shift+C | Cycle the target layer (Place and Brush) |
 | H | Show or hide this help |
 
@@ -116,7 +116,9 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 
 | Keys | Action |
 |------|--------|
-| Shift+Drag (Fog) | Reveal single cells |
+| Drag (Fog) | Reveal with the brush |
+| Right-drag (Fog) | Cover with the brush |
+| Shift+Drag (Fog) | Reveal (or with the right button, cover) a rectangle of cells |
 
 ### Notes
 

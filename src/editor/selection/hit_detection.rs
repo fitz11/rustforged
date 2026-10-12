@@ -59,6 +59,17 @@ fn rotated_half_extents(transform: &Transform, half_size: Vec2) -> Vec2 {
     )
 }
 
+/// The world-space box (min, max) around an item, accounting for its rotation
+pub(crate) fn item_world_bounds(
+    transform: &Transform,
+    sprite: &Sprite,
+    images: &Assets<Image>,
+) -> (Vec2, Vec2) {
+    let pos = transform.translation.truncate();
+    let half = rotated_half_extents(transform, item_half_size(transform, sprite, images));
+    (pos - half, pos + half)
+}
+
 /// Check if a point is inside an item's bounds, accounting for rotation
 pub(crate) fn point_in_item(
     world_pos: Vec2,
