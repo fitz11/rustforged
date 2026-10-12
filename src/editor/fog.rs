@@ -109,6 +109,12 @@ pub fn handle_fog(
     camera_params: CameraParams,
     mut contexts: EguiContexts,
 ) {
+    // End the stroke on release wherever the mouse is. Released over a panel, a stale
+    // stroke would otherwise reveal fog when a later drag from a panel crossed the map.
+    if mouse_button.just_released(MouseButton::Left) {
+        fog_state.is_erasing = false;
+    }
+
     // Don't process if layer is locked
     if is_fog_layer_locked(&map_data) {
         return;
@@ -126,13 +132,8 @@ pub fn handle_fog(
     let grid_size = map_data.grid_size;
     let shift_held = shift_held(&keyboard);
 
-    // Handle mouse input
     if mouse_button.just_pressed(MouseButton::Left) {
         fog_state.is_erasing = true;
-    }
-
-    if mouse_button.just_released(MouseButton::Left) {
-        fog_state.is_erasing = false;
     }
 
     // Reveal cells while mouse is held (erase fog)

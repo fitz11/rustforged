@@ -259,6 +259,13 @@ pub fn handle_viewport_interaction(
         return;
     }
 
+    // End a drag on release wherever the mouse is: over a panel or outside the window
+    // too, or the next click on the map would carry on the old drag
+    if mouse_button.just_released(MouseButton::Left) {
+        drag_state.mode = ViewportDragMode::None;
+        return;
+    }
+
     // Don't interact if over UI
     if let Ok(ctx) = contexts.ctx_mut()
         && is_pointer_over_ui(ctx)
@@ -297,11 +304,6 @@ pub fn handle_viewport_interaction(
             drag_state.original_center = session_state.viewport_center;
             drag_state.original_size = session_state.viewport_size;
         }
-    }
-
-    // Handle mouse release - end drag
-    if mouse_button.just_released(MouseButton::Left) {
-        drag_state.mode = ViewportDragMode::None;
     }
 
     // Handle ongoing drag

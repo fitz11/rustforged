@@ -92,6 +92,14 @@ pub fn handle_brush(
     mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
+    // Mouse release - stop brushing and record the stroke, wherever the mouse is (over a
+    // panel too), so the stroke is one undo step right away
+    if mouse_button.just_released(MouseButton::Left) {
+        brush_state.is_brushing = false;
+        brush_state.last_placed_bounds = None;
+        brush_state.flush_stroke(&mut history_writer);
+    }
+
     // Don't process if cursor is over UI
     if is_cursor_over_ui(&mut contexts) {
         return;
@@ -99,18 +107,9 @@ pub fn handle_brush(
 
     // Handle mouse press - start brushing
     if mouse_button.just_pressed(MouseButton::Left) {
-        // Flush any leftover stroke (e.g. a previous release that happened over
-        // UI) before beginning a new one.
         brush_state.flush_stroke(&mut history_writer);
         brush_state.is_brushing = true;
         brush_state.last_placed_bounds = None;
-    }
-
-    // Handle mouse release - stop brushing and record the stroke
-    if mouse_button.just_released(MouseButton::Left) {
-        brush_state.is_brushing = false;
-        brush_state.last_placed_bounds = None;
-        brush_state.flush_stroke(&mut history_writer);
     }
 
     // Only proceed if actively brushing

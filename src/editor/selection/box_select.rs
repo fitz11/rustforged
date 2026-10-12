@@ -39,19 +39,14 @@ pub fn handle_box_select(
         return;
     }
 
-    // Don't update if over UI
-    if is_cursor_over_ui(&mut contexts) {
-        return;
+    // Follow the cursor while it's over the map; over a panel the box keeps its last size
+    if !is_cursor_over_ui(&mut contexts)
+        && let Some(world_pos) = camera.cursor_world_pos()
+    {
+        box_select_state.current_world = world_pos;
     }
 
-    let Some(world_pos) = camera.cursor_world_pos() else {
-        return;
-    };
-
-    // Update current position
-    box_select_state.current_world = world_pos;
-
-    // On release, select all items in the box
+    // On release (wherever it happens), select all items in the box
     if mouse_button.just_released(MouseButton::Left) {
         box_select_state.is_selecting = false;
 

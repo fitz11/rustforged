@@ -43,6 +43,23 @@ pub fn handle_draw(
         return;
     }
 
+    // Finish the stroke on release wherever the mouse is, over a panel or outside the
+    // window too, so it isn't left as a preview
+    if res.mouse_button.just_released(MouseButton::Left) {
+        if res.draw_state.is_drawing && res.draw_state.current_points.len() >= 2 {
+            spawn_drawn_path(
+                &mut commands,
+                &asset_server,
+                &res.draw_state,
+                &res.settings,
+                &mut history_writer,
+            );
+        }
+        res.draw_state.is_drawing = false;
+        res.draw_state.current_points.clear();
+        return;
+    }
+
     if let Ok(ctx) = contexts.ctx_mut()
         && is_pointer_over_ui(ctx)
     {
@@ -76,18 +93,6 @@ pub fn handle_draw(
         {
             res.draw_state.current_points.push(world_pos);
         }
-    } else if res.mouse_button.just_released(MouseButton::Left) && res.draw_state.is_drawing {
-        res.draw_state.is_drawing = false;
-        if res.draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(
-                &mut commands,
-                &asset_server,
-                &res.draw_state,
-                &res.settings,
-                &mut history_writer,
-            );
-        }
-        res.draw_state.current_points.clear();
     }
 }
 
