@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
@@ -62,22 +62,39 @@ pub fn export_library_to_zip(library_path: &Path, dest_path: &Path) -> Result<()
 /// Maximum total size of extracted files (500 MB).
 const MAX_EXTRACT_SIZE: u64 = 500 * 1024 * 1024;
 
-/// Check if a zip entry name is safe (no path traversal or absolute paths).
-fn is_safe_path(name: &str) -> bool {
-    // Reject absolute paths
-    if Path::new(name).is_absolute() {
-        return false;
+/// Where to extract a library zip picked to go into `dest`: `dest` itself if it's empty or
+/// doesn't exist yet, otherwise a new folder in it named after the zip, so importing never
+/// mixes into (or overwrites) an existing folder.
+pub fn import_destination(zip_path: &Path, dest: &Path) -> Result<PathBuf, String> {
+    if is_empty_or_missing(dest) {
+        return Ok(dest.to_path_buf());
     }
-    // Reject path traversal attempts
-    for component in Path::new(name).components() {
-        if matches!(component, std::path::Component::ParentDir) {
-            return false;
-        }
+    let name = zip_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Imported Library");
+    let target = dest.join(name);
+    if is_empty_or_missing(&target) {
+        Ok(target)
+    } else {
+        Err(format!(
+            "\"{}\" already exists and isn't empty.\n\n\
+             Choose an empty folder to import the library into.",
+            target.display()
+        ))
     }
-    true
 }
 
-/// Import a library from a zip file to a destination directory.
+fn is_empty_or_missing(dir: &Path) -> bool {
+    match std::fs::read_dir(dir) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => !dir.exists(),
+    }
+}
+
+/// Import a library from a zip file into `dest_path`, which should be empty (see
+/// [`import_destination`]). Existing files are never overwritten.
 pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), String> {
     let file = File::open(zip_path).map_err(|e| format!("Failed to open zip file: {}", e))?;
     let mut archive =
@@ -91,19 +108,20 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
         let entry = archive
             .by_index(i)
             .map_err(|e| format!("Failed to read zip entry: {}", e))?;
-        let name = entry.name();
 
-        // Security: check for path traversal attacks
-        if !is_safe_path(name) {
+        // Security: every entry must stay inside the destination. enclosed_name rejects
+        // ".." escapes and drops drive prefixes and leading slashes (C:x, \x, /x), which
+        // Path::is_absolute doesn't catch on Windows.
+        if entry.enclosed_name().is_none() {
             return Err(format!(
                 "Invalid archive: contains unsafe path '{}'. \
                  Archive may be malicious.",
-                name
+                entry.name()
             ));
         }
 
         // Check for a library manifest at the root level
-        if is_root_manifest(name) {
+        if is_root_manifest(entry.name()) {
             has_library_metadata = true;
         }
 
@@ -133,12 +151,17 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
     std::fs::create_dir_all(dest_path)
         .map_err(|e| format!("Failed to create destination directory: {}", e))?;
 
-    // Extract all files
+    // Extract all files. The declared sizes were checked above; also stop at the limit
+    // while writing, in case an entry decompresses to more than it declared.
+    let mut remaining = MAX_EXTRACT_SIZE;
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
             .map_err(|e| format!("Failed to read zip entry: {}", e))?;
-        let outpath = dest_path.join(entry.name());
+        let Some(relative) = entry.enclosed_name() else {
+            continue;
+        };
+        let outpath = dest_path.join(relative);
 
         if entry.is_dir() {
             std::fs::create_dir_all(&outpath)
@@ -149,12 +172,95 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
                 std::fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create parent directory: {}", e))?;
             }
-            let mut outfile =
-                File::create(&outpath).map_err(|e| format!("Failed to create file: {}", e))?;
-            std::io::copy(&mut entry, &mut outfile)
+            let mut outfile = File::create_new(&outpath)
+                .map_err(|e| format!("Failed to create {}: {}", outpath.display(), e))?;
+            let written = std::io::copy(&mut (&mut entry).take(remaining + 1), &mut outfile)
                 .map_err(|e| format!("Failed to extract file: {}", e))?;
+            if written > remaining {
+                return Err(format!(
+                    "Archive too large: more than {} MB uncompressed.",
+                    MAX_EXTRACT_SIZE / (1024 * 1024)
+                ));
+            }
+            remaining -= written;
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Writes a zip with a library manifest plus `entries` (name, contents).
+    fn library_zip(dir: &Path, entries: &[(&str, &str)]) -> PathBuf {
+        let path = dir.join("Dungeon Tiles.zip");
+        let mut zip = ZipWriter::new(File::create(&path).unwrap());
+        let options = SimpleFileOptions::default();
+        zip.start_file(LIBRARY_MANIFEST_FILE, options).unwrap();
+        zip.write_all(b"{}").unwrap();
+        for (name, contents) in entries {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(contents.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn test_import_rejects_entries_outside_the_destination() {
+        for name in ["../evil.png", "C:evil.png", "a/../../evil.png"] {
+            let dir = tempfile::tempdir().unwrap();
+            let zip = library_zip(dir.path(), &[(name, "x")]);
+            let dest = dir.path().join("library");
+            // Either refused, or extracted inside the destination; never next to it
+            let _ = import_library_from_zip(&zip, &dest);
+            assert!(!dir.path().join("evil.png").exists(), "{name}");
+        }
+    }
+
+    #[test]
+    fn test_import_keeps_rooted_entries_inside_the_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = library_zip(dir.path(), &[("\\tokens\\orc.png", "orc")]);
+        let dest = dir.path().join("library");
+
+        import_library_from_zip(&zip, &dest).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("tokens").join("orc.png")).unwrap(),
+            "orc"
+        );
+    }
+
+    #[test]
+    fn test_import_into_non_empty_folder_uses_a_new_subfolder() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = library_zip(dir.path(), &[("tokens/orc.png", "orc")]);
+
+        // The temp dir already holds the zip, so it isn't empty
+        let dest = import_destination(&zip, dir.path()).unwrap();
+        assert_eq!(dest, dir.path().join("Dungeon Tiles"));
+        import_library_from_zip(&zip, &dest).unwrap();
+        assert!(dest.join("tokens/orc.png").exists());
+
+        // Importing the same zip again doesn't touch the first copy
+        assert!(import_destination(&zip, dir.path()).is_err());
+    }
+
+    #[test]
+    fn test_import_never_overwrites_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = library_zip(dir.path(), &[("notes.txt", "from zip")]);
+        let dest = dir.path().join("library");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("notes.txt"), "mine").unwrap();
+
+        assert!(import_library_from_zip(&zip, &dest).is_err());
+        assert_eq!(
+            std::fs::read_to_string(dest.join("notes.txt")).unwrap(),
+            "mine"
+        );
+    }
 }

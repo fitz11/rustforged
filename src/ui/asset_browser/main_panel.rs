@@ -25,7 +25,7 @@ use super::dialogs::{
 use super::helpers::{
     MapTreeRow, discover_folders, extension_color, indented, map_tree, scan_maps_directory,
 };
-use super::library_ops::{export_library_to_zip, import_library_from_zip};
+use super::library_ops::{export_library_to_zip, import_destination, import_library_from_zip};
 use super::state::{AssetBrowserState, DialogStates, MapResources};
 
 /// Main asset browser UI system.
@@ -234,9 +234,11 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
     {
         browser_state.pending_import_dest = None;
         let zip_path = browser_state.pending_import_zip_path.take();
-        if let (Some(zip_path), Some(dest_path)) = (zip_path, result) {
-            match import_library_from_zip(&zip_path, &dest_path) {
-                Ok(()) => {
+        if let (Some(zip_path), Some(picked)) = (zip_path, result) {
+            match import_destination(&zip_path, &picked)
+                .and_then(|dest| import_library_from_zip(&zip_path, &dest).map(|()| dest))
+            {
+                Ok(dest_path) => {
                     if let Err(e) = open_library_directory(library, dest_path.clone()) {
                         browser_state.library_import_error =
                             Some(format!("Library extracted but failed to open: {}", e));
