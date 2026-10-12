@@ -3,6 +3,8 @@ use bevy::window::{Monitor, PrimaryMonitor};
 use bevy::winit::WinitMonitors;
 use bevy_egui::{EguiContexts, egui};
 
+use crate::editor::params::MapExtent;
+use crate::map::{Layer, MapData, MapDirtyState};
 use crate::session::{LiveSessionState, MonitorInfo, MonitorSelectionDialog};
 
 /// Enumerate available monitors using Bevy's Monitor entities
@@ -89,18 +91,37 @@ pub fn monitor_selection_dialog(
     mut contexts: EguiContexts,
     mut dialog: ResMut<MonitorSelectionDialog>,
     mut session_state: ResMut<LiveSessionState>,
+    mut map_data: ResMut<MapData>,
+    mut dirty_state: ResMut<MapDirtyState>,
+    map_extent: MapExtent,
 ) -> Result {
     if !dialog.is_open {
         return Ok(());
     }
 
     let mut close_dialog = false;
+    let map_center = map_extent.bounds().map(|(min, max)| (min + max) / 2.0);
 
     egui::Window::new("Start Live Session")
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .collapsible(false)
         .resizable(false)
         .show(contexts.ctx_mut()?, |ui| {
+            // Players would see the whole map
+            if !map_data.is_layer_visible(Layer::FogOfWar) {
+                ui.colored_label(
+                    egui::Color32::from_rgb(230, 170, 60),
+                    "Fog of War is off: players will see the whole map.",
+                );
+                if ui.button("Turn on Fog of War").clicked()
+                    && let Some(fog_layer) = map_data.layer_mut(Layer::FogOfWar)
+                {
+                    fog_layer.visible = true;
+                    dirty_state.mark_dirty();
+                }
+                ui.separator();
+            }
+
             ui.label("Select the monitor for the player view:");
             ui.separator();
 
@@ -118,7 +139,8 @@ pub fn monitor_selection_dialog(
                         let aspect = monitor.aspect_ratio();
                         session_state.selected_monitor = Some(monitor.clone());
                         session_state.viewport_size = Vec2::new(700.0, 700.0 / aspect);
-                        session_state.viewport_center = Vec2::ZERO;
+                        // Over the middle of the map
+                        session_state.viewport_center = map_center.unwrap_or(Vec2::ZERO);
                         session_state.is_active = true;
                         close_dialog = true;
 
