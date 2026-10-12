@@ -5,12 +5,11 @@ use bevy::prelude::*;
 use crate::editor::AnnotationMarker;
 use crate::map::PlacedItem;
 
-use super::resources::{MapDirtyState, OpenMaps};
+use super::resources::MapDirtyState;
 
 /// System that detects when items are added to the map
 pub fn detect_item_additions(
     mut dirty_state: ResMut<MapDirtyState>,
-    mut open_maps: ResMut<OpenMaps>,
     added_items: Query<Entity, Added<PlacedItem>>,
     added_annotations: Query<Entity, Added<AnnotationMarker>>,
 ) {
@@ -26,15 +25,11 @@ pub fn detect_item_additions(
     }
 
     dirty_state.is_dirty = true;
-    if let Some(active_map) = open_maps.active_map_mut() {
-        active_map.is_dirty = true;
-    }
 }
 
 /// System that detects when items are removed from the map
 pub fn detect_item_removals(
     mut dirty_state: ResMut<MapDirtyState>,
-    mut open_maps: ResMut<OpenMaps>,
     mut removed_items: RemovedComponents<PlacedItem>,
     mut removed_annotations: RemovedComponents<AnnotationMarker>,
 ) {
@@ -52,15 +47,11 @@ pub fn detect_item_removals(
     }
 
     dirty_state.is_dirty = true;
-    if let Some(active_map) = open_maps.active_map_mut() {
-        active_map.is_dirty = true;
-    }
 }
 
 /// System that detects when items are transformed (moved, rotated, scaled)
 pub fn detect_item_transforms(
     mut dirty_state: ResMut<MapDirtyState>,
-    mut open_maps: ResMut<OpenMaps>,
     changed_items: Query<Entity, (Changed<Transform>, With<PlacedItem>)>,
 ) {
     // Ignore the transform "changes" from newly spawned items after a
@@ -75,9 +66,6 @@ pub fn detect_item_transforms(
     }
 
     dirty_state.is_dirty = true;
-    if let Some(active_map) = open_maps.active_map_mut() {
-        active_map.is_dirty = true;
-    }
 }
 
 /// System that ticks down the change-detection suppression window. Runs after

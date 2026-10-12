@@ -120,13 +120,11 @@ pub struct CurrentMapFile {
     pub path: Option<PathBuf>,
 }
 
-/// Resource tracking if the current map has unsaved changes
+/// Resource tracking if the active map has unsaved changes. This is the only flag for the
+/// active map; [`OpenMap::stashed_dirty`] holds it while a map is in the background.
 #[derive(Resource, Default)]
 pub struct MapDirtyState {
     pub is_dirty: bool,
-    /// Count of entities when map was last saved/loaded (for change detection)
-    pub last_known_item_count: usize,
-    pub last_known_annotation_count: usize,
     /// Number of frames for which change detection should be ignored. Set after
     /// a load/new/switch despawns+respawns entities so the resulting Added/
     /// Removed/Changed wave doesn't immediately re-mark a clean map as dirty.
@@ -149,7 +147,10 @@ pub struct OpenMap {
     pub id: u64,
     pub name: String,
     pub path: Option<PathBuf>,
-    pub is_dirty: bool,
+    /// Whether this map had unsaved changes when it was put in the background. Only
+    /// meaningful while the map isn't active: the active map's flag is
+    /// [`MapDirtyState::is_dirty`]. Use [`OpenMaps::is_unsaved`] to read either.
+    pub stashed_dirty: bool,
     pub saved_state: Option<crate::map::SavedMap>,
     /// The map file's stable id, once it has been saved or loaded
     pub map_id: Option<String>,
@@ -179,7 +180,7 @@ impl Default for OpenMaps {
                 id: 0,
                 name: "Untitled Map".to_string(),
                 path: None,
-                is_dirty: false,
+                stashed_dirty: false,
                 saved_state: None,
                 map_id: None,
                 disk_hash: None,
@@ -205,16 +206,26 @@ impl OpenMaps {
         self.active_map_id.and_then(|id| self.maps.get_mut(&id))
     }
 
+    /// Whether `map` has unsaved changes. The active map's flag lives in `dirty`.
+    pub fn is_unsaved(&self, map: &OpenMap, dirty: &MapDirtyState) -> bool {
+        if self.active_map_id == Some(map.id) {
+            dirty.is_dirty
+        } else {
+            map.stashed_dirty
+        }
+    }
+
     /// Check if any open map has unsaved changes
-    #[allow(dead_code)]
-    pub fn has_any_unsaved(&self) -> bool {
-        self.maps.values().any(|m| m.is_dirty)
+    pub fn has_any_unsaved(&self, dirty: &MapDirtyState) -> bool {
+        self.maps.values().any(|m| self.is_unsaved(m, dirty))
     }
 
     /// Get list of maps with unsaved changes
-    #[allow(dead_code)]
-    pub fn unsaved_maps(&self) -> Vec<&OpenMap> {
-        self.maps.values().filter(|m| m.is_dirty).collect()
+    pub fn unsaved_maps(&self, dirty: &MapDirtyState) -> Vec<&OpenMap> {
+        self.maps
+            .values()
+            .filter(|m| self.is_unsaved(m, dirty))
+            .collect()
     }
 }
 

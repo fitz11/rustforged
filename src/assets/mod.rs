@@ -150,9 +150,6 @@ fn retarget_asset_system(
         // by fingerprint anyway), so changed maps count as unsaved.
         if count > 0 {
             dirty_state.is_dirty = true;
-            if let Some(active) = open_maps.active_map_mut() {
-                active.is_dirty = true;
-            }
         }
 
         // Maps open in the background keep their items in a snapshot, not as entities
@@ -162,7 +159,7 @@ fn retarget_asset_system(
                 && let Some(state) = map.saved_state.as_mut()
                 && state.retarget_asset(&event.old_path, &event.new_path)
             {
-                map.is_dirty = true;
+                map.stashed_dirty = true;
             }
         }
         clipboard.retarget_asset(&event.old_path, &event.new_path);

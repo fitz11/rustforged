@@ -266,8 +266,6 @@ pub fn poll_load_tasks(
             // only reach the file when the user saves.
             let relinked_any = !result.relinked.is_empty();
             dirty_state.is_dirty = relinked_any;
-            dirty_state.last_known_item_count = 0; // Will be updated by detection system
-            dirty_state.last_known_annotation_count = 0;
             // Ignore the spawn wave from loading so the map stays clean.
             dirty_state.suppress_change_detection();
 
@@ -289,7 +287,6 @@ pub fn poll_load_tasks(
             if let Some(id) = existing_id {
                 // Map already open - just switch to it and update state
                 if let Some(map) = open_maps.maps.get_mut(&id) {
-                    map.is_dirty = relinked_any;
                     map.map_id = map_id;
                     map.disk_hash = result.disk_hash;
                     map.asset_fingerprints = asset_fingerprints;
@@ -310,7 +307,7 @@ pub fn poll_load_tasks(
                         id: new_id,
                         name: map_name.clone(),
                         path: Some(result.path.clone()),
-                        is_dirty: relinked_any,
+                        stashed_dirty: false,
                         saved_state: None,
                         map_id,
                         disk_hash: result.disk_hash,

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::assets::{AssetFingerprint, AssetLibrary, LibraryIndex};
 use crate::config::UpdateLastMapPathRequest;
-use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
+use crate::editor::{DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
 
 use super::helpers::saved_by_of;
@@ -200,8 +200,6 @@ pub fn poll_save_tasks(
     mut asset_library: ResMut<AssetLibrary>,
     mut conflict_dialog: ResMut<SaveConflictDialog>,
     mut disk_change: ResMut<MapChangedOnDisk>,
-    placed_items: Query<Entity, With<PlacedItem>>,
-    annotations: Query<Entity, With<AnnotationMarker>>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
         if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
@@ -226,12 +224,9 @@ pub fn poll_save_tasks(
 
                 // Clear dirty state
                 dirty_state.is_dirty = false;
-                dirty_state.last_known_item_count = placed_items.iter().count();
-                dirty_state.last_known_annotation_count = annotations.iter().count();
 
                 // Update open maps
                 if let Some(active_map) = open_maps.active_map_mut() {
-                    active_map.is_dirty = false;
                     active_map.asset_fingerprints = result.asset_fingerprints;
                     active_map.map_id = Some(result.map_id);
                     active_map.disk_hash = result.disk_hash;

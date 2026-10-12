@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::assets::AssetLibrary;
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
 use crate::map::{
-    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapLoadError, MapSaveError, NewMapRequest,
-    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest,
+    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapDirtyState, MapLoadError, MapSaveError,
+    NewMapRequest, OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest,
     UnsavedChangesDialog,
 };
 
@@ -209,11 +209,13 @@ pub fn missing_map_warning_ui(
 }
 
 /// Renders the unsaved changes confirmation dialog when closing the app
+#[allow(clippy::too_many_arguments)]
 pub fn unsaved_changes_dialog_ui(
     mut commands: Commands,
     mut contexts: EguiContexts,
     mut dialog: ResMut<UnsavedChangesDialog>,
     open_maps: Res<OpenMaps>,
+    dirty_state: Res<MapDirtyState>,
     mut menu_state: ResMut<FileMenuState>,
     mut exit_events: MessageWriter<AppExit>,
     primary_window: Query<Entity, With<PrimaryWindow>>,
@@ -233,7 +235,7 @@ pub fn unsaved_changes_dialog_ui(
             ui.add_space(4.0);
 
             // List unsaved maps
-            for map in open_maps.maps.values().filter(|m| m.is_dirty) {
+            for map in open_maps.unsaved_maps(&dirty_state) {
                 ui.label(egui::RichText::new(format!("  - {}", map.name)).strong());
             }
 
@@ -280,6 +282,7 @@ pub fn handle_window_close(
     mut close_events: MessageReader<WindowCloseRequested>,
     mut dialog: ResMut<UnsavedChangesDialog>,
     open_maps: Res<OpenMaps>,
+    dirty_state: Res<MapDirtyState>,
     mut exit_events: MessageWriter<AppExit>,
     primary_window: Query<Entity, With<PrimaryWindow>>,
 ) {
@@ -292,7 +295,7 @@ pub fn handle_window_close(
         }
 
         // Check if any maps have unsaved changes
-        if open_maps.maps.values().any(|m| m.is_dirty) {
+        if open_maps.has_any_unsaved(&dirty_state) {
             // Show confirmation dialog instead of closing
             dialog.show_close_confirmation = true;
         } else {

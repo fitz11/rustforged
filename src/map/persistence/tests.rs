@@ -422,3 +422,33 @@ fn test_read_map_hash_matches_written_hash() {
 
     assert_eq!(result.disk_hash, Some(written));
 }
+
+#[test]
+fn test_active_map_unsaved_follows_dirty_state() {
+    use super::resources::{MapDirtyState, OpenMaps};
+
+    let open_maps = OpenMaps::default();
+    let mut dirty = MapDirtyState::default();
+    assert!(!open_maps.has_any_unsaved(&dirty));
+
+    // Edits like fog reveals only set MapDirtyState; closing must still see them
+    dirty.is_dirty = true;
+    assert!(open_maps.has_any_unsaved(&dirty));
+    assert_eq!(open_maps.unsaved_maps(&dirty).len(), 1);
+}
+
+#[test]
+fn test_background_map_unsaved_uses_stashed_flag() {
+    use super::resources::{MapDirtyState, OpenMap, OpenMaps};
+
+    let mut open_maps = OpenMaps::default();
+    let mut background = open_maps.active_map().unwrap().clone();
+    background.id = 7;
+    background.stashed_dirty = true;
+    open_maps.maps.insert(7, background);
+
+    let dirty = MapDirtyState::default();
+    let background: &OpenMap = &open_maps.maps[&7];
+    assert!(open_maps.is_unsaved(background, &dirty));
+    assert!(open_maps.has_any_unsaved(&dirty));
+}

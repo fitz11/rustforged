@@ -48,8 +48,6 @@ pub fn new_map_system(
 
         // Clear dirty state
         dirty_state.is_dirty = false;
-        dirty_state.last_known_item_count = 0;
-        dirty_state.last_known_annotation_count = 0;
         // Ignore the despawn wave so the freshly-cleared map stays clean.
         dirty_state.suppress_change_detection();
 
@@ -70,7 +68,7 @@ pub fn new_map_system(
                 id: new_id,
                 name: "Untitled Map".to_string(),
                 path: None,
-                is_dirty: false,
+                stashed_dirty: false,
                 saved_state: None,
                 map_id: None,
                 disk_hash: None,
@@ -183,7 +181,7 @@ pub fn switch_map_system(
 
             if let Some(current_map) = open_maps.maps.get_mut(&current_id) {
                 current_map.saved_state = Some(current_state);
-                current_map.is_dirty = current_dirty;
+                current_map.stashed_dirty = current_dirty;
             }
         }
 
@@ -287,9 +285,7 @@ pub fn switch_map_system(
             current_map_file.path = target_map.path.clone();
 
             // Update dirty state
-            dirty_state.is_dirty = target_map.is_dirty;
-            dirty_state.last_known_item_count = 0; // Will be updated by detect_map_changes
-            dirty_state.last_known_annotation_count = 0;
+            dirty_state.is_dirty = target_map.stashed_dirty;
             // Ignore the despawn/respawn wave from switching maps.
             dirty_state.suppress_change_detection();
 

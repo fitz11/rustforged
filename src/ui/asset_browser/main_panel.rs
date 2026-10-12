@@ -438,7 +438,8 @@ fn render_maps_section(
 
         for map in sorted_maps {
             let is_active = map_res.open_maps.active_map_id == Some(map.id);
-            let display_name = if map.is_dirty {
+            let unsaved = map_res.open_maps.is_unsaved(map, &map_res.dirty_state);
+            let display_name = if unsaved {
                 format!("{}*", map.name)
             } else {
                 map.name.clone()
@@ -467,7 +468,7 @@ fn render_maps_section(
                     map_to_switch = Some(map.id);
                 }
 
-                if map.path.is_some() && map.is_dirty {
+                if map.path.is_some() && unsaved {
                     ui.label(
                         egui::RichText::new("(modified)")
                             .size(10.0)
