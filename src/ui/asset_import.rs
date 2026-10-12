@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use bevy::tasks::{IoTaskPool, Task};
 use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 use std::path::{Path, PathBuf};
@@ -123,7 +123,7 @@ pub fn asset_import_ui(
 
             // Browse button with updated filter
             if ui.button("Browse Files...").clicked() && dialog.pending_browse.is_none() {
-                let task_pool = AsyncComputeTaskPool::get();
+                let task_pool = IoTaskPool::get();
                 dialog.pending_browse = Some(task_pool.spawn(async {
                     rfd::AsyncFileDialog::new()
                         .add_filter(

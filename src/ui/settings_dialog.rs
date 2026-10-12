@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use bevy::tasks::{IoTaskPool, Task};
 use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 use std::path::PathBuf;
@@ -232,7 +232,7 @@ pub fn settings_dialog_ui(
 
     // Handle browse button - spawn async dialog
     if should_browse && dialog_state.pending_browse.is_none() {
-        let task_pool = AsyncComputeTaskPool::get();
+        let task_pool = IoTaskPool::get();
         dialog_state.pending_browse = Some(task_pool.spawn(async {
             rfd::AsyncFileDialog::new()
                 .set_title("Select Default Asset Library")

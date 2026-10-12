@@ -10,7 +10,7 @@ use crate::config::SetDefaultLibraryRequest;
 
 use super::asset_ops::{move_asset, rename_asset};
 use super::helpers::discover_folders;
-use super::state::{AssetBrowserState, MapResources};
+use super::state::{AssetBrowserState, MapResources, ZipJobKind};
 
 /// Render the "Set as default library" dialog.
 pub fn render_set_default_dialog(
@@ -60,12 +60,12 @@ pub fn render_import_error_dialog(ctx: &egui::Context, browser_state: &mut Asset
         return;
     };
 
-    egui::Window::new("Import Error")
+    egui::Window::new("Library Error")
         .collapsible(false)
         .resizable(true)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ui.colored_label(egui::Color32::RED, "Failed to import library");
+            ui.colored_label(egui::Color32::RED, "Library export or import failed");
             ui.add_space(8.0);
             egui::ScrollArea::vertical()
                 .max_height(150.0)
@@ -76,6 +76,27 @@ pub fn render_import_error_dialog(ctx: &egui::Context, browser_state: &mut Asset
             if ui.button("OK").clicked() {
                 browser_state.library_import_error = None;
             }
+        });
+}
+
+/// Shows that a library export or import is running.
+pub fn render_zip_job_dialog(ctx: &egui::Context, browser_state: &AssetBrowserState) {
+    let Some(job) = &browser_state.zip_job else {
+        return;
+    };
+    let message = match job.kind {
+        ZipJobKind::Export => "Exporting library...",
+        ZipJobKind::Import => "Importing library...",
+    };
+    egui::Window::new("Please Wait")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(message);
+            });
         });
 }
 

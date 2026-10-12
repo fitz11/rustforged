@@ -103,6 +103,22 @@ pub struct AssetBrowserState {
     pub pending_import_zip_path: Option<PathBuf>,
     /// Pending async file dialog for importing a library (phase 2: pick destination)
     pub pending_import_dest: Option<Task<Option<PathBuf>>>,
+    /// Library export or import running in the background
+    pub zip_job: Option<ZipJob>,
+}
+
+/// Exporting or importing a library zip, off the UI thread so the editor and the player
+/// view keep running.
+pub struct ZipJob {
+    pub kind: ZipJobKind,
+    /// The zip written (export) or the library folder extracted (import)
+    pub task: Task<Result<PathBuf, String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZipJobKind {
+    Export,
+    Import,
 }
 
 impl Default for AssetBrowserState {
@@ -140,6 +156,7 @@ impl Default for AssetBrowserState {
             pending_import_zip: None,
             pending_import_zip_path: None,
             pending_import_dest: None,
+            zip_job: None,
         }
     }
 }
@@ -152,5 +169,6 @@ impl AssetBrowserState {
             || self.pending_export.is_some()
             || self.pending_import_zip.is_some()
             || self.pending_import_dest.is_some()
+            || self.zip_job.is_some()
     }
 }

@@ -1,7 +1,7 @@
 //! Main asset browser panel UI.
 
 use bevy::prelude::*;
-use bevy::tasks::AsyncComputeTaskPool;
+use bevy::tasks::IoTaskPool;
 use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 use std::path::PathBuf;
@@ -20,13 +20,13 @@ use crate::ui::panel_layout::DockedPanel;
 use super::dialogs::{
     handle_rename_shortcuts, render_import_error_dialog, render_move_asset_dialog,
     render_rename_asset_dialog, render_rename_library_dialog, render_rename_map_dialog,
-    render_set_default_dialog, render_success_dialog,
+    render_set_default_dialog, render_success_dialog, render_zip_job_dialog,
 };
 use super::helpers::{
     MapTreeRow, discover_folders, extension_color, indented, map_tree, scan_maps_directory,
 };
 use super::library_ops::{export_library_to_zip, import_destination, import_library_from_zip};
-use super::state::{AssetBrowserState, DialogStates, MapResources};
+use super::state::{AssetBrowserState, DialogStates, MapResources, ZipJob, ZipJobKind};
 
 /// Main asset browser UI system.
 #[allow(clippy::too_many_arguments)]
@@ -127,6 +127,7 @@ pub fn asset_browser_ui(
     render_set_default_dialog(ctx, &mut browser_state, &mut set_default_events);
     render_import_error_dialog(ctx, &mut browser_state);
     render_success_dialog(ctx, &mut browser_state);
+    render_zip_job_dialog(ctx, &browser_state);
     render_rename_asset_dialog(
         ctx,
         &mut browser_state,
@@ -191,21 +192,19 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
         }
     }
 
-    // Poll: Export Library
+    // Poll: Export Library (destination picked: export in the background)
     if let Some(ref mut task) = browser_state.pending_export
         && let Some(result) = future::block_on(future::poll_once(task))
     {
         browser_state.pending_export = None;
         if let Some(dest_path) = result {
-            match export_library_to_zip(&library.library_path, &dest_path) {
-                Ok(()) => {
-                    browser_state.library_operation_success =
-                        Some(format!("Library exported to:\n{}", dest_path.display()));
-                }
-                Err(e) => {
-                    browser_state.library_import_error = Some(e);
-                }
-            }
+            let library_path = library.library_path.clone();
+            browser_state.zip_job = Some(ZipJob {
+                kind: ZipJobKind::Export,
+                task: IoTaskPool::get().spawn(async move {
+                    export_library_to_zip(&library_path, &dest_path).map(|()| dest_path)
+                }),
+            });
         }
     }
 
@@ -217,7 +216,7 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
         if let Some(zip_path) = result {
             // Store the zip path and spawn phase 2 dialog
             browser_state.pending_import_zip_path = Some(zip_path);
-            let task_pool = AsyncComputeTaskPool::get();
+            let task_pool = IoTaskPool::get();
             browser_state.pending_import_dest = Some(task_pool.spawn(async {
                 rfd::AsyncFileDialog::new()
                     .set_title("Select Destination Folder")
@@ -228,32 +227,48 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
         }
     }
 
-    // Poll: Import Phase 2 (pick destination)
+    // Poll: Import Phase 2 (destination picked: extract in the background)
     if let Some(ref mut task) = browser_state.pending_import_dest
         && let Some(result) = future::block_on(future::poll_once(task))
     {
         browser_state.pending_import_dest = None;
         let zip_path = browser_state.pending_import_zip_path.take();
         if let (Some(zip_path), Some(picked)) = (zip_path, result) {
-            match import_destination(&zip_path, &picked)
-                .and_then(|dest| import_library_from_zip(&zip_path, &dest).map(|()| dest))
-            {
-                Ok(dest_path) => {
-                    if let Err(e) = open_library_directory(library, dest_path.clone()) {
-                        browser_state.library_import_error =
-                            Some(format!("Library extracted but failed to open: {}", e));
-                    } else {
-                        browser_state.library_operation_success =
-                            Some("Library imported successfully!".to_string());
-                        browser_state.show_set_default_dialog = true;
-                        browser_state.set_default_dialog_path = Some(dest_path);
-                        browser_state.set_as_default_checked = false;
-                    }
-                }
-                Err(e) => {
-                    browser_state.library_import_error = Some(e);
+            browser_state.zip_job = Some(ZipJob {
+                kind: ZipJobKind::Import,
+                task: IoTaskPool::get().spawn(async move {
+                    let dest = import_destination(&zip_path, &picked)?;
+                    import_library_from_zip(&zip_path, &dest)?;
+                    Ok(dest)
+                }),
+            });
+        }
+    }
+
+    // Poll: export or import finished
+    if let Some(job) = browser_state.zip_job.as_mut()
+        && let Some(result) = future::block_on(future::poll_once(&mut job.task))
+    {
+        let kind = job.kind;
+        browser_state.zip_job = None;
+        match (kind, result) {
+            (ZipJobKind::Export, Ok(zip_path)) => {
+                browser_state.library_operation_success =
+                    Some(format!("Library exported to:\n{}", zip_path.display()));
+            }
+            (ZipJobKind::Import, Ok(dest_path)) => {
+                if let Err(e) = open_library_directory(library, dest_path.clone()) {
+                    browser_state.library_import_error =
+                        Some(format!("Library extracted but failed to open: {}", e));
+                } else {
+                    browser_state.library_operation_success =
+                        Some("Library imported successfully!".to_string());
+                    browser_state.show_set_default_dialog = true;
+                    browser_state.set_default_dialog_path = Some(dest_path);
+                    browser_state.set_as_default_checked = false;
                 }
             }
+            (_, Err(e)) => browser_state.library_import_error = Some(e),
         }
     }
 }
@@ -329,7 +344,7 @@ fn render_library_buttons(
             .clicked()
             && browser_state.pending_open_library.is_none()
         {
-            let task_pool = AsyncComputeTaskPool::get();
+            let task_pool = IoTaskPool::get();
             browser_state.pending_open_library = Some(task_pool.spawn(async {
                 rfd::AsyncFileDialog::new()
                     .set_title("Open Asset Library")
@@ -353,7 +368,7 @@ fn render_library_buttons(
             .clicked()
             && browser_state.pending_create_library.is_none()
         {
-            let task_pool = AsyncComputeTaskPool::get();
+            let task_pool = IoTaskPool::get();
             browser_state.pending_create_library = Some(task_pool.spawn(async {
                 rfd::AsyncFileDialog::new()
                     .set_title("Create New Asset Library")
@@ -387,7 +402,7 @@ fn render_export_import_buttons(
             && browser_state.pending_export.is_none()
         {
             let file_name = format!("{}.zip", library.metadata.name);
-            let task_pool = AsyncComputeTaskPool::get();
+            let task_pool = IoTaskPool::get();
             browser_state.pending_export = Some(task_pool.spawn(async move {
                 rfd::AsyncFileDialog::new()
                     .set_title("Export Library as Zip")
@@ -405,7 +420,7 @@ fn render_export_import_buttons(
             && browser_state.pending_import_zip.is_none()
             && browser_state.pending_import_dest.is_none()
         {
-            let task_pool = AsyncComputeTaskPool::get();
+            let task_pool = IoTaskPool::get();
             browser_state.pending_import_zip = Some(task_pool.spawn(async {
                 rfd::AsyncFileDialog::new()
                     .set_title("Import Library from Zip")
