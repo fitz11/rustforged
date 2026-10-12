@@ -122,6 +122,11 @@ pub fn handle_brush(
         return;
     }
 
+    // A locked or hidden layer takes no new items (the tool settings bar says so)
+    if !map_data.is_layer_editable(selected_layer.layer) {
+        return;
+    }
+
     let Some(ref asset) = selected_asset.asset else {
         return;
     };

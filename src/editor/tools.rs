@@ -128,7 +128,7 @@ pub fn handle_tool_shortcuts(
         && plain_key_just_pressed(&keyboard, KeyCode::KeyC)
     {
         let shift = shift_held(&keyboard);
-        let layers = Layer::all();
+        let layers = Layer::placeable();
         let current_idx = layers
             .iter()
             .position(|l| *l == selected_layer.layer)

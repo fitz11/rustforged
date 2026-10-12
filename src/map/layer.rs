@@ -104,6 +104,18 @@ impl Layer {
             Layer::FogOfWar,
         ]
     }
+
+    /// Layers items can be placed on: all but Fog of War, which only holds the fog.
+    pub fn placeable() -> &'static [Layer] {
+        &[
+            Layer::Background,
+            Layer::Terrain,
+            Layer::Doodad,
+            Layer::Token,
+            Layer::GM,
+            Layer::Annotation,
+        ]
+    }
 }
 
 #[cfg(test)]

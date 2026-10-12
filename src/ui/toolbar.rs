@@ -86,6 +86,7 @@ pub fn tool_settings_ui(
     mut annotation_settings: ResMut<AnnotationSettings>,
     mut selected_layer: ResMut<SelectedLayer>,
     mut fog_state: ResMut<FogState>,
+    map_data: Res<MapData>,
 ) -> Result {
     // Only show settings bar for tools that have settings
     let has_settings = current_tool.tool.is_annotation_tool()
@@ -132,7 +133,7 @@ pub fn tool_settings_ui(
                             .selected_text(selected_layer.layer.display_name())
                             .width(100.0)
                             .show_ui(ui, |ui| {
-                                for layer in Layer::all() {
+                                for layer in Layer::placeable() {
                                     let is_selected = selected_layer.layer == *layer;
                                     if ui
                                         .selectable_label(is_selected, layer.display_name())
@@ -142,6 +143,14 @@ pub fn tool_settings_ui(
                                     }
                                 }
                             });
+
+                        if !map_data.is_layer_editable(selected_layer.layer) {
+                            ui.add_space(8.0);
+                            ui.colored_label(
+                                egui::Color32::from_rgb(230, 170, 60),
+                                "Layer is locked or hidden",
+                            );
+                        }
 
                         ui.add_space(12.0);
                         ui.label(

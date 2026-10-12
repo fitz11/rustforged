@@ -2,12 +2,13 @@
 
 use bevy::prelude::*;
 
+use crate::editor::annotations::AnnotationMarker;
 use crate::editor::brush::fit_to_cell_scale;
 use crate::editor::grid::snap_to_grid;
 use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand, remove_from_map};
 use crate::editor::params::SelectedObjects;
 use crate::input::{plain_key_just_pressed, shift_held};
-use crate::map::{ItemId, MapData, PlacedItem, Selected};
+use crate::map::{ItemId, Layer, MapData, PlacedItem, Selected};
 
 use super::hit_detection::get_sprite_half_size;
 
@@ -123,6 +124,26 @@ pub fn handle_deletion(
     remove_from_map(&mut commands, &mut history_writer, selected.collect());
 }
 
+/// Deselects what's on a layer that was just locked or hidden, so Delete, the transform
+/// shortcuts and the Properties panel can't change things the GM can't see or has locked.
+pub fn deselect_on_locked_or_hidden_layers(
+    mut commands: Commands,
+    map_data: Res<MapData>,
+    items: Query<(Entity, &PlacedItem), With<Selected>>,
+    annotations: Query<Entity, (With<Selected>, With<AnnotationMarker>)>,
+) {
+    for (entity, item) in &items {
+        if !map_data.is_layer_editable(item.layer) {
+            commands.entity(entity).remove::<Selected>();
+        }
+    }
+    if !map_data.is_layer_editable(Layer::Annotation) {
+        for entity in &annotations {
+            commands.entity(entity).remove::<Selected>();
+        }
+    }
+}
+
 /// Clear selection when Escape is pressed
 pub fn handle_escape_clear_selection(
     mut commands: Commands,
@@ -133,5 +154,33 @@ pub fn handle_escape_clear_selection(
         for entity in selected_query.iter() {
             commands.entity(entity).remove::<Selected>();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn test_locking_a_layer_deselects_its_items() {
+        let mut world = World::new();
+        let mut map_data = MapData::default();
+        map_data.layer_mut(Layer::GM).unwrap().locked = true;
+        world.insert_resource(map_data);
+        let item = |layer| PlacedItem {
+            asset_path: "x.png".to_string(),
+            layer,
+            z_index: 0,
+        };
+        let gm = world.spawn((item(Layer::GM), Selected)).id();
+        let token = world.spawn((item(Layer::Token), Selected)).id();
+
+        world
+            .run_system_once(deselect_on_locked_or_hidden_layers)
+            .unwrap();
+
+        assert!(!world.entity(gm).contains::<Selected>());
+        assert!(world.entity(token).contains::<Selected>());
     }
 }

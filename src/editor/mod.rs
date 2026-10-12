@@ -175,6 +175,8 @@ impl Plugin for EditorPlugin {
                     selection::handle_escape_clear_selection
                         .run_if(plain_key(KeyCode::Escape).and_then(shortcuts_enabled)),
                     selection::update_selection_cursor.run_if(tool_is(EditorTool::Select)),
+                    selection::deselect_on_locked_or_hidden_layers
+                        .run_if(resource_changed::<MapData>),
                     clipboard::handle_copy
                         .run_if(command_key(KeyCode::KeyC).and_then(shortcuts_enabled)),
                     clipboard::handle_cut

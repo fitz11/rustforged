@@ -179,11 +179,7 @@ fn render_single_selection(
         egui::ComboBox::from_id_salt("item_layer")
             .selected_text(new_item.layer.display_name())
             .show_ui(ui, |ui| {
-                for layer in Layer::all() {
-                    // Skip FogOfWar layer (not for placing items)
-                    if *layer == Layer::FogOfWar {
-                        continue;
-                    }
+                for layer in Layer::placeable() {
                     let is_selected = new_item.layer == *layer;
                     if ui
                         .selectable_label(is_selected, layer.display_name())

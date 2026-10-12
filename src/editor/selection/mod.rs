@@ -32,8 +32,8 @@ pub use gizmos::{
 pub use handle::handle_selection;
 // hit_detection items are used internally by submodules but not re-exported
 pub use shortcuts::{
-    SelectionEdit, apply_selection_edits, handle_deletion, handle_escape_clear_selection,
-    selection_edit_shortcuts,
+    SelectionEdit, apply_selection_edits, deselect_on_locked_or_hidden_layers, handle_deletion,
+    handle_escape_clear_selection, selection_edit_shortcuts,
 };
 
 /// Distance above selection bounds for the rotation handle (in world units)
