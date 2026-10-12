@@ -9,6 +9,7 @@
 //!   leaves the bounds of the last placed item
 //! - Shift+click: Grid-fitted placement - resizes asset to fit grid cell and centers it
 
+use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
@@ -47,6 +48,9 @@ pub struct BrushState {
     /// Items placed during the current brush stroke, accumulated so the whole
     /// stroke is recorded as a single undo step on release.
     pub stroke_items: Vec<MapObject>,
+    /// Grid cells painted during the current stroke, so going back over one doesn't
+    /// stack another copy on it
+    pub stroke_cells: HashSet<(i32, i32)>,
 }
 
 impl BrushState {
@@ -54,6 +58,7 @@ impl BrushState {
     pub fn finish_stroke(&mut self, history_writer: &mut MessageWriter<RecordEditorCommand>) {
         self.is_brushing = false;
         self.last_placed_bounds = None;
+        self.stroke_cells.clear();
         self.flush_stroke(history_writer);
     }
 
@@ -112,9 +117,8 @@ pub fn handle_brush(
 
     // Handle mouse press - start brushing
     if mouse_button.just_pressed(MouseButton::Left) {
-        brush_state.flush_stroke(&mut history_writer);
+        brush_state.finish_stroke(&mut history_writer);
         brush_state.is_brushing = true;
-        brush_state.last_placed_bounds = None;
     }
 
     // Only proceed if actively brushing
@@ -166,13 +170,22 @@ pub fn handle_brush(
         return;
     }
 
-    // Calculate placement position (center of grid cell)
+    // Calculate placement position (center of grid cell); each cell is painted once
+    // per stroke
     let final_pos = snap_to_grid(world_pos, grid_size, true);
+    if !brush_state
+        .stroke_cells
+        .insert(crate::map::world_to_cell(world_pos, grid_size))
+    {
+        return;
+    }
 
-    // Update the bounds for the newly placed item
+    // Update the bounds for the newly placed item. At least the whole cell: the item sits
+    // at the cell's center, so a smaller image would otherwise leave room in the cell
+    // for the cursor to place again
     brush_state.last_placed_bounds = Some(PlacedBounds {
         center: final_pos,
-        half_size: placed_size / 2.0,
+        half_size: placed_size.max(Vec2::splat(grid_size)) / 2.0,
     });
 
     let object = MapObject::new_item(
