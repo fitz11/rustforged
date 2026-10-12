@@ -35,6 +35,21 @@ pub fn scan_maps_directory(maps_dir: &Path) -> Vec<(String, PathBuf)> {
     maps
 }
 
+/// If `name` (a map's display name) is a sync client's conflict copy, the display name of
+/// the map it conflicts with. Recognizes Dropbox and Nextcloud ("cave (DESKTOP's conflicted
+/// copy 2026-10-12)", "cave (conflicted copy 2026-10-12 140233)"), older Nextcloud/ownCloud
+/// ("cave_conflict-20261012-140233") and Syncthing ("cave.sync-conflict-20261012-140233-ABC").
+pub fn conflict_copy_original(name: &str) -> Option<&str> {
+    if let Some(i) = name.find(".sync-conflict-") {
+        return Some(&name[..i]);
+    }
+    if let Some(i) = name.rfind("_conflict-") {
+        return Some(&name[..i]);
+    }
+    let open = name.rfind(" (")?;
+    (name.ends_with(')') && name[open..].to_lowercase().contains("conflict")).then(|| &name[..open])
+}
+
 /// Discover all folders in the library from asset paths.
 pub fn discover_folders(library: &AssetLibrary) -> Vec<String> {
     let mut folders: HashSet<String> = HashSet::new();
@@ -110,6 +125,23 @@ mod tests {
             .collect();
 
         assert_eq!(names, ["Campaign/goblin cave", "town"]);
+    }
+
+    #[test]
+    fn test_conflict_copy_original_recognizes_sync_clients() {
+        for (copy, original) in [
+            ("cave (DESKTOP's conflicted copy 2026-10-12)", "cave"),
+            ("cave (conflicted copy 2026-10-12 140233)", "cave"),
+            ("Campaign/cave (Case Conflict)", "Campaign/cave"),
+            ("cave_conflict-20261012-140233", "cave"),
+            ("cave.sync-conflict-20261012-140233-ABCDEFG", "cave"),
+        ] {
+            assert_eq!(conflict_copy_original(copy), Some(original), "{copy}");
+        }
+        // Copies saved on purpose, and ordinary names, aren't conflicts
+        for name in ["cave (LAPTOP copy)", "cave (2)", "cave", "goblin (boss)"] {
+            assert_eq!(conflict_copy_original(name), None, "{name}");
+        }
     }
 
     #[test]

@@ -11,9 +11,9 @@ pub use map_data::{
     SavedTextBox,
 };
 pub use persistence::{
-    AsyncMapOperation, CurrentMapFile, LoadMapRequest, MapAssetReport, MapDirtyState, MapLoadError,
-    MapSaveError, NewMapRequest, OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind,
-    SaveMapRequest, SwitchMapRequest, UnsavedChangesDialog,
+    AsyncMapOperation, CurrentMapFile, LoadMapRequest, MapAssetReport, MapChangedOnDisk,
+    MapDirtyState, MapLoadError, MapSaveError, NewMapRequest, OpenMaps, SaveConflict,
+    SaveConflictDialog, SaveConflictKind, SaveMapRequest, SwitchMapRequest, UnsavedChangesDialog,
 };
 pub use placed_item::{MissingAsset, PlacedItem, Selected};
 
@@ -29,6 +29,7 @@ impl Plugin for MapPlugin {
             .init_resource::<MapSaveError>()
             .init_resource::<MapAssetReport>()
             .init_resource::<SaveConflictDialog>()
+            .init_resource::<MapChangedOnDisk>()
             .init_resource::<CurrentMapFile>()
             .init_resource::<MapDirtyState>()
             .init_resource::<OpenMaps>()
@@ -46,6 +47,8 @@ impl Plugin for MapPlugin {
                     persistence::new_map_system.run_if(on_message::<NewMapRequest>),
                     persistence::switch_map_system.run_if(on_message::<SwitchMapRequest>),
                     persistence::poll_save_tasks,
+                    persistence::detect_open_map_changes
+                        .run_if(on_message::<crate::assets::MapFilesChanged>),
                     persistence::poll_load_tasks,
                     // Change detection using Bevy's Added/Changed/Removed filters.
                     // Chained so suppression decays only after all three have

@@ -16,6 +16,7 @@
 //! - [`load`] - Load system and task polling
 //! - [`map_state`] - New map and switch map systems
 //! - [`dirty`] - Dirty state detection systems
+//! - [`disk_changes`] - Noticing the open map's file change on disk
 //!
 //! ## Key Types
 //!
@@ -33,6 +34,7 @@
 //! - [`switch_map_system`] - Switches between open maps
 
 mod dirty;
+mod disk_changes;
 mod helpers;
 mod load;
 mod map_state;
@@ -49,14 +51,16 @@ pub use messages::{LoadMapRequest, NewMapRequest, SaveMapRequest, SwitchMapReque
 
 // Re-exports - Resources
 pub use resources::{
-    AsyncMapOperation, CurrentMapFile, MapAssetReport, MapDirtyState, MapLoadError, MapSaveError,
-    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, UnsavedChangesDialog,
+    AsyncMapOperation, CurrentMapFile, MapAssetReport, MapChangedOnDisk, MapDirtyState,
+    MapLoadError, MapSaveError, OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind,
+    UnsavedChangesDialog,
 };
 
 // Re-exports - Systems
 pub use dirty::{
     decay_dirty_suppression, detect_item_additions, detect_item_removals, detect_item_transforms,
 };
+pub use disk_changes::detect_open_map_changes;
 pub use load::{load_map_system, poll_load_tasks};
 pub use map_state::{new_map_system, switch_map_system};
 pub use save::{poll_save_tasks, save_map_system};

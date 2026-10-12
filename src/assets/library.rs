@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy_egui::EguiUserTextures;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -312,6 +313,15 @@ impl ThumbnailCache {
     /// Check if loading this thumbnail previously failed
     pub fn has_failed(&self, path: &Path) -> bool {
         self.failed.contains_key(path)
+    }
+
+    /// Forget one asset's thumbnail so it's regenerated (its file changed on disk).
+    pub fn invalidate(&mut self, path: &Path, egui_textures: &mut EguiUserTextures) {
+        if let Some(handle) = self.thumbnails.remove(path) {
+            egui_textures.remove_image(&handle);
+        }
+        self.texture_ids.remove(path);
+        self.failed.remove(path);
     }
 
     /// Clear the cache (call when switching libraries)

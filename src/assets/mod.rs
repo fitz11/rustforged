@@ -4,6 +4,7 @@ mod manifest;
 mod placeholder;
 mod source;
 mod validation;
+mod watcher;
 #[cfg(test)]
 pub use fingerprint::test_support as fingerprint_test_support;
 pub use fingerprint::{AssetFingerprint, FingerprintCache, LibraryIndex};
@@ -14,6 +15,7 @@ pub use library::{
 };
 pub use manifest::{LIBRARY_MANIFEST_FILE, is_root_manifest, save_library_metadata};
 pub use source::{LibraryRoot, library_asset_path, register_library_source};
+pub use watcher::MapFilesChanged;
 
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -59,6 +61,8 @@ impl Plugin for AssetLibraryPlugin {
             .add_message::<RefreshAssetLibrary>()
             .add_message::<UpdateLibraryMetadataRequest>()
             .add_message::<RetargetAssetRequest>()
+            .add_message::<MapFilesChanged>()
+            .init_resource::<watcher::LibraryWatcher>()
             .add_systems(
                 Startup,
                 (
@@ -78,6 +82,11 @@ impl Plugin for AssetLibraryPlugin {
                         .run_if(on_message::<UpdateLibraryMetadataRequest>),
                     retarget_asset_system.run_if(on_message::<RetargetAssetRequest>),
                     reload_placed_items_on_library_switch,
+                    (
+                        watcher::watch_library_root,
+                        watcher::process_library_changes,
+                    )
+                        .chain(),
                     // Check for missing assets periodically (runs on entities without MissingAsset marker)
                     validation::detect_missing_assets,
                     // Bring placeholders back once their file shows up in the library

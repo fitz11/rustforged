@@ -6,8 +6,8 @@ use bevy::tasks::Task;
 use std::path::PathBuf;
 
 use crate::map::{
-    CurrentMapFile, LoadMapRequest, MapData, MapDirtyState, OpenMaps, SaveMapRequest,
-    SwitchMapRequest,
+    CurrentMapFile, LoadMapRequest, MapChangedOnDisk, MapData, MapDirtyState, OpenMaps,
+    SaveMapRequest, SwitchMapRequest,
 };
 
 use super::super::asset_import::AssetImportDialog;
@@ -24,6 +24,7 @@ pub struct MapResources<'w> {
     pub load_events: MessageWriter<'w, LoadMapRequest>,
     pub save_events: MessageWriter<'w, SaveMapRequest>,
     pub switch_events: MessageWriter<'w, SwitchMapRequest>,
+    pub disk_change: ResMut<'w, MapChangedOnDisk>,
 }
 
 /// Bundle of dialog state resources.
@@ -59,6 +60,10 @@ pub struct AssetBrowserState {
     pub cached_maps: Vec<(String, PathBuf)>,
     /// Last path used for map scanning (to detect changes)
     pub last_maps_scan_path: Option<PathBuf>,
+    /// Library scan generation the folder list was built from
+    pub last_library_generation: u64,
+    /// Conflict copy awaiting a second click to delete
+    pub confirm_discard: Option<PathBuf>,
     /// Error message for library import failures
     pub library_import_error: Option<String>,
     /// Success message for export/import operations
@@ -113,6 +118,8 @@ impl Default for AssetBrowserState {
             set_as_default_checked: false,
             cached_maps: Vec::new(),
             last_maps_scan_path: None,
+            last_library_generation: 0,
+            confirm_discard: None,
             library_import_error: None,
             library_operation_success: None,
             rename_dialog_open: false,

@@ -3,7 +3,6 @@
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
-use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -12,11 +11,12 @@ use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
 
+use super::helpers::saved_by_of;
 use super::map_state::capture_current_map_state;
 use super::messages::SaveMapRequest;
 use super::resources::{
-    AsyncMapOperation, CurrentMapFile, MapDirtyState, MapSaveError, OpenMaps, SaveConflict,
-    SaveConflictDialog, SaveConflictKind, SaveMapTask,
+    AsyncMapOperation, CurrentMapFile, MapChangedOnDisk, MapDirtyState, MapSaveError, OpenMaps,
+    SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapTask,
 };
 use super::results::SaveResult;
 
@@ -136,20 +136,12 @@ pub(super) fn check_save_conflict(
     path: &Path,
     expected_hash: Option<&str>,
 ) -> Option<SaveConflict> {
-    /// Just the field we need from the version on disk
-    #[derive(Deserialize)]
-    struct SavedBy {
-        saved_by: Option<String>,
-    }
-
     let kind = match (std::fs::read(path), expected_hash) {
         (Ok(bytes), Some(expected)) if crate::fsutil::content_hash(&bytes) == expected => {
             return None;
         }
         (Ok(bytes), expected) => {
-            let saved_by = serde_json::from_slice::<SavedBy>(&bytes)
-                .ok()
-                .and_then(|s| s.saved_by);
+            let saved_by = saved_by_of(&bytes);
             let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
             let kind = if expected.is_some() {
                 SaveConflictKind::Changed
@@ -207,6 +199,7 @@ pub fn poll_save_tasks(
     mut save_error: ResMut<MapSaveError>,
     mut asset_library: ResMut<AssetLibrary>,
     mut conflict_dialog: ResMut<SaveConflictDialog>,
+    mut disk_change: ResMut<MapChangedOnDisk>,
     placed_items: Query<Entity, With<PlacedItem>>,
     annotations: Query<Entity, With<AnnotationMarker>>,
 ) {
@@ -222,6 +215,7 @@ pub fn poll_save_tasks(
 
             if result.success {
                 info!("Map saved to {:?}", result.path);
+                disk_change.clear_for(&result.path);
 
                 // Clear any previous save error
                 save_error.message = None;

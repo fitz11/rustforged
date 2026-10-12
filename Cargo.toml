@@ -48,6 +48,7 @@ blake3 = "1"
 unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "1"
+notify-debouncer-full = "0.7"
 tempfile = "3"
 
 # Enable a small amount of optimization in the dev profile.

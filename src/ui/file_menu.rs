@@ -641,9 +641,9 @@ pub fn map_asset_report_ui(
                     });
                 ui.label(
                     egui::RichText::new(
-                        "They show as red placeholders and come back when the library is \
-                         refreshed after the files appear. To use a different asset, select a \
-                         placeholder and use Relink in its properties.",
+                        "They show as red placeholders and load on their own once the files \
+                         appear, for example when syncing finishes. To use a different asset, \
+                         select a placeholder and use Relink in its properties.",
                     )
                     .weak()
                     .small(),

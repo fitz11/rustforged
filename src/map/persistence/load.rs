@@ -14,8 +14,8 @@ use crate::map::{FogOfWarData, Layer, MAP_FORMAT_VERSION, MapData, PlacedItem, S
 use super::helpers::array_to_color;
 use super::messages::LoadMapRequest;
 use super::resources::{
-    AsyncMapOperation, CurrentMapFile, LoadMapTask, MapAssetReport, MapDirtyState, MapLoadError,
-    OpenMap, OpenMaps,
+    AsyncMapOperation, CurrentMapFile, LoadMapTask, MapAssetReport, MapChangedOnDisk,
+    MapDirtyState, MapLoadError, OpenMap, OpenMaps,
 };
 use super::results::LoadResult;
 
@@ -125,6 +125,7 @@ pub fn poll_load_tasks(
     mut fog_data: ResMut<FogOfWarData>,
     mut load_error: ResMut<MapLoadError>,
     mut asset_report: ResMut<MapAssetReport>,
+    mut disk_change: ResMut<MapChangedOnDisk>,
     mut asset_library: ResMut<AssetLibrary>,
     asset_server: Res<AssetServer>,
     existing_items: Query<Entity, With<PlacedItem>>,
@@ -255,6 +256,7 @@ pub fn poll_load_tasks(
             }
 
             info!("Map loaded from {:?}", result.path);
+            disk_change.clear_for(&result.path);
 
             // Update current map file and config
             current_map_file.path = Some(result.path.clone());

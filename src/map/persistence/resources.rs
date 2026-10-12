@@ -63,6 +63,32 @@ pub struct SaveConflictDialog {
     pub conflict: Option<SaveConflict>,
 }
 
+/// Notice that the active map's file changed on disk while it was open, e.g. a newer
+/// version synced from another machine.
+#[derive(Debug, Clone)]
+pub struct DiskChangeNotice {
+    pub path: PathBuf,
+    /// Machine that saved the version now on disk, if the file says
+    pub saved_by: Option<String>,
+    /// The file was moved or deleted rather than changed
+    pub deleted: bool,
+}
+
+/// Resource holding the current [`DiskChangeNotice`], shown as a banner in the maps list.
+#[derive(Resource, Default)]
+pub struct MapChangedOnDisk {
+    pub notice: Option<DiskChangeNotice>,
+}
+
+impl MapChangedOnDisk {
+    /// Drops the notice if it's about `path` (the file was just loaded or saved here).
+    pub fn clear_for(&mut self, path: &std::path::Path) {
+        if self.notice.as_ref().is_some_and(|n| n.path == path) {
+            self.notice = None;
+        }
+    }
+}
+
 /// Resource tracking async map I/O operations for modal dialog
 #[derive(Resource, Default)]
 pub struct AsyncMapOperation {

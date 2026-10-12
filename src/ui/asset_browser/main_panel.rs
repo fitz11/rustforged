@@ -4,11 +4,13 @@ use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use crate::assets::{
-    AssetLibrary, LibraryAsset, RefreshAssetLibrary, RetargetAssetRequest, SelectedAsset,
-    THUMBNAIL_SIZE, ThumbnailCache, UpdateLibraryMetadataRequest, create_and_open_library,
-    get_image_dimensions, open_library_directory,
+    AssetLibrary, LibraryAsset, MapFilesChanged, RefreshAssetLibrary, RetargetAssetRequest,
+    SelectedAsset, THUMBNAIL_SIZE, ThumbnailCache, UpdateLibraryMetadataRequest,
+    create_and_open_library, get_image_dimensions, open_library_directory,
 };
 use crate::config::{AppConfig, SetDefaultLibraryRequest};
 use crate::editor::{CurrentTool, EditorTool};
@@ -20,7 +22,10 @@ use super::dialogs::{
     render_rename_asset_dialog, render_rename_library_dialog, render_rename_map_dialog,
     render_set_default_dialog, render_success_dialog,
 };
-use super::helpers::{discover_folders, extension_color, sanitize_map_name, scan_maps_directory};
+use super::helpers::{
+    conflict_copy_original, discover_folders, extension_color, sanitize_map_name,
+    scan_maps_directory,
+};
 use super::library_ops::{export_library_to_zip, import_library_from_zip};
 use super::state::{AssetBrowserState, DialogStates, MapResources};
 
@@ -38,6 +43,7 @@ pub fn asset_browser_ui(
     mut rename_events: MessageWriter<RetargetAssetRequest>,
     mut library_metadata_events: MessageWriter<UpdateLibraryMetadataRequest>,
     mut refresh_events: MessageWriter<RefreshAssetLibrary>,
+    mut map_file_events: MessageReader<MapFilesChanged>,
     mut map_res: MapResources,
     mut dialogs: DialogStates,
 ) -> Result {
@@ -47,6 +53,15 @@ pub fn asset_browser_ui(
         thumbnail_cache.clear();
         browser_state.discovered_folders = discover_folders(&library);
         browser_state.last_library_path = Some(current_path);
+    }
+    // Folders may have appeared or gone after a rescan (e.g. synced in from elsewhere)
+    if browser_state.last_library_generation != library.generation() {
+        browser_state.last_library_generation = library.generation();
+        browser_state.discovered_folders = discover_folders(&library);
+    }
+    // Map files changed on disk: rescan the map list
+    if map_file_events.read().count() > 0 {
+        browser_state.last_maps_scan_path = None;
     }
 
     // Handle keyboard shortcuts for rename dialogs
@@ -555,6 +570,8 @@ fn render_maps_section(
         }
     });
 
+    render_disk_change_notice(ui, map_res);
+
     // Scan and show available maps (the folder is created by the first save)
     let maps_dir = library.library_path.join("maps");
 
@@ -576,45 +593,198 @@ fn render_maps_section(
             }
         });
 
+        // Sync clients' conflict copies are listed under the map they conflict with
+        let names: HashSet<&str> = browser_state
+            .cached_maps
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let copies_of = |original: &str| -> Vec<(String, PathBuf)> {
+            browser_state
+                .cached_maps
+                .iter()
+                .filter(|(name, _)| conflict_copy_original(name) == Some(original))
+                .cloned()
+                .collect()
+        };
+        let mut rows: Vec<MapListRow> = Vec::new();
+        for (name, path) in &browser_state.cached_maps {
+            let is_attached_copy =
+                conflict_copy_original(name).is_some_and(|original| names.contains(original));
+            if !is_attached_copy {
+                rows.push(MapListRow {
+                    name: name.clone(),
+                    path: path.clone(),
+                    conflict_copies: copies_of(name),
+                });
+            }
+        }
+
+        let mut rescan = false;
         egui::ScrollArea::vertical()
             .id_salt("maps_scroll")
             .max_height(120.0)
             .show(ui, |ui| {
-                for (map_name, map_path) in &browser_state.cached_maps {
-                    let is_current = map_res
-                        .current_map_file
-                        .path
-                        .as_ref()
-                        .map(|p| p == map_path)
-                        .unwrap_or(false);
-
-                    ui.horizontal(|ui| {
-                        if is_current {
-                            ui.label(egui::RichText::new(">").size(10.0));
-                        } else {
-                            ui.add_space(12.0);
-                        }
-
-                        let button_text = if is_current {
-                            egui::RichText::new(map_name).size(12.0).strong()
-                        } else {
-                            egui::RichText::new(map_name).size(12.0)
-                        };
-
-                        if ui
-                            .add(egui::Button::new(button_text).frame(false))
-                            .on_hover_text(&*map_path.to_string_lossy())
-                            .clicked()
-                            && !is_current
-                        {
-                            map_res.load_events.write(crate::map::LoadMapRequest {
-                                path: map_path.clone(),
-                            });
-                        }
-                    });
+                for row in &rows {
+                    let orphan_copy = conflict_copy_original(&row.name).is_some();
+                    render_map_row(ui, &row.name, &row.path, orphan_copy, 0.0, map_res);
+                    for (copy_name, copy_path) in &row.conflict_copies {
+                        let label = copy_name.rsplit('/').next().unwrap_or(copy_name);
+                        render_map_row(ui, label, copy_path, true, 12.0, map_res);
+                        rescan |= discard_conflict_copy(ui, copy_path, browser_state);
+                    }
                 }
             });
+        if rescan {
+            browser_state.cached_maps = scan_maps_directory(&maps_dir);
+        }
     }
+}
+
+/// A map in the available-maps list, with any sync conflict copies of it.
+struct MapListRow {
+    name: String,
+    path: PathBuf,
+    conflict_copies: Vec<(String, PathBuf)>,
+}
+
+/// One entry in the available-maps list; clicking it opens the map. Conflict copies get a
+/// warning marker.
+fn render_map_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    path: &PathBuf,
+    conflict_copy: bool,
+    indent: f32,
+    map_res: &mut MapResources,
+) {
+    let is_current = map_res.current_map_file.path.as_ref() == Some(path);
+
+    ui.horizontal(|ui| {
+        ui.add_space(indent);
+        if is_current {
+            ui.label(egui::RichText::new(">").size(10.0));
+        } else {
+            ui.add_space(12.0);
+        }
+
+        let mut text = egui::RichText::new(label).size(12.0);
+        if is_current {
+            text = text.strong();
+        }
+        if conflict_copy {
+            text = text.color(egui::Color32::from_rgb(230, 170, 60));
+            ui.label(egui::RichText::new("\u{26a0}").size(11.0).color(egui::Color32::from_rgb(230, 170, 60)))
+                .on_hover_text(
+                    "Conflict copy: a sync client saved this when the map was changed on two \
+                     machines at once. Open it to compare, then discard the version you don't need.",
+                );
+        }
+
+        if ui
+            .add(egui::Button::new(text).frame(false))
+            .on_hover_text(&*path.to_string_lossy())
+            .clicked()
+            && !is_current
+        {
+            map_res.load_events.write(crate::map::LoadMapRequest { path: path.clone() });
+        }
+    });
+}
+
+/// "Discard" for a conflict copy, with a second click to confirm. Returns true once the
+/// file is deleted.
+fn discard_conflict_copy(
+    ui: &mut egui::Ui,
+    path: &PathBuf,
+    browser_state: &mut AssetBrowserState,
+) -> bool {
+    let confirming = browser_state.confirm_discard.as_ref() == Some(path);
+    let mut deleted = false;
+    ui.horizontal(|ui| {
+        ui.add_space(36.0);
+        if confirming {
+            if ui
+                .small_button("Delete this copy")
+                .on_hover_text(&*path.to_string_lossy())
+                .clicked()
+            {
+                browser_state.confirm_discard = None;
+                match std::fs::remove_file(path) {
+                    Ok(()) => {
+                        info!("Discarded conflict copy {:?}", path);
+                        deleted = true;
+                    }
+                    Err(e) => warn!("Failed to delete conflict copy {:?}: {}", path, e),
+                }
+            }
+            if ui.small_button("Keep").clicked() {
+                browser_state.confirm_discard = None;
+            }
+        } else if ui
+            .small_button("Discard")
+            .on_hover_text("Delete this conflict copy")
+            .clicked()
+        {
+            browser_state.confirm_discard = Some(path.clone());
+        }
+    });
+    deleted
+}
+
+/// Banner shown when the open map's file changed on disk (e.g. synced from another machine).
+fn render_disk_change_notice(ui: &mut egui::Ui, map_res: &mut MapResources) {
+    let Some(notice) = map_res.disk_change.notice.clone() else {
+        return;
+    };
+    if map_res.current_map_file.path.as_ref() != Some(&notice.path) {
+        return;
+    }
+
+    let name = notice
+        .path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("map");
+    let message = if notice.deleted {
+        format!("\u{26a0} \"{}\" was moved or deleted on disk.", name)
+    } else if let Some(who) = &notice.saved_by {
+        format!("\u{26a0} \"{}\" was changed on disk by {}.", name, who)
+    } else {
+        format!("\u{26a0} \"{}\" was changed on disk.", name)
+    };
+
+    ui.add_space(6.0);
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.label(
+            egui::RichText::new(message)
+                .size(12.0)
+                .color(egui::Color32::from_rgb(230, 170, 60)),
+        );
+        ui.horizontal(|ui| {
+            if !notice.deleted {
+                let reload = ui.small_button("Reload");
+                let reload = if map_res.dirty_state.is_dirty {
+                    reload
+                        .on_hover_text("Open the version on disk, discarding your unsaved changes")
+                } else {
+                    reload.on_hover_text("Open the version on disk")
+                };
+                if reload.clicked() {
+                    map_res.load_events.write(crate::map::LoadMapRequest {
+                        path: notice.path.clone(),
+                    });
+                }
+            }
+            if ui
+                .small_button("Dismiss")
+                .on_hover_text("Keep working on your version; saving will ask before overwriting")
+                .clicked()
+            {
+                map_res.disk_change.notice = None;
+            }
+        });
+    });
 }
 
 /// Render the assets management buttons.
