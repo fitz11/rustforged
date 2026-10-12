@@ -9,12 +9,31 @@ use bevy::prelude::*;
 
 use super::command_history::CommandHistory;
 use super::commands::EditorCommand;
+use super::data_types::MapObject;
 
 /// Emitted by editing systems to record a completed, reversible action onto the
 /// undo history. Recording a new command clears the redo stack.
 #[derive(Message)]
 pub struct RecordEditorCommand {
     pub command: EditorCommand,
+}
+
+/// Takes `selection` off the map as one undo step (Delete and Cut).
+pub fn remove_from_map(
+    commands: &mut Commands,
+    history_writer: &mut MessageWriter<RecordEditorCommand>,
+    selection: Vec<(Entity, MapObject)>,
+) {
+    if selection.is_empty() {
+        return;
+    }
+    let (entities, objects): (Vec<_>, Vec<_>) = selection.into_iter().unzip();
+    history_writer.write(RecordEditorCommand {
+        command: EditorCommand::Remove(objects),
+    });
+    for entity in entities {
+        commands.entity(entity).despawn();
+    }
 }
 
 /// Applies recorded commands to the [`CommandHistory`].

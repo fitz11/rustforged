@@ -178,22 +178,6 @@ impl SelectedObjects<'_, '_> {
     }
 }
 
-/// Bundled queries for selected annotations (used in clipboard operations)
-#[derive(SystemParam)]
-#[allow(clippy::type_complexity)]
-pub struct SelectedAnnotationQueries<'w, 's> {
-    pub paths:
-        Query<'w, 's, (Entity, &'static DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
-    pub lines:
-        Query<'w, 's, (Entity, &'static DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
-    pub texts: Query<
-        'w,
-        's,
-        (Entity, &'static Transform, &'static TextAnnotation),
-        (With<Selected>, With<AnnotationMarker>),
-    >,
-}
-
 /// Check if the cursor is over egui UI (docked panels, windows, or areas)
 pub fn is_cursor_over_ui(contexts: &mut EguiContexts) -> bool {
     contexts.ctx_mut().is_ok_and(|ctx| is_pointer_over_ui(ctx))

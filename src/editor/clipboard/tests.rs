@@ -408,3 +408,74 @@ fn test_clipboard_with_mixed_content() {
     assert_eq!(clipboard.lines.len(), 0);
     assert_eq!(clipboard.texts.len(), 0);
 }
+
+#[test]
+fn test_copy_keeps_objects_relative_to_their_center() {
+    use crate::editor::annotations::DrawnLine;
+    use crate::editor::history::MapObject;
+    use crate::map::PlacedItem;
+
+    let item = MapObject::new_item(
+        PlacedItem {
+            asset_path: "test.png".to_string(),
+            layer: Layer::Token,
+            z_index: 0,
+        },
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    );
+    let line = MapObject::new_line(DrawnLine {
+        start: Vec2::new(90.0, 0.0),
+        end: Vec2::new(110.0, 0.0),
+        color: Color::WHITE,
+        stroke_width: 2.0,
+    });
+
+    let mut clipboard = Clipboard::default();
+    clipboard.copy(&[item, line]);
+
+    assert_eq!(clipboard.placed_items[0].offset, Vec2::new(-50.0, 0.0));
+    assert_eq!(clipboard.lines[0].offset, Vec2::new(50.0, 0.0));
+}
+
+#[test]
+fn test_cut_is_one_undo_step() {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use crate::editor::clipboard::cut::handle_cut;
+    use crate::editor::history::{CommandHistory, EditorCommand, RecordEditorCommand};
+    use crate::map::Selected;
+
+    let mut app = App::new();
+    app.init_resource::<Clipboard>()
+        .init_resource::<CommandHistory>()
+        .add_message::<RecordEditorCommand>()
+        .add_systems(Update, crate::editor::history::record_commands);
+    for x in [0.0, 10.0] {
+        app.world_mut().spawn((
+            DrawnPath {
+                points: vec![Vec2::new(x, 0.0), Vec2::new(x, 5.0)],
+                color: Color::WHITE,
+                stroke_width: 2.0,
+            }
+            .bundle(),
+            Selected,
+        ));
+    }
+
+    app.world_mut().run_system_once(handle_cut).unwrap();
+    app.update();
+
+    assert_eq!(app.world().resource::<Clipboard>().paths.len(), 2);
+    assert_eq!(
+        app.world_mut()
+            .query::<&DrawnPath>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+    let mut history = app.world_mut().resource_mut::<CommandHistory>();
+    assert_eq!(history.undo_count(), 1);
+    assert!(
+        matches!(history.pop_undo(), Some(EditorCommand::Remove(objects)) if objects.len() == 2)
+    );
+}

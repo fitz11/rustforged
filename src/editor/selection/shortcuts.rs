@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use crate::editor::brush::fit_to_cell_scale;
 use crate::editor::grid::snap_to_grid;
-use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
+use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand, remove_from_map};
 use crate::editor::params::SelectedObjects;
 use crate::input::shift_held;
 use crate::map::{ItemId, MapData, PlacedItem, Selected};
@@ -117,16 +117,7 @@ pub fn handle_deletion(
     selected: SelectedObjects,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    let (entities, objects): (Vec<_>, Vec<_>) = selected.collect().into_iter().unzip();
-    if objects.is_empty() {
-        return;
-    }
-    history_writer.write(RecordEditorCommand {
-        command: EditorCommand::Remove(objects),
-    });
-    for entity in entities {
-        commands.entity(entity).despawn();
-    }
+    remove_from_map(&mut commands, &mut history_writer, selected.collect());
 }
 
 /// Clear selection when Escape is pressed

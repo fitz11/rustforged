@@ -40,7 +40,7 @@ mod tests;
 pub use command_history::CommandHistory;
 pub use commands::EditorCommand;
 pub use data_types::MapObject;
-pub use recording::{RecordEditorCommand, record_commands};
+pub use recording::{RecordEditorCommand, record_commands, remove_from_map};
 pub use systems::{clear_history_on_map_change, handle_undo_redo};
 
 /// Maximum number of commands to keep in history
