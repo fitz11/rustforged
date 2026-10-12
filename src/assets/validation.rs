@@ -9,11 +9,13 @@ use bevy::prelude::*;
 use crate::map::{MissingAsset, PlacedItem};
 
 use super::placeholder::PlaceholderTexture;
+use super::{AssetLibrary, library_asset_path};
 
 /// System that checks for failed asset loads and applies placeholder textures.
 ///
 /// Runs lazily - queries items without MissingAsset marker and checks if their
-/// sprite texture failed to load.
+/// sprite texture failed to load. A `lib://` path that doesn't exist in the open
+/// library fails with "not found", so this also covers deleted or not-yet-synced files.
 pub fn detect_missing_assets(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -21,55 +23,45 @@ pub fn detect_missing_assets(
     query: Query<(Entity, &PlacedItem, &Sprite), Without<MissingAsset>>,
 ) {
     for (entity, placed_item, sprite) in query.iter() {
-        // Check the load state of the sprite's image
-        let load_state = asset_server.load_state(&sprite.image);
+        if let LoadState::Failed(_) = asset_server.load_state(&sprite.image) {
+            warn!("Asset failed to load: {}", placed_item.asset_path);
+            commands.entity(entity).insert((
+                MissingAsset {
+                    original_path: placed_item.asset_path.clone(),
+                },
+                Sprite {
+                    image: placeholder.handle.clone(),
+                    custom_size: Some(Vec2::splat(64.0)),
+                    ..default()
+                },
+            ));
+        }
+    }
+}
 
-        match load_state {
-            LoadState::Failed(_) => {
-                // Asset failed to load - apply placeholder
-                warn!("Asset failed to load: {}", placed_item.asset_path);
-                commands.entity(entity).insert((
-                    MissingAsset {
-                        original_path: placed_item.asset_path.clone(),
-                    },
-                    Sprite {
-                        image: placeholder.handle.clone(),
-                        custom_size: Some(Vec2::splat(64.0)),
-                        ..default()
-                    },
+/// System that swaps placeholders back to real images once the library contains their
+/// asset again, e.g. after a sync client finishes downloading it or another library opens.
+pub fn restore_found_assets(
+    mut commands: Commands,
+    library: Res<AssetLibrary>,
+    mut last_generation: Local<u64>,
+    asset_server: Res<AssetServer>,
+    query: Query<(Entity, &PlacedItem), With<MissingAsset>>,
+) {
+    if *last_generation == library.generation() {
+        return;
+    }
+    *last_generation = library.generation();
+
+    for (entity, placed_item) in query.iter() {
+        if library.contains(&placed_item.asset_path) {
+            info!("Asset found again: {}", placed_item.asset_path);
+            commands
+                .entity(entity)
+                .remove::<MissingAsset>()
+                .insert(Sprite::from_image(
+                    asset_server.load(library_asset_path(&placed_item.asset_path)),
                 ));
-            }
-            LoadState::NotLoaded => {
-                // Asset not loaded yet - check if file exists on disk
-                // This catches cases where the file was deleted after being referenced
-                let full_path = if placed_item.asset_path.starts_with("library/") {
-                    // Default library path
-                    std::path::PathBuf::from("assets").join(&placed_item.asset_path)
-                } else {
-                    // External library - path is already absolute or relative
-                    std::path::PathBuf::from(&placed_item.asset_path)
-                };
-
-                if !full_path.exists() {
-                    warn!(
-                        "Asset file not found: {} (checked: {:?})",
-                        placed_item.asset_path, full_path
-                    );
-                    commands.entity(entity).insert((
-                        MissingAsset {
-                            original_path: placed_item.asset_path.clone(),
-                        },
-                        Sprite {
-                            image: placeholder.handle.clone(),
-                            custom_size: Some(Vec2::splat(64.0)),
-                            ..default()
-                        },
-                    ));
-                }
-            }
-            LoadState::Loading | LoadState::Loaded => {
-                // Still loading or successfully loaded - no action needed
-            }
         }
     }
 }

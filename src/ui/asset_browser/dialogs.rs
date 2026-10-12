@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::assets::{
-    AssetLibrary, RenameAssetRequest, SelectedAsset, ThumbnailCache, UpdateLibraryMetadataRequest,
+    AssetLibrary, RetargetAssetRequest, SelectedAsset, ThumbnailCache, UpdateLibraryMetadataRequest,
 };
 use crate::config::SetDefaultLibraryRequest;
 
@@ -105,7 +105,7 @@ pub fn render_rename_asset_dialog(
     selected_asset: &mut SelectedAsset,
     library: &mut AssetLibrary,
     thumbnail_cache: &mut ThumbnailCache,
-    rename_events: &mut MessageWriter<RenameAssetRequest>,
+    rename_events: &mut MessageWriter<RetargetAssetRequest>,
 ) {
     if !browser_state.rename_dialog_open {
         return;
@@ -166,14 +166,14 @@ pub fn render_rename_asset_dialog(
                     .find(|a| a.full_path == asset.full_path)
                 {
                     lib_asset.full_path = new_path.clone();
-                    lib_asset.relative_path = new_relative.clone();
+                    lib_asset.path = new_relative.clone();
                     lib_asset.name = browser_state.rename_new_name.trim().to_string();
                 }
 
                 // Update the selected asset
                 if let Some(ref mut sel) = selected_asset.asset {
                     sel.full_path = new_path;
-                    sel.relative_path = new_relative.clone();
+                    sel.path = new_relative.clone();
                     sel.name = browser_state.rename_new_name.trim().to_string();
                 }
 
@@ -182,7 +182,7 @@ pub fn render_rename_asset_dialog(
                 thumbnail_cache.texture_ids.remove(&asset.full_path);
 
                 // Emit message to update currently placed items
-                rename_events.write(RenameAssetRequest {
+                rename_events.write(RetargetAssetRequest {
                     old_path: old_relative,
                     new_path: new_relative,
                 });
@@ -333,7 +333,7 @@ pub fn render_move_asset_dialog(
     selected_asset: &mut SelectedAsset,
     library: &mut AssetLibrary,
     thumbnail_cache: &mut ThumbnailCache,
-    rename_events: &mut MessageWriter<RenameAssetRequest>,
+    rename_events: &mut MessageWriter<RetargetAssetRequest>,
 ) {
     if !browser_state.move_dialog_open {
         return;
@@ -406,14 +406,14 @@ pub fn render_move_asset_dialog(
                     .find(|a| a.full_path == asset.full_path)
                 {
                     lib_asset.full_path = new_path.clone();
-                    lib_asset.relative_path = new_relative.clone();
+                    lib_asset.path = new_relative.clone();
                     lib_asset.folder_path = folder.clone();
                 }
 
                 // Update the selected asset
                 if let Some(ref mut sel) = selected_asset.asset {
                     sel.full_path = new_path;
-                    sel.relative_path = new_relative.clone();
+                    sel.path = new_relative.clone();
                     sel.folder_path = folder.clone();
                 }
 
@@ -427,7 +427,7 @@ pub fn render_move_asset_dialog(
                 thumbnail_cache.texture_ids.remove(&asset.full_path);
 
                 // Emit message to update currently placed items
-                rename_events.write(RenameAssetRequest {
+                rename_events.write(RetargetAssetRequest {
                     old_path: old_relative,
                     new_path: new_relative,
                 });

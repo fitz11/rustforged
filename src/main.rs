@@ -13,7 +13,6 @@ pub mod theme;
 mod ui;
 mod update;
 
-use bevy::asset::UnapprovedPathMode;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
@@ -90,33 +89,26 @@ fn main() {
 
     // Keep the guard alive for the duration of the program
     let _log_guard = setup_logging();
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Rustforged VTT Editor".into(),
-                        resolution: (DEFAULT_WINDOW_WIDTH as u32, DEFAULT_WINDOW_HEIGHT as u32)
-                            .into(),
-                        ..default()
-                    }),
-                    // Disable automatic window closing so we can prompt for unsaved changes
-                    close_when_requested: false,
-                    ..default()
-                })
-                .set(AssetPlugin {
-                    // Allow loading assets from absolute paths (external libraries)
-                    unapproved_path_mode: UnapprovedPathMode::Allow,
-                    ..default()
-                }),
-        )
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(config::ConfigPlugin)
-        .add_plugins(editor::EditorPlugin)
-        .add_plugins(assets::AssetLibraryPlugin)
-        .add_plugins(map::MapPlugin)
-        .add_plugins(session::LiveSessionPlugin)
-        .add_plugins(ui::UiPlugin)
-        .add_plugins(update::UpdateCheckerPlugin)
-        .run();
+    let mut app = App::new();
+    // Library images load through `lib://`, which must exist before AssetPlugin builds
+    assets::register_library_source(&mut app);
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Rustforged VTT Editor".into(),
+            resolution: (DEFAULT_WINDOW_WIDTH as u32, DEFAULT_WINDOW_HEIGHT as u32).into(),
+            ..default()
+        }),
+        // Disable automatic window closing so we can prompt for unsaved changes
+        close_when_requested: false,
+        ..default()
+    }))
+    .add_plugins(EguiPlugin::default())
+    .add_plugins(config::ConfigPlugin)
+    .add_plugins(editor::EditorPlugin)
+    .add_plugins(assets::AssetLibraryPlugin)
+    .add_plugins(map::MapPlugin)
+    .add_plugins(session::LiveSessionPlugin)
+    .add_plugins(ui::UiPlugin)
+    .add_plugins(update::UpdateCheckerPlugin)
+    .run();
 }

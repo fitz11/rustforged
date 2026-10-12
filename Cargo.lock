@@ -5396,6 +5396,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "tracing-appender",
  "tracing-subscriber",
  "ureq",

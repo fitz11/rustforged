@@ -1,15 +1,21 @@
 mod library;
 mod placeholder;
+mod source;
 mod validation;
 pub use library::{
     AssetLibrary, LibraryAsset, THUMBNAIL_SIZE, ThumbnailCache, create_and_open_library,
     get_image_dimensions, load_thumbnail, open_library_directory, save_library_metadata,
 };
+pub use source::{LibraryRoot, library_asset_path, register_library_source};
 
 use bevy::prelude::*;
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use crate::config::{AppConfig, ConfigLoaded};
-use crate::map::PlacedItem;
+use crate::editor::Clipboard;
+use crate::editor::history::CommandHistory;
+use crate::map::{MissingAsset, OpenMaps, PlacedItem};
 
 #[derive(Message)]
 pub struct RefreshAssetLibrary;
@@ -20,9 +26,11 @@ pub struct UpdateLibraryMetadataRequest {
     pub name: String,
 }
 
-/// Message to update placed items after an asset is renamed
+/// Message to point everything that references one library-relative asset path at another:
+/// placed items, background open maps, the clipboard and undo history. Sent after an asset
+/// is renamed or moved in the app.
 #[derive(Message)]
-pub struct RenameAssetRequest {
+pub struct RetargetAssetRequest {
     pub old_path: String,
     pub new_path: String,
 }
@@ -31,12 +39,19 @@ pub struct AssetLibraryPlugin;
 
 impl Plugin for AssetLibraryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetLibrary>()
+        // Share the `lib://` source's root (registered before DefaultPlugins in main) so
+        // opening a library also redirects asset loads.
+        let root = app
+            .world()
+            .get_resource::<LibraryRoot>()
+            .cloned()
+            .unwrap_or_default();
+        app.insert_resource(AssetLibrary::with_root(root))
             .init_resource::<SelectedAsset>()
             .init_resource::<ThumbnailCache>()
             .add_message::<RefreshAssetLibrary>()
             .add_message::<UpdateLibraryMetadataRequest>()
-            .add_message::<RenameAssetRequest>()
+            .add_message::<RetargetAssetRequest>()
             .add_systems(
                 Startup,
                 (
@@ -54,9 +69,12 @@ impl Plugin for AssetLibraryPlugin {
                     library::track_library_changes.run_if(resource_changed::<AssetLibrary>),
                     update_library_metadata_system
                         .run_if(on_message::<UpdateLibraryMetadataRequest>),
-                    rename_asset_system.run_if(on_message::<RenameAssetRequest>),
+                    retarget_asset_system.run_if(on_message::<RetargetAssetRequest>),
+                    reload_placed_items_on_library_switch,
                     // Check for missing assets periodically (runs on entities without MissingAsset marker)
                     validation::detect_missing_assets,
+                    // Bring placeholders back once their file shows up in the library
+                    validation::restore_found_assets,
                     // Draw indicators for missing assets
                     validation::draw_missing_asset_indicators,
                 ),
@@ -77,25 +95,76 @@ fn update_library_metadata_system(
     }
 }
 
-/// System to update placed items when an asset is renamed
-fn rename_asset_system(
-    mut events: MessageReader<RenameAssetRequest>,
-    mut placed_items: Query<&mut PlacedItem>,
+/// System to point every in-memory reference to an asset at its new path
+fn retarget_asset_system(
+    mut commands: Commands,
+    mut events: MessageReader<RetargetAssetRequest>,
+    asset_server: Res<AssetServer>,
+    mut placed_items: Query<(Entity, &mut PlacedItem, &mut Sprite, Has<MissingAsset>)>,
+    mut open_maps: ResMut<OpenMaps>,
+    mut clipboard: ResMut<Clipboard>,
+    mut history: ResMut<CommandHistory>,
 ) {
     for event in events.read() {
         let mut count = 0;
-        for mut item in placed_items.iter_mut() {
-            if item.asset_path == event.old_path {
-                item.asset_path = event.new_path.clone();
-                count += 1;
+        for (entity, mut item, mut sprite, missing) in placed_items.iter_mut() {
+            if item.asset_path != event.old_path {
+                continue;
+            }
+            item.asset_path = event.new_path.clone();
+            if missing {
+                // Drop the placeholder; detect_missing_assets re-checks the new path.
+                commands.entity(entity).remove::<MissingAsset>();
+                *sprite =
+                    Sprite::from_image(asset_server.load(library_asset_path(&item.asset_path)));
+            } else {
+                sprite.image = asset_server.load(library_asset_path(&item.asset_path));
+            }
+            count += 1;
+        }
+
+        // Maps open in the background keep their items in a snapshot, not as entities
+        let active_id = open_maps.active_map_id;
+        for map in open_maps.maps.values_mut() {
+            if Some(map.id) != active_id
+                && let Some(state) = map.saved_state.as_mut()
+            {
+                state.retarget_asset(&event.old_path, &event.new_path);
             }
         }
+        clipboard.retarget_asset(&event.old_path, &event.new_path);
+        history.retarget_asset(&event.old_path, &event.new_path);
+
         if count > 0 {
             info!(
                 "Updated {} placed item(s): {} -> {}",
                 count, event.old_path, event.new_path
             );
         }
+    }
+}
+
+/// `lib://` paths resolve against the open library, so when the user switches libraries
+/// with a map open, reload its images from the new library. Items whose asset isn't there
+/// fail to load and get placeholders.
+fn reload_placed_items_on_library_switch(
+    library: Res<AssetLibrary>,
+    mut last_path: Local<Option<PathBuf>>,
+    asset_server: Res<AssetServer>,
+    placed_items: Query<&PlacedItem>,
+) {
+    if last_path.as_ref() == Some(&library.library_path) {
+        return;
+    }
+    let switched = last_path.is_some();
+    *last_path = Some(library.library_path.clone());
+    if !switched {
+        return;
+    }
+
+    let paths: HashSet<&str> = placed_items.iter().map(|i| i.asset_path.as_str()).collect();
+    for path in paths {
+        asset_server.reload(library_asset_path(path));
     }
 }
 

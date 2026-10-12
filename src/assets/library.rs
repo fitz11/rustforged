@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::RefreshAssetLibrary;
+use super::source::{LibraryRoot, library_asset_path};
 use crate::config::AddRecentLibraryRequest;
 
 /// Size of thumbnail previews in pixels
@@ -30,40 +31,56 @@ impl Default for LibraryMetadata {
 
 #[derive(Resource)]
 pub struct AssetLibrary {
+    /// Root directory of the open library. Change it with [`AssetLibrary::set_library_path`]
+    /// so the `lib://` asset source follows.
     pub library_path: PathBuf,
     pub assets: Vec<LibraryAsset>,
     /// Error message if the last library operation failed
     pub error: Option<String>,
     /// Library metadata (name, etc.)
     pub metadata: LibraryMetadata,
+    /// Root the `lib://` asset source resolves against
+    root: LibraryRoot,
+    /// Bumped on every scan, so systems can react to rescans without relying on
+    /// change detection (the browser UI touches this resource mutably every frame).
+    generation: u64,
 }
 
 impl Default for AssetLibrary {
     fn default() -> Self {
-        Self {
-            library_path: crate::paths::default_library_dir(),
-            assets: Vec::new(),
-            error: None,
-            metadata: LibraryMetadata::default(),
-        }
+        Self::with_root(LibraryRoot::default())
     }
 }
 
 impl AssetLibrary {
-    /// Build a map from Bevy-loadable path → library-relative path (for save-time conversion).
-    pub fn build_bevy_to_relative_map(&self) -> HashMap<&str, String> {
-        self.assets
-            .iter()
-            .map(|a| (a.relative_path.as_str(), a.library_relative_path()))
-            .collect()
+    /// Creates the library resource around the `lib://` source's shared root.
+    pub fn with_root(root: LibraryRoot) -> Self {
+        let library_path = crate::paths::default_library_dir();
+        root.set(library_path.clone());
+        Self {
+            library_path,
+            assets: Vec::new(),
+            error: None,
+            metadata: LibraryMetadata::default(),
+            root,
+            generation: 0,
+        }
     }
 
-    /// Build a map from library-relative path → Bevy-loadable path (for load-time resolution).
-    pub fn build_relative_to_bevy_map(&self) -> HashMap<String, &str> {
-        self.assets
-            .iter()
-            .map(|a| (a.library_relative_path(), a.relative_path.as_str()))
-            .collect()
+    /// Increases every time the asset list is rescanned.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Points the library, and the `lib://` asset source, at a new directory.
+    pub fn set_library_path(&mut self, path: PathBuf) {
+        self.root.set(path.clone());
+        self.library_path = path;
+    }
+
+    /// Returns true if the library currently contains an asset at this library-relative path.
+    pub fn contains(&self, path: &str) -> bool {
+        self.assets.iter().any(|a| a.path == path)
     }
 }
 
@@ -161,8 +178,9 @@ pub fn save_library_metadata(
 #[derive(Debug, Clone)]
 pub struct LibraryAsset {
     pub name: String,
-    /// Full relative path for asset loading (e.g., "library/terrain/stone/floor.png")
-    pub relative_path: String,
+    /// Library-relative path with forward slashes (e.g., "terrain/stone/floor.png").
+    /// This is the asset's identity at runtime and in map files.
+    pub path: String,
     /// Parent folder relative path from library root (e.g., "terrain/stone" or "" for root)
     pub folder_path: String,
     /// File extension (e.g., "png", "jpg")
@@ -172,21 +190,24 @@ pub struct LibraryAsset {
 }
 
 impl LibraryAsset {
-    /// Returns a portable, library-relative path like "terrain/stone/floor.png".
-    /// This is stable regardless of where the library lives on disk.
-    pub fn library_relative_path(&self) -> String {
-        if self.folder_path.is_empty() {
-            format!("{}.{}", self.name, self.extension)
-        } else {
-            format!("{}/{}.{}", self.folder_path, self.name, self.extension)
-        }
+    /// The `lib://` asset path Bevy loads this asset from.
+    pub fn asset_path(&self) -> bevy::asset::AssetPath<'static> {
+        library_asset_path(&self.path)
     }
+}
+
+/// Library-relative path for a file inside the library, with forward slashes.
+pub fn relative_to_library(library_path: &Path, path: &Path) -> Option<String> {
+    path.strip_prefix(library_path)
+        .ok()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
 }
 
 /// Scans assets from a library directory into the AssetLibrary resource
 fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
     library.assets.clear();
     library.error = None;
+    library.generation += 1;
 
     scan_directory_recursive(library, library_path, library_path);
 }
@@ -245,31 +266,14 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
 
         // Calculate folder path relative to library root
         // Normalize path separators to forward slashes for cross-platform consistency
-        let folder_path = current_path
-            .strip_prefix(base_path)
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
-
-        // For assets in the Bevy assets folder, use relative path for asset loading
-        // For external libraries, use absolute path (requires UnapprovedPathMode::Allow)
-        let relative_path =
-            if let Some(assets_relative) = crate::paths::get_bevy_assets_relative_path(base_path) {
-                // Library is inside assets/ folder - construct Bevy-relative path
-                let asset_relative = path
-                    .strip_prefix(base_path)
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| path.to_string_lossy().to_string());
-                format!("{}/{}", assets_relative.display(), asset_relative)
-            } else {
-                // External library - use absolute path
-                path.canonicalize()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| path.to_string_lossy().to_string())
-            };
+        let folder_path = relative_to_library(base_path, current_path).unwrap_or_default();
+        let Some(relative_path) = relative_to_library(base_path, &path) else {
+            continue;
+        };
 
         library.assets.push(LibraryAsset {
             name,
-            relative_path,
+            path: relative_path,
             folder_path,
             extension,
             full_path: path,
@@ -419,7 +423,7 @@ pub fn refresh_asset_library(
 pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Result<(), String> {
     match validate_library_directory(&path) {
         LibraryValidation::Valid => {
-            library.library_path = path.clone();
+            library.set_library_path(path.clone());
             library.metadata = load_library_metadata(&path);
 
             // Ensure metadata file exists (create if missing for migration)
@@ -473,7 +477,7 @@ pub fn create_and_open_library(library: &mut AssetLibrary, path: PathBuf) -> Res
     library.metadata = LibraryMetadata { name };
     save_library_metadata(&path, &library.metadata)?;
 
-    library.library_path = path.clone();
+    library.set_library_path(path.clone());
     scan_library_at_path(library, &path);
     library.error = None;
     info!(

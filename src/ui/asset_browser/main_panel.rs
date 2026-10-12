@@ -6,7 +6,7 @@ use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 
 use crate::assets::{
-    AssetLibrary, LibraryAsset, RefreshAssetLibrary, RenameAssetRequest, SelectedAsset,
+    AssetLibrary, LibraryAsset, RefreshAssetLibrary, RetargetAssetRequest, SelectedAsset,
     THUMBNAIL_SIZE, ThumbnailCache, UpdateLibraryMetadataRequest, create_and_open_library,
     get_image_dimensions, open_library_directory,
 };
@@ -35,7 +35,7 @@ pub fn asset_browser_ui(
     mut thumbnail_cache: ResMut<ThumbnailCache>,
     config: Res<AppConfig>,
     mut set_default_events: MessageWriter<SetDefaultLibraryRequest>,
-    mut rename_events: MessageWriter<RenameAssetRequest>,
+    mut rename_events: MessageWriter<RetargetAssetRequest>,
     mut library_metadata_events: MessageWriter<UpdateLibraryMetadataRequest>,
     mut refresh_events: MessageWriter<RefreshAssetLibrary>,
     mut map_res: MapResources,
@@ -744,7 +744,7 @@ fn render_asset_row(
     let is_selected = selected_asset
         .asset
         .as_ref()
-        .map(|a| a.relative_path == asset.relative_path)
+        .map(|a| a.path == asset.path)
         .unwrap_or(false);
 
     ui.horizontal(|ui| {

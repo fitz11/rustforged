@@ -3,6 +3,7 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
+use crate::assets::library_asset_path;
 use crate::map::{Layer, PlacedItem};
 
 use super::super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
@@ -14,7 +15,7 @@ pub fn spawn_placed_item(
     asset_server: &AssetServer,
     data: &PlacedItemData,
 ) -> Entity {
-    let texture_handle: Handle<Image> = asset_server.load(&data.asset_path);
+    let texture_handle: Handle<Image> = asset_server.load(library_asset_path(&data.asset_path));
 
     // Match placement: player-visible layers render on layer 0, editor-only
     // layers (GM, FogOfWar) on layer 1. Using a fixed [0, 1] here would leak

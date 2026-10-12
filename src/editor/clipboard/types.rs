@@ -42,6 +42,17 @@ pub struct Clipboard {
 }
 
 impl Clipboard {
+    /// Point copied placed items at a different asset path (after a rename, move or relink).
+    pub fn retarget_asset(&mut self, old_path: &str, new_path: &str) {
+        for item in self
+            .placed_items
+            .iter_mut()
+            .filter(|i| i.saved.asset_path == old_path)
+        {
+            item.saved.asset_path = new_path.to_string();
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.placed_items.is_empty()
             && self.paths.is_empty()

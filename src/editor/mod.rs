@@ -13,6 +13,7 @@ pub mod tools;
 
 pub use annotations::{AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation};
 pub use camera::EditorCamera;
+pub use clipboard::Clipboard;
 pub use conditions::{no_dialog_open, session_is_active, tool_is};
 pub use grid::GridSettings;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};

@@ -4,6 +4,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
+use crate::assets::library_asset_path;
 use crate::map::{Layer, MapData, PlacedItem, Selected};
 
 use super::super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
@@ -75,7 +76,8 @@ pub fn handle_paste(
         let new_pos = paste_pos + clip_item.offset;
         let z = clip_item.saved.layer.z_base() + clip_item.saved.z_index as f32;
 
-        let texture: Handle<Image> = asset_server.load(&clip_item.saved.asset_path);
+        let texture: Handle<Image> =
+            asset_server.load(library_asset_path(&clip_item.saved.asset_path));
 
         // Items on non-player-visible layers go to render layer 1 (editor-only)
         let render_layer = if clip_item.saved.layer.is_player_visible() {

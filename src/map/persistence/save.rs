@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
 
-use crate::assets::AssetLibrary;
 use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{
@@ -31,7 +30,6 @@ pub fn save_map_system(
     lines: Query<&DrawnLine>,
     texts: Query<(&Transform, &TextAnnotation)>,
     mut async_op: ResMut<AsyncMapOperation>,
-    asset_library: Res<AssetLibrary>,
 ) {
     for event in events.read() {
         // Don't start a new save if one is already in progress
@@ -40,19 +38,11 @@ pub fn save_map_system(
             continue;
         }
 
-        let mut items: Vec<SavedPlacedItem> = placed_items
+        // Placed items already hold library-relative paths, which is what map files store
+        let items: Vec<SavedPlacedItem> = placed_items
             .iter()
             .map(|(item, transform)| SavedPlacedItem::from_entity(item, transform))
             .collect();
-
-        // Convert asset paths from Bevy-loadable to library-relative for portability
-        let bevy_to_relative = asset_library.build_bevy_to_relative_map();
-        for item in &mut items {
-            if let Some(relative) = bevy_to_relative.get(item.asset_path.as_str()) {
-                item.asset_path = relative.clone();
-            }
-            // If no mapping found (e.g., deleted asset), keep the original path as fallback
-        }
 
         // Collect annotations
         let saved_paths: Vec<SavedPath> = paths

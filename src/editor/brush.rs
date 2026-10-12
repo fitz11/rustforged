@@ -116,7 +116,7 @@ pub fn handle_brush(
     let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
 
     // Load the texture handle to get dimensions
-    let texture: Handle<Image> = asset_server.load(&asset.relative_path);
+    let texture: Handle<Image> = asset_server.load(asset.asset_path());
 
     // Get image dimensions (needed for both bounds checking and scale calculation)
     let (img_width, img_height) = if let Some(image) = images.get(&texture) {
@@ -179,7 +179,7 @@ pub fn handle_brush(
             Sprite::from_image(texture),
             transform,
             PlacedItem {
-                asset_path: asset.relative_path.clone(),
+                asset_path: asset.path.clone(),
                 layer,
                 z_index: 0,
             },
@@ -190,7 +190,7 @@ pub fn handle_brush(
     // Accumulate for the current stroke; recorded as one undo step on release.
     brush_state.stroke_items.push(PlacedItemData {
         entity,
-        asset_path: asset.relative_path.clone(),
+        asset_path: asset.path.clone(),
         layer,
         z_index: 0,
         transform: TransformData::from(&transform),

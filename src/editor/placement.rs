@@ -55,7 +55,7 @@ pub fn handle_placement(
     let layer = selected_layer.layer;
     let z = layer.z_base();
 
-    let texture: Handle<Image> = asset_server.load(&asset.relative_path);
+    let texture: Handle<Image> = asset_server.load(asset.asset_path());
 
     // Items on non-player-visible layers (GM, FogOfWar) go to render layer 1 (editor-only)
     let render_layer = if layer.is_player_visible() {
@@ -70,7 +70,7 @@ pub fn handle_placement(
             Sprite::from_image(texture),
             transform,
             PlacedItem {
-                asset_path: asset.relative_path.clone(),
+                asset_path: asset.path.clone(),
                 layer,
                 z_index: 0,
             },
@@ -82,7 +82,7 @@ pub fn handle_placement(
         command: EditorCommand::PlaceItems {
             items: vec![PlacedItemData {
                 entity,
-                asset_path: asset.relative_path.clone(),
+                asset_path: asset.path.clone(),
                 layer,
                 z_index: 0,
                 transform: TransformData::from(&transform),

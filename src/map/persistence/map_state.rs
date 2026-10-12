@@ -3,6 +3,7 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
+use crate::assets::library_asset_path;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{
     AssetManifest, FogOfWarData, Layer, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
@@ -203,7 +204,8 @@ pub fn switch_map_system(
 
                 // Spawn placed items
                 for item in &saved_state.placed_items {
-                    let texture: Handle<Image> = asset_server.load(&item.asset_path);
+                    let texture: Handle<Image> =
+                        asset_server.load(library_asset_path(&item.asset_path));
                     let z_index = item.z_index.clamp(0, Layer::max_z_index());
                     let z = item.layer.z_base() + z_index as f32;
 

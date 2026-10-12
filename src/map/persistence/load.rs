@@ -4,9 +4,8 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
-use std::collections::{HashMap, HashSet};
 
-use crate::assets::AssetLibrary;
+use crate::assets::{AssetLibrary, library_asset_path};
 use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{FogOfWarData, Layer, MapData, PlacedItem, SavedMap};
@@ -116,49 +115,18 @@ pub fn poll_load_tasks(
                 continue;
             };
 
-            // Build lookup maps for multi-strategy path resolution
-            let relative_to_bevy = asset_library.build_relative_to_bevy_map();
-            let available_bevy_paths: HashSet<&str> = asset_library
+            // Every referenced asset must exist in the open library
+            let mut saved_map = saved_map;
+            for item in &mut saved_map.placed_items {
+                item.asset_path = item.asset_path.replace('\\', "/");
+            }
+            let missing_assets: Vec<String> = saved_map
+                .asset_manifest
                 .assets
                 .iter()
-                .map(|a| a.relative_path.as_str())
+                .map(|path| path.replace('\\', "/"))
+                .filter(|path| !asset_library.contains(path))
                 .collect();
-
-            // Resolve each manifest path using 3 strategies:
-            // 1. Library-relative match (new format)
-            // 2. Exact Bevy-path match (old format, same location)
-            // 3. Suffix match (old format, moved library)
-            let mut path_mapping: HashMap<String, String> = HashMap::new();
-            let mut missing_assets: Vec<String> = Vec::new();
-
-            for saved_path in &saved_map.asset_manifest.assets {
-                if let Some(&bevy_path) = relative_to_bevy.get(saved_path.as_str()) {
-                    // Strategy 1: library-relative match
-                    path_mapping.insert(saved_path.clone(), bevy_path.to_string());
-                } else if available_bevy_paths.contains(saved_path.as_str()) {
-                    // Strategy 2: exact Bevy-path match (old format, library hasn't moved)
-                    path_mapping.insert(saved_path.clone(), saved_path.clone());
-                } else {
-                    // Strategy 3: suffix match (old format, library has moved or cross-platform)
-                    // Normalize backslashes for cross-platform matching (Windows → Mac/Linux)
-                    let normalized = saved_path.replace('\\', "/");
-                    let mut matched = false;
-                    for (rel_path, &bevy_path) in &relative_to_bevy {
-                        // Check that the suffix match falls on a path separator boundary
-                        if normalized.ends_with(rel_path.as_str()) {
-                            let prefix_len = normalized.len() - rel_path.len();
-                            if prefix_len == 0 || normalized.as_bytes()[prefix_len - 1] == b'/' {
-                                path_mapping.insert(saved_path.clone(), bevy_path.to_string());
-                                matched = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !matched {
-                        missing_assets.push(saved_path.clone());
-                    }
-                }
-            }
 
             if !missing_assets.is_empty() {
                 // Show warning dialog with missing assets
@@ -173,14 +141,6 @@ pub fn poll_load_tasks(
                 );
                 commands.entity(entity).despawn();
                 continue;
-            }
-
-            // Rewrite placed item paths to current Bevy-loadable paths
-            let mut saved_map = saved_map;
-            for item in &mut saved_map.placed_items {
-                if let Some(bevy_path) = path_mapping.get(&item.asset_path) {
-                    item.asset_path = bevy_path.clone();
-                }
             }
 
             // Clear existing items
@@ -201,7 +161,8 @@ pub fn poll_load_tasks(
 
             // Spawn placed items
             for item in saved_map.placed_items {
-                let texture: Handle<Image> = asset_server.load(&item.asset_path);
+                let texture: Handle<Image> =
+                    asset_server.load(library_asset_path(&item.asset_path));
                 // Clamp z_index to valid range (for migration from old maps with larger ranges)
                 let z_index = item.z_index.clamp(0, Layer::max_z_index());
                 let z = item.layer.z_base() + z_index as f32;
