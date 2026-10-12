@@ -96,6 +96,7 @@ impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(Update, ToolInput.run_if(conditions::viewport_not_grabbed))
             .init_resource::<tools::CurrentTool>()
+            .init_resource::<params::MapExtent>()
             .init_resource::<tools::SelectedLayer>()
             .init_resource::<GridSettings>()
             .init_resource::<selection::DragState>()
@@ -153,6 +154,7 @@ impl Plugin for EditorPlugin {
                         .run_if(tool_is(EditorTool::Brush).and_then(no_dialog_open))
                         .in_set(ToolInput),
                     update_layer_visibility,
+                    params::update_map_extent,
                 ),
             )
             .add_systems(

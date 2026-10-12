@@ -40,7 +40,7 @@ pub fn layers_panel_ui(
     ),
     mut unfinished_edit: Local<Option<MapObject>>,
     mut fog_state: ResMut<FogState>,
-    map_extent: MapExtent,
+    map_extent: Res<MapExtent>,
 ) -> Result {
     let mut properties = PropertiesOutput::default();
 
@@ -61,7 +61,7 @@ pub fn layers_panel_ui(
                 ui,
                 map_data.bypass_change_detection(),
                 fog_data.bypass_change_detection(),
-                map_extent.bounds(),
+                map_extent.0,
             );
             if layers_changed || fog_change.map {
                 map_data.set_changed();

@@ -93,14 +93,14 @@ pub fn monitor_selection_dialog(
     mut session_state: ResMut<LiveSessionState>,
     mut map_data: ResMut<MapData>,
     mut dirty_state: ResMut<MapDirtyState>,
-    map_extent: MapExtent,
+    map_extent: Res<MapExtent>,
 ) -> Result {
     if !dialog.is_open {
         return Ok(());
     }
 
     let mut close_dialog = false;
-    let map_center = map_extent.bounds().map(|(min, max)| (min + max) / 2.0);
+    let map_center = map_extent.0.map(|(min, max)| (min + max) / 2.0);
 
     egui::Window::new("Start Live Session")
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])

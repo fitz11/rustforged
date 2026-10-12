@@ -189,23 +189,23 @@ impl SelectedObjects<'_, '_> {
     }
 }
 
-/// The area the map's placed items cover, for revealing all its fog or framing it
-#[derive(SystemParam)]
-pub struct MapExtent<'w, 's> {
-    items: Query<'w, 's, (&'static Transform, &'static Sprite), With<PlacedItem>>,
-    images: Res<'w, Assets<Image>>,
-}
+/// The area the map's placed items cover (min, max), for revealing all its fog or framing
+/// it; None for an empty map. Kept up to date by [`update_map_extent`], so systems that
+/// also edit items' transforms (the Properties panel) can read it without a query conflict.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
+pub struct MapExtent(pub Option<(Vec2, Vec2)>);
 
-impl MapExtent<'_, '_> {
-    /// The box (min, max) around every placed item, or None for an empty map
-    pub fn bounds(&self) -> Option<(Vec2, Vec2)> {
-        self.items
-            .iter()
-            .map(|(transform, sprite)| {
-                super::selection::item_world_bounds(transform, sprite, &self.images)
-            })
-            .reduce(|(min_a, max_a), (min_b, max_b)| (min_a.min(min_b), max_a.max(max_b)))
-    }
+/// Recomputes [`MapExtent`] from the placed items.
+pub fn update_map_extent(
+    items: Query<(&Transform, &Sprite), With<PlacedItem>>,
+    images: Res<Assets<Image>>,
+    mut extent: ResMut<MapExtent>,
+) {
+    let bounds = items
+        .iter()
+        .map(|(transform, sprite)| super::selection::item_world_bounds(transform, sprite, &images))
+        .reduce(|(min_a, max_a), (min_b, max_b)| (min_a.min(min_b), max_a.max(max_b)));
+    extent.set_if_neq(MapExtent(bounds));
 }
 
 /// Check if the cursor is over egui UI (docked panels, windows, or areas)
