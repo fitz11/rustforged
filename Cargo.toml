@@ -14,6 +14,7 @@ default = []
 dev = ["bevy/dynamic_linking"]
 
 [dependencies]
+# Engine: rendering, ECS, windowing
 bevy = { version = "0.20", default-features = false, features = [
   "2d",
   "jpeg",
@@ -22,7 +23,9 @@ bevy = { version = "0.20", default-features = false, features = [
   "tiff",
   "gif",
 ] }
+# The panels and dialogs
 bevy_egui = "0.43"
+# Image sizes, thumbnails and the fog texture
 image = { version = "0.25", default-features = false, features = [
   "png",
   "jpeg",
@@ -31,25 +34,42 @@ image = { version = "0.25", default-features = false, features = [
   "bmp",
   "tiff",
 ] }
+# Map, config and library files
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Native file dialogs
 rfd = "0.15"
+# Update checks and downloads
 ureq = { version = "2", features = ["json"] }
 semver = "1"
+# Opening the release page in the browser
 open = "5"
+# Polling background tasks
 futures-lite = "2"
+# Library export and import
 zip = { version = "7", default-features = false, features = ["deflate"] }
+# Logging (dev builds)
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+# Timestamps in logs, recovery files and save conflicts
 chrono = "0.4"
+# Platform config, data and cache folders
 dirs = "6"
+# Keeping the displays awake during a session
 keepawake = "0.6"
+# Content hashes: asset fingerprints for relinking, and noticing maps changed elsewhere
 blake3 = "1"
+# Verifying downloaded installers
 sha2 = "0.10"
+# Matching file names the same way on every platform
 unicode-normalization = "0.1"
+# Map, library and autosave-session ids
 uuid = { version = "1", features = ["v4"] }
+# Saying which computer last saved a map
 gethostname = "1"
+# Noticing library changes on disk
 notify-debouncer-full = "0.7"
+# Atomic writes
 tempfile = "3"
 
 # Enable a small amount of optimization in the dev profile.

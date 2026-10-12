@@ -8,14 +8,17 @@ A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.20 and bevy_egui 0.
 
 ## Features
 
-- **Layer-based map editing** - Background, Terrain, Doodad, Token, GM, Annotation, and Fog of War layers
-- **Asset library management** - Create, open, and organize custom asset libraries
-- **Drawing tools** - Freehand drawing and straight line annotations
-- **Undo/redo** - Full command history for placement, movement, deletion, and annotations
-- **Fog of War** - Reveal/hide map areas for players
+- **Layer-based map editing** - Background, Terrain, Doodad, Token, GM, Annotation, and Fog of War layers, each lockable and hideable
+- **Asset library management** - Create, open, and organize asset libraries; drag images in from the desktop
+- **Battlemaps** - Drop a battlemap image to place it fitted to the grid, or fit any image to a number of cells
+- **Notes and drawing** - Freehand drawing, straight lines, and text notes, seen only by the GM
+- **Measuring** - A ruler, spell templates (circle, cone, square, line), and pings, which players see too
+- **Undo/redo** - Every map edit: placing, moving, properties, deleting, notes, and fog
+- **Fog of War** - Reveal or cover with a brush or a rectangle of cells
 - **Grid system** - 70px grid with snap-to-grid placement (hold Ctrl for free placement)
-- **Live session mode** - Display player view on a secondary monitor with configurable viewport
-- **Map persistence** - Save and load maps as JSON files
+- **Live session mode** - The player view on a second monitor: frame it with the viewport, freeze it while you edit, black it out, or show it at table scale (1 cell = 1 inch)
+- **Scenes** - Keep several maps open and switch between them mid-session
+- **Map files** - Saved as JSON; unsaved changes are autosaved and offered back after a crash, and a save warns before overwriting a copy changed elsewhere (by a sync service, say)
 
 ## Downloads
 
@@ -39,7 +42,7 @@ cd rustforged
 cargo run
 ```
 
-**Linux dependencies:** `libasound2-dev libudev-dev pkg-config` (Debian/Ubuntu)
+**Linux dependencies:** `pkg-config libudev-dev libwayland-dev libxkbcommon-dev` (Debian/Ubuntu)
 
 ### Linux Tarball
 
@@ -57,8 +60,8 @@ The archive contains the `rustforged` binary plus the default `assets/` library 
 
 If the binary fails to start with a missing-library error (`error while loading shared libraries: ...`), install the runtime libraries for your distro:
 
-- **Ubuntu / Debian:** `sudo apt install libasound2 libudev1 libxkbcommon0 libwayland-client0`
-- **Arch:** `sudo pacman -S alsa-lib systemd-libs libxkbcommon wayland`
+- **Ubuntu / Debian:** `sudo apt install libudev1 libxkbcommon0 libwayland-client0`
+- **Arch:** `sudo pacman -S systemd-libs libxkbcommon wayland`
 
 (Most desktop installs already have these.) If you hit a glibc version mismatch on a rolling distro like Arch, build from source instead.
 
@@ -168,9 +171,9 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 
 ## Asset Library
 
-Assets are loaded from `assets/library/` by default with subdirectories: `unsorted/`, `terrain/`, `doodads/`, `tokens/`.
+The default library is the `library/` folder next to the config file (`~/.config/rustforged/library/` on Linux; `./library/` when run with `cargo run`), created with `terrain/`, `doodads/` and `tokens/` folders.
 
-You can open or create custom asset libraries via the left panel. Maps are saved to `<library>/maps/`.
+You can open or create other asset libraries via the left panel, and drag images onto the map from the desktop to copy them in. Maps are saved to `<library>/maps/`. A library can live in a synced folder (Dropbox, OneDrive, iCloud): caches are kept outside it, and saving warns before overwriting a map that was changed on another computer.
 
 **Supported formats:** PNG, JPG, JPEG, WebP, GIF, BMP, TIFF
 
@@ -181,7 +184,11 @@ You can open or create custom asset libraries via the left panel. Maps are saved
 3. Drag the viewport indicator to frame the player view
 4. Resize using corner handles (maintains aspect ratio)
 
-The player window shows a fullscreen view without annotations or viewport indicator.
+The player window shows a fullscreen view without the GM layer, notes, or viewport indicator. Rulers, spell templates and pings from the Measure tool show there too.
+
+**Blackout** (Ctrl+B, or the switch in the Live Session panel) shows players a black screen, for example while you switch scenes. To switch scenes, open another map with the **+** next to it in the Maps list, then pick it from the open maps; each map remembers where the player view was.
+
+**Table scale:** with a screen laid flat on the table, enter its width in inches in the Live Session panel and click **1 cell = 1 inch**, so miniatures fit the grid. The width is remembered for each monitor.
 
 ### Freezing the player view
 
@@ -191,23 +198,7 @@ By default the player view also holds still while frozen, so you can frame the n
 
 ## Dependencies
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| bevy | 0.20 | Game engine (rendering, ECS, windowing) |
-| bevy_egui | 0.43 | Immediate-mode UI integration |
-| image | 0.25 | Image metadata reading |
-| serde / serde_json | 1.x | JSON serialization |
-| rfd | 0.15 | Native file dialogs |
-| ureq | 2.x | HTTP client for update checking |
-| semver | 1.x | Version parsing |
-| open | 5.x | Open URLs in browser |
-| futures-lite | 2.x | Async utilities |
-| zip | 7.x | Archive extraction for updates |
-| keepawake | 0.6 | Prevent display sleep during live sessions |
-| tracing-subscriber | 0.3 | Logging framework |
-| tracing-appender | 0.2 | Log file output |
-| chrono | 0.4 | Timestamps in logs |
-| dirs | 6.x | Platform-specific directories |
+Built on [Bevy](https://bevyengine.org) 0.20 (rendering, ECS, windowing) and [bevy_egui](https://github.com/vladbat00/bevy_egui) 0.43 (the panels and dialogs). [`Cargo.toml`](Cargo.toml) lists the rest, with what each is for.
 
 ## License
 
