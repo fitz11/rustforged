@@ -11,7 +11,10 @@
 //! - [`asset_ops`] - Asset file operations (rename, move)
 //! - [`thumbnails`] - Thumbnail loading and registration system
 //! - [`dialogs`] - Dialog windows (rename, move, import errors)
-//! - [`main_panel`] - Main asset browser UI system
+//! - [`main_panel`] - Main asset browser UI system, laying out the sections below
+//! - [`library_section`] - Open, create, refresh, export and import libraries
+//! - [`maps_section`] - Open maps, New/Open/Save, and the library's map list
+//! - [`assets_section`] - Folders, the asset list and the selected asset
 //!
 //! ## Key Types
 //!
@@ -25,10 +28,13 @@
 //! - [`load_and_register_thumbnails`]: Thumbnail loading system
 
 mod asset_ops;
+mod assets_section;
 mod dialogs;
 mod helpers;
 mod library_ops;
+mod library_section;
 mod main_panel;
+mod maps_section;
 mod state;
 mod thumbnails;
 
