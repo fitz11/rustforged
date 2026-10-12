@@ -563,3 +563,89 @@ fn test_save_result_goes_to_the_map_that_was_saved() {
     assert!(app.world().resource::<CurrentMapFile>().path.is_none());
     assert!(app.world().resource::<MapDirtyState>().is_dirty);
 }
+
+fn switch_app() -> App {
+    use super::messages::{MapReplaced, SwitchMapRequest};
+    use super::resources::{CurrentMapFile, MapDirtyState, OpenMaps};
+
+    let mut app = App::new();
+    crate::assets::register_library_source(&mut app);
+    app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+        .init_asset::<Image>()
+        .init_resource::<MapData>()
+        .init_resource::<crate::map::FogOfWarData>()
+        .init_resource::<OpenMaps>()
+        .init_resource::<CurrentMapFile>()
+        .init_resource::<MapDirtyState>()
+        .init_resource::<crate::session::LiveSessionState>()
+        .add_message::<SwitchMapRequest>()
+        .add_message::<MapReplaced>()
+        .add_systems(Update, super::map_state::switch_map_system);
+    app
+}
+
+fn item_paths(app: &mut App) -> Vec<String> {
+    let mut paths: Vec<String> = app
+        .world_mut()
+        .query::<&crate::map::PlacedItem>()
+        .iter(app.world())
+        .map(|i| i.asset_path.clone())
+        .collect();
+    paths.sort();
+    paths
+}
+
+#[test]
+fn test_switching_scenes_keeps_the_map_left_behind() {
+    use super::messages::SwitchMapRequest;
+    use super::resources::{MapDirtyState, OpenMaps};
+
+    let mut app = switch_app();
+    // Map 0 is being edited, with unsaved changes; map 7 is open in the background
+    let assets = app.world().resource::<AssetServer>().clone();
+    app.world_mut().spawn(
+        crate::map::PlacedItem {
+            asset_path: "tokens/orc.png".to_string(),
+            layer: Layer::Token,
+            z_index: 0,
+        }
+        .bundle(&assets, Transform::default()),
+    );
+    app.world_mut().resource_mut::<MapDirtyState>().mark_dirty();
+    {
+        let mut open_maps = app.world_mut().resource_mut::<OpenMaps>();
+        let mut other = open_maps.active_map().unwrap().clone();
+        other.id = 7;
+        other.name = "Tavern".to_string();
+        other.saved_state = Some(map_with(vec![item("props/bar.png")], &[]));
+        open_maps.maps.insert(7, other);
+    }
+
+    app.world_mut().write_message(SwitchMapRequest {
+        map_id: 7,
+        close_current: false,
+    });
+    app.update();
+    app.update();
+
+    assert_eq!(item_paths(&mut app), vec!["props/bar.png".to_string()]);
+    let open_maps = app.world().resource::<OpenMaps>();
+    assert_eq!(open_maps.active_map_id, Some(7));
+    let left = &open_maps.maps[&0];
+    assert!(left.stashed_dirty);
+    assert_eq!(left.saved_state.as_ref().unwrap().placed_items.len(), 1);
+    assert!(!app.world().resource::<MapDirtyState>().is_dirty);
+
+    // Back to map 0, closing the tavern
+    app.world_mut().write_message(SwitchMapRequest {
+        map_id: 0,
+        close_current: true,
+    });
+    app.update();
+    app.update();
+
+    assert_eq!(item_paths(&mut app), vec!["tokens/orc.png".to_string()]);
+    let open_maps = app.world().resource::<OpenMaps>();
+    assert!(!open_maps.maps.contains_key(&7));
+    assert!(app.world().resource::<MapDirtyState>().is_dirty);
+}

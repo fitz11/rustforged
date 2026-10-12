@@ -23,6 +23,7 @@ pub(super) fn render_maps_section(
 
     // Show open maps with unsaved indicators
     let mut map_to_switch: Option<u64> = None;
+    let mut map_to_close: Option<u64> = None;
 
     if !map_res.open_maps.maps.is_empty() {
         ui.label(egui::RichText::new("Open:").size(12.0).weak());
@@ -72,6 +73,16 @@ pub(super) fn render_maps_section(
                 } else if map.path.is_none() {
                     ui.label(egui::RichText::new("(new)").size(10.0).weak().italics());
                 }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .small_button("×")
+                        .on_hover_text("Close this map (asks about unsaved changes)")
+                        .clicked()
+                    {
+                        map_to_close = Some(map.id);
+                    }
+                });
             });
         }
         ui.add_space(4.0);
@@ -112,10 +123,15 @@ pub(super) fn render_maps_section(
         }
     }
 
+    if let Some(id) = map_to_close {
+        map_res.file_actions.write(MapFileAction::Close(id));
+    }
+
     if let Some(target_id) = map_to_switch {
-        map_res
-            .switch_events
-            .write(SwitchMapRequest { map_id: target_id });
+        map_res.switch_events.write(SwitchMapRequest {
+            map_id: target_id,
+            close_current: false,
+        });
     }
 
     ui.horizontal(|ui| {
@@ -280,6 +296,22 @@ pub(super) fn render_map_row(
                 .file_actions
                 .write(MapFileAction::Open(path.clone()));
         }
+
+        if !is_current {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .small_button("+")
+                    .on_hover_text(
+                        "Open alongside the map you're editing, as another scene to switch to",
+                    )
+                    .clicked()
+                {
+                    map_res
+                        .file_actions
+                        .write(MapFileAction::OpenAlongside(path.clone()));
+                }
+            });
+        }
     });
 }
 
@@ -362,9 +394,9 @@ pub(super) fn render_disk_change_notice(ui: &mut egui::Ui, map_res: &mut MapReso
                     reload.on_hover_text("Open the version on disk")
                 };
                 if reload.clicked() {
-                    map_res.load_events.write(crate::map::LoadMapRequest {
-                        path: notice.path.clone(),
-                    });
+                    map_res
+                        .load_events
+                        .write(crate::map::LoadMapRequest::replace(notice.path.clone()));
                 }
             }
             if ui

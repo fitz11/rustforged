@@ -60,6 +60,27 @@ pub enum SaveOutcome {
 #[derive(Message, Clone)]
 pub struct LoadMapRequest {
     pub path: PathBuf,
+    /// Keep the map being edited open in the background (another scene) instead of
+    /// replacing it
+    pub alongside: bool,
+}
+
+impl LoadMapRequest {
+    /// Open `path` in place of the map being edited.
+    pub fn replace(path: PathBuf) -> Self {
+        Self {
+            path,
+            alongside: false,
+        }
+    }
+
+    /// Open `path` too, keeping the map being edited open in the background.
+    pub fn alongside(path: PathBuf) -> Self {
+        Self {
+            path,
+            alongside: true,
+        }
+    }
 }
 
 #[derive(Message)]
@@ -75,4 +96,6 @@ pub struct MapReplaced;
 #[derive(Message)]
 pub struct SwitchMapRequest {
     pub map_id: u64,
+    /// Close the map being switched away from instead of keeping it open
+    pub close_current: bool,
 }

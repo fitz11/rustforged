@@ -66,7 +66,7 @@ pub use dirty::{
 };
 pub use disk_changes::detect_open_map_changes;
 pub use load::{load_map_system, poll_load_tasks};
-pub use map_state::{new_map_system, switch_map_system};
+pub use map_state::{new_map_system, remember_player_view, switch_map_system};
 pub use recovery::{
     Autosave, RecoverMapRequest, RecoveryOffer, autosave_recovery_file, find_recovery_files,
     recover_map_system, remove_recovery_files_on_exit, remove_unneeded_recovery_files,

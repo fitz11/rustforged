@@ -132,7 +132,10 @@ impl Plugin for UiPlugin {
                     file_drop::handle_file_drops.run_if(crate::editor::no_dialog_open),
                     file_drop::place_dropped_images,
                     map_actions::poll_open_map_picker,
-                    map_actions::handle_map_file_actions,
+                    // After switching maps: an action retried after a switch (to ask about
+                    // another open map's changes) sees that map as the active one
+                    map_actions::handle_map_file_actions
+                        .after(crate::map::persistence::switch_map_system),
                     map_actions::run_action_after_save,
                 ),
             )

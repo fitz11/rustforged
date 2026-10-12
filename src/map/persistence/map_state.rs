@@ -11,6 +11,8 @@ use crate::map::{
 use super::helpers::{array_to_color, color_to_array};
 use super::messages::{MapReplaced, NewMapRequest, SwitchMapRequest};
 use super::resources::{CurrentMapFile, MapDirtyState, OpenMap, OpenMaps};
+use crate::session::LiveSessionState;
+use bevy::ecs::system::SystemParam;
 
 #[allow(clippy::too_many_arguments)]
 pub fn new_map_system(
@@ -73,11 +75,55 @@ pub fn new_map_system(
                 map_id: None,
                 disk_hash: None,
                 asset_fingerprints: Default::default(),
+                player_view: None,
             },
         );
         open_maps.active_map_id = Some(new_id);
 
         info!("Created new map");
+    }
+}
+
+/// Every placed item and annotation entity of the map being edited
+pub(super) type MapEntities<'w, 's> =
+    Query<'w, 's, Entity, Or<(With<PlacedItem>, With<AnnotationMarker>)>>;
+
+/// The map's items and annotations, for capturing the map being edited as a [`SavedMap`]
+#[derive(SystemParam)]
+pub struct MapContents<'w, 's> {
+    items: Query<'w, 's, (&'static PlacedItem, &'static Transform)>,
+    paths: Query<'w, 's, &'static DrawnPath>,
+    lines: Query<'w, 's, &'static DrawnLine>,
+    texts: Query<'w, 's, (&'static Transform, &'static TextAnnotation)>,
+}
+
+impl MapContents<'_, '_> {
+    /// The map being edited, as it would be saved
+    pub fn capture(&self, map_data: &MapData, fog_data: &FogOfWarData) -> SavedMap {
+        capture_current_map_state(
+            map_data,
+            fog_data,
+            &self.items,
+            &self.paths,
+            &self.lines,
+            &self.texts,
+        )
+    }
+}
+
+/// Keeps the map being edited (and whether it has unsaved changes) in its open-maps
+/// entry, so it can be put in the background while another map is shown.
+pub(super) fn stash_active_map(
+    open_maps: &mut OpenMaps,
+    contents: &MapContents,
+    map_data: &MapData,
+    fog_data: &FogOfWarData,
+    dirty_state: &MapDirtyState,
+) {
+    let state = contents.capture(map_data, fog_data);
+    if let Some(active) = open_maps.active_map_mut() {
+        active.saved_state = Some(state);
+        active.stashed_dirty = dirty_state.is_dirty;
     }
 }
 
@@ -198,7 +244,8 @@ pub(super) fn spawn_map_contents(
     }
 }
 
-/// System to handle switching between open maps
+/// System to handle switching between open maps (scenes), and closing the one being
+/// left when asked
 #[allow(clippy::too_many_arguments)]
 pub fn switch_map_system(
     mut commands: Commands,
@@ -209,12 +256,9 @@ pub fn switch_map_system(
     mut current_map_file: ResMut<CurrentMapFile>,
     mut dirty_state: ResMut<MapDirtyState>,
     asset_server: Res<AssetServer>,
-    placed_items_query: Query<(&PlacedItem, &Transform)>,
-    existing_items: Query<Entity, With<PlacedItem>>,
-    existing_annotations: Query<Entity, With<AnnotationMarker>>,
-    paths: Query<&DrawnPath>,
-    lines: Query<&DrawnLine>,
-    texts: Query<(&Transform, &TextAnnotation)>,
+    contents: MapContents,
+    existing: MapEntities,
+    mut session_state: ResMut<LiveSessionState>,
     mut replaced: MessageWriter<MapReplaced>,
 ) {
     for event in events.read() {
@@ -224,67 +268,75 @@ pub fn switch_map_system(
         if open_maps.active_map_id == Some(target_id) {
             continue;
         }
+        let Some(target_map) = open_maps.maps.get(&target_id).cloned() else {
+            continue;
+        };
 
-        // First, save the current map state
-        if let Some(current_id) = open_maps.active_map_id {
-            let current_state = capture_current_map_state(
+        // Keep the map being left, unless it's being closed
+        let leaving = open_maps.active_map_id;
+        if event.close_current {
+            if let Some(id) = leaving {
+                open_maps.maps.remove(&id);
+            }
+        } else {
+            stash_active_map(
+                &mut open_maps,
+                &contents,
                 &map_data,
                 &fog_data,
-                &placed_items_query,
-                &paths,
-                &lines,
-                &texts,
+                &dirty_state,
             );
-            let current_dirty = dirty_state.is_dirty;
-
-            if let Some(current_map) = open_maps.maps.get_mut(&current_id) {
-                current_map.saved_state = Some(current_state);
-                current_map.stashed_dirty = current_dirty;
-            }
         }
 
-        // Now load the target map
-        if let Some(target_map) = open_maps.maps.get(&target_id).cloned() {
-            // Clear existing items
-            for entity in existing_items.iter() {
-                commands.entity(entity).despawn();
-            }
-
-            // Clear existing annotations
-            for entity in existing_annotations.iter() {
-                commands.entity(entity).despawn();
-            }
-
-            // Load target map state
-            if let Some(saved_state) = &target_map.saved_state {
-                // Restore map data
-                *map_data = saved_state.map_data.clone();
-
-                // Restore fog of war data
-                *fog_data = FogOfWarData::from(saved_state.fog_of_war.clone());
-
-                spawn_map_contents(&mut commands, &asset_server, saved_state);
-            } else {
-                // No saved state, start with empty/default map
-                *map_data = MapData::default();
-                map_data.name = target_map.name.clone();
-                // Reset fog of war to default (empty = fully fogged)
-                *fog_data = FogOfWarData::default();
-            }
-
-            // Update current map file
-            current_map_file.path = target_map.path.clone();
-
-            // Update dirty state
-            dirty_state.is_dirty = target_map.stashed_dirty;
-            // Ignore the despawn/respawn wave from switching maps.
-            dirty_state.suppress_change_detection();
-
-            // Update active map
-            open_maps.active_map_id = Some(target_id);
-
-            replaced.write(MapReplaced);
-            info!("Switched to map: {}", target_map.name);
+        for entity in existing.iter() {
+            commands.entity(entity).despawn();
         }
+
+        // Load target map state
+        if let Some(saved_state) = &target_map.saved_state {
+            *map_data = saved_state.map_data.clone();
+            *fog_data = FogOfWarData::from(saved_state.fog_of_war.clone());
+            spawn_map_contents(&mut commands, &asset_server, saved_state);
+        } else {
+            // No saved state, start with empty/default map
+            *map_data = MapData::default();
+            map_data.name = target_map.name.clone();
+            *fog_data = FogOfWarData::default();
+        }
+
+        // Back to where the player view was on this map
+        if session_state.is_active
+            && let Some((center, size, rotation)) = target_map.player_view
+        {
+            session_state.viewport_center = center;
+            session_state.viewport_size = size;
+            session_state.rotation_degrees = rotation;
+        }
+
+        current_map_file.path = target_map.path.clone();
+        dirty_state.is_dirty = target_map.stashed_dirty;
+        // Ignore the despawn/respawn wave from switching maps.
+        dirty_state.suppress_change_detection();
+        open_maps.active_map_id = Some(target_id);
+
+        replaced.write(MapReplaced);
+        info!("Switched to map: {}", target_map.name);
+    }
+}
+
+/// Remembers where the player view is on the map being shown, for switching back to it.
+pub fn remember_player_view(session_state: Res<LiveSessionState>, mut open_maps: ResMut<OpenMaps>) {
+    if !session_state.is_active {
+        return;
+    }
+    let view = (
+        session_state.viewport_center,
+        session_state.viewport_size,
+        session_state.rotation_degrees,
+    );
+    if let Some(active) = open_maps.bypass_change_detection().active_map_mut()
+        && active.player_view != Some(view)
+    {
+        active.player_view = Some(view);
     }
 }

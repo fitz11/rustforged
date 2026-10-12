@@ -122,7 +122,11 @@ pub struct SaveMapTask {
 
 /// Component for load task
 #[derive(Component)]
-pub struct LoadMapTask(pub Task<LoadResult>);
+pub struct LoadMapTask {
+    pub task: Task<LoadResult>,
+    /// Keep the map being edited open in the background
+    pub alongside: bool,
+}
 
 /// Resource tracking the currently loaded map file path
 #[derive(Resource, Default)]
@@ -179,6 +183,9 @@ pub struct OpenMap {
     /// Asset fingerprints carried from the map file. Kept so references to files that are
     /// missing right now (e.g. still syncing) are saved with their fingerprint intact.
     pub asset_fingerprints: BTreeMap<String, AssetFingerprint>,
+    /// Where the player view last was on this map (center, size, rotation in degrees), so
+    /// switching scenes during a session brings it back
+    pub player_view: Option<(Vec2, Vec2, i32)>,
 }
 
 /// Resource tracking all open maps
@@ -204,6 +211,7 @@ impl Default for OpenMaps {
                 map_id: None,
                 disk_hash: None,
                 asset_fingerprints: BTreeMap::new(),
+                player_view: None,
             },
         );
         Self {
@@ -235,6 +243,7 @@ impl OpenMaps {
     }
 
     /// Check if any open map has unsaved changes
+    #[cfg(test)]
     pub fn has_any_unsaved(&self, dirty: &MapDirtyState) -> bool {
         self.maps.values().any(|m| self.is_unsaved(m, dirty))
     }

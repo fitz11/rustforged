@@ -7,10 +7,9 @@ use std::path::PathBuf;
 
 use crate::assets::{AssetLibrary, LibraryIndex};
 use crate::config::UpdateLastMapPathRequest;
-use crate::editor::AnnotationMarker;
-use crate::map::{FogOfWarData, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedMap};
+use crate::map::{FogOfWarData, MAP_FORMAT_VERSION, MapData, SavedMap};
 
-use super::map_state::spawn_map_contents;
+use super::map_state::{MapContents, MapEntities, spawn_map_contents, stash_active_map};
 use super::messages::{LoadMapRequest, MapReplaced};
 use super::resources::{
     AsyncMapOperation, CurrentMapFile, LoadMapTask, MapAssetReport, MapChangedOnDisk,
@@ -52,7 +51,10 @@ pub fn load_map_system(
         let task_pool = IoTaskPool::get();
         let task = task_pool.spawn(async move { read_map(path, index) });
 
-        commands.spawn(LoadMapTask(task));
+        commands.spawn(LoadMapTask {
+            task,
+            alongside: event.alongside,
+        });
     }
 }
 
@@ -143,15 +145,15 @@ pub fn poll_load_tasks(
     mut disk_change: ResMut<MapChangedOnDisk>,
     mut asset_library: ResMut<AssetLibrary>,
     asset_server: Res<AssetServer>,
-    existing_items: Query<Entity, With<PlacedItem>>,
-    existing_annotations: Query<Entity, With<AnnotationMarker>>,
+    existing: MapEntities,
+    contents: MapContents,
     mut current_map_file: ResMut<CurrentMapFile>,
     mut messages: LoadMessages,
     mut dirty_state: ResMut<MapDirtyState>,
     mut open_maps: ResMut<OpenMaps>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = poll_task(&mut task.0) {
+        if let Some(result) = poll_task(&mut task.task) {
             // Clear async state
             async_op.is_loading = false;
             async_op.operation_description = None;
@@ -181,13 +183,23 @@ pub fn poll_load_tasks(
                 warn!("Asset not in library, using placeholder: {}", asset);
             }
 
-            // Clear existing items
-            for existing in existing_items.iter() {
-                commands.entity(existing).despawn();
+            // Opened alongside: the map being edited stays open in the background (unless
+            // it's this very map, being reopened)
+            let reopening = open_maps
+                .active_map()
+                .is_some_and(|m| m.path.as_ref() == Some(&result.path));
+            let alongside = task.alongside && !reopening;
+            if alongside {
+                stash_active_map(
+                    &mut open_maps,
+                    &contents,
+                    &map_data,
+                    &fog_data,
+                    &dirty_state,
+                );
             }
 
-            // Clear existing annotations
-            for existing in existing_annotations.iter() {
+            for existing in existing.iter() {
                 commands.entity(existing).despawn();
             }
 
@@ -240,8 +252,8 @@ pub fn poll_load_tasks(
                 }
                 open_maps.active_map_id = Some(id);
             } else {
-                // Map not open - replace the current active map entry
-                if let Some(active_id) = open_maps.active_map_id {
+                // Map not open - replace the current active map entry, or add one
+                if !alongside && let Some(active_id) = open_maps.active_map_id {
                     open_maps.maps.remove(&active_id);
                 }
 
@@ -259,6 +271,7 @@ pub fn poll_load_tasks(
                         map_id,
                         disk_hash: result.disk_hash,
                         asset_fingerprints,
+                        player_view: None,
                     },
                 );
                 open_maps.active_map_id = Some(new_id);

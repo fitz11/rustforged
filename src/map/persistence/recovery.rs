@@ -12,10 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::common::poll_task;
-use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
+use crate::map::{FogOfWarData, MapData, SavedMap};
 
-use super::map_state::{capture_current_map_state, spawn_map_contents};
+use super::map_state::{MapContents, MapEntities, spawn_map_contents};
 use super::messages::{MapReplaced, MapSaveFinished, SaveOutcome};
 use super::resources::{CurrentMapFile, MapDirtyState, OpenMap, OpenMaps};
 
@@ -88,10 +87,7 @@ pub fn autosave_recovery_file(
     open_maps: Res<OpenMaps>,
     map_data: Res<MapData>,
     fog_data: Res<FogOfWarData>,
-    placed_items: Query<(&PlacedItem, &Transform)>,
-    paths: Query<&DrawnPath>,
-    lines: Query<&DrawnLine>,
-    texts: Query<(&Transform, &TextAnnotation)>,
+    contents: MapContents,
 ) {
     if let Some(task) = autosave.writing.as_mut() {
         if poll_task(task).is_none() {
@@ -115,7 +111,7 @@ pub fn autosave_recovery_file(
         name: active.name.clone(),
         base_disk_hash: active.disk_hash.clone(),
         saved_at: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
-        map: capture_current_map_state(&map_data, &fog_data, &placed_items, &paths, &lines, &texts),
+        map: contents.capture(&map_data, &fog_data),
     };
     let file = autosave.file_for(&dir, active.id);
     autosave.written.insert(active.id, dirty_state.generation);
@@ -212,7 +208,7 @@ fn read_recovery_files(dir: &Path) -> Vec<(PathBuf, RecoveryFile)> {
 
 /// Opens a recovery file in place of the map being edited: unsaved, with its original file
 /// as where Save goes. The recovery file is removed; autosave writes a new one.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn recover_map_system(
     mut commands: Commands,
     mut requests: MessageReader<RecoverMapRequest>,
@@ -222,7 +218,7 @@ pub fn recover_map_system(
     mut current_map_file: ResMut<CurrentMapFile>,
     mut dirty_state: ResMut<MapDirtyState>,
     asset_server: Res<AssetServer>,
-    existing: Query<Entity, Or<(With<PlacedItem>, With<AnnotationMarker>)>>,
+    existing: MapEntities,
     mut replaced: MessageWriter<MapReplaced>,
 ) {
     for request in requests.read() {
@@ -263,6 +259,7 @@ pub fn recover_map_system(
                 map_id: map.map_id,
                 disk_hash: file.base_disk_hash,
                 asset_fingerprints: map.asset_fingerprints,
+                player_view: None,
             },
         );
         open_maps.active_map_id = Some(id);

@@ -64,6 +64,8 @@ impl Plugin for MapPlugin {
                     persistence::load_map_system,
                     persistence::new_map_system.run_if(on_message::<NewMapRequest>),
                     persistence::switch_map_system.run_if(on_message::<SwitchMapRequest>),
+                    // Before switching, so the map being left keeps where players were looking
+                    persistence::remember_player_view.before(persistence::switch_map_system),
                     persistence::poll_save_tasks,
                     persistence::detect_open_map_changes
                         .run_if(on_message::<crate::assets::MapFilesChanged>),

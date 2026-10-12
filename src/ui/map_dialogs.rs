@@ -380,9 +380,7 @@ pub fn save_conflict_dialog_ui(
                         .on_hover_text("Discard your unsaved changes and open the version on disk")
                         .clicked()
                 {
-                    load_events.write(LoadMapRequest {
-                        path: conflict.path.clone(),
-                    });
+                    load_events.write(LoadMapRequest::replace(conflict.path.clone()));
                     // Reloading replaces the map, so whatever waited for this save is off
                     prompt.after_save = None;
                     close = true;

@@ -16,7 +16,7 @@ use crate::assets::AssetLibrary;
 use crate::input::command_key_just_pressed;
 use crate::map::{
     LoadMapRequest, MapDirtyState, MapSaveFinished, NewMapRequest, OpenMaps, SaveMapRequest,
-    SaveOutcome,
+    SaveOutcome, SwitchMapRequest,
 };
 
 use super::map_dialogs::SaveAsDialogState;
@@ -30,6 +30,10 @@ pub const UNTITLED_MAP_NAME: &str = "Untitled Map";
 pub enum MapFileAction {
     New,
     Open(PathBuf),
+    /// Open a map too, keeping the one being edited open in the background (scenes)
+    OpenAlongside(PathBuf),
+    /// Close one of the open maps
+    Close(u64),
     Save,
     SaveAs,
     Quit,
@@ -44,8 +48,27 @@ pub enum MapFileAction {
 pub enum ReplacingAction {
     New,
     Open(PathBuf),
+    /// Close this open map (the active one by the time it runs)
+    Close(u64),
     Quit,
     QuitAndInstall(PathBuf),
+}
+
+impl ReplacingAction {
+    /// Quitting needs every open map dealt with, not only the active one
+    fn closes_everything(&self) -> bool {
+        matches!(self, Self::Quit | Self::QuitAndInstall(_))
+    }
+
+    fn as_file_action(&self) -> MapFileAction {
+        match self {
+            Self::New => MapFileAction::New,
+            Self::Open(path) => MapFileAction::Open(path.clone()),
+            Self::Close(id) => MapFileAction::Close(*id),
+            Self::Quit => MapFileAction::Quit,
+            Self::QuitAndInstall(path) => MapFileAction::QuitAndInstall(path.clone()),
+        }
+    }
 }
 
 /// State of the Unsaved Changes dialog.
@@ -55,6 +78,9 @@ pub struct UnsavedChangesPrompt {
     pub pending: Option<ReplacingAction>,
     /// The user chose Save: run this once the save succeeds
     pub after_save: Option<AfterSave>,
+    /// Handle this action again next frame, once a switch to another open map is done
+    /// (to ask about that map's unsaved changes, or to close it)
+    pub retry: Option<MapFileAction>,
 }
 
 /// An action waiting for a save to finish.
@@ -139,25 +165,82 @@ pub fn handle_file_shortcuts(
     }
 }
 
-/// Runs a [`ReplacingAction`] once unsaved changes are dealt with.
+/// Runs a [`ReplacingAction`] once unsaved changes are dealt with, and knows which open
+/// maps still have unsaved changes.
 #[derive(SystemParam)]
 pub struct ActionRunner<'w, 's> {
     commands: Commands<'w, 's>,
     new_events: MessageWriter<'w, NewMapRequest>,
     load_events: MessageWriter<'w, LoadMapRequest>,
+    switch_events: MessageWriter<'w, SwitchMapRequest>,
     exit_events: MessageWriter<'w, AppExit>,
     primary_window: Query<'w, 's, Entity, With<PrimaryWindow>>,
     update_state: ResMut<'w, crate::update::UpdateState>,
+    pub open_maps: ResMut<'w, OpenMaps>,
+    pub dirty_state: ResMut<'w, MapDirtyState>,
 }
 
 impl ActionRunner<'_, '_> {
-    fn run(&mut self, action: ReplacingAction) {
+    fn active_unsaved(&self) -> bool {
+        self.dirty_state.is_dirty
+    }
+
+    /// An open map in the background with unsaved changes
+    fn unsaved_background_map(&self) -> Option<u64> {
+        let mut unsaved: Vec<u64> = self
+            .open_maps
+            .maps
+            .values()
+            .filter(|m| Some(m.id) != self.open_maps.active_map_id && m.stashed_dirty)
+            .map(|m| m.id)
+            .collect();
+        unsaved.sort_unstable();
+        unsaved.first().copied()
+    }
+
+    /// Switches to open map `id`, keeping the one being left open
+    fn switch_to(&mut self, id: u64) {
+        self.switch_events.write(SwitchMapRequest {
+            map_id: id,
+            close_current: false,
+        });
+    }
+
+    /// Runs `action`, or returns an action to handle again next frame (quitting with
+    /// another open map's changes still to ask about).
+    fn run(&mut self, action: ReplacingAction) -> Option<MapFileAction> {
+        if action.closes_everything()
+            && let Some(next) = self.unsaved_background_map()
+        {
+            self.switch_to(next);
+            return Some(action.as_file_action());
+        }
         match action {
             ReplacingAction::New => {
                 self.new_events.write(NewMapRequest);
             }
             ReplacingAction::Open(path) => {
-                self.load_events.write(LoadMapRequest { path });
+                self.load_events.write(LoadMapRequest::replace(path));
+            }
+            ReplacingAction::Close(id) => {
+                let other = self
+                    .open_maps
+                    .maps
+                    .keys()
+                    .copied()
+                    .find(|other| *other != id);
+                match other {
+                    Some(other) => {
+                        self.switch_events.write(SwitchMapRequest {
+                            map_id: other,
+                            close_current: true,
+                        });
+                    }
+                    // The last open map: a new blank one takes its place
+                    None => {
+                        self.new_events.write(NewMapRequest);
+                    }
+                }
             }
             ReplacingAction::Quit => self.quit(),
             ReplacingAction::QuitAndInstall(path) => match crate::update::launch_installer(&path) {
@@ -168,6 +251,7 @@ impl ActionRunner<'_, '_> {
                 }
             },
         }
+        None
     }
 
     fn quit(&mut self) {
@@ -229,7 +313,8 @@ fn open_save_as(open_maps: &OpenMaps, save_as: &mut SaveAsDialogState) {
     save_as.show_save_name_dialog = true;
 }
 
-/// Handles [`MapFileAction`]s and the window's close button.
+/// Handles [`MapFileAction`]s and the window's close button. Runs after map switches, so
+/// an action retried after switching to another open map sees that map as the active one.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_map_file_actions(
     mut actions: MessageReader<MapFileAction>,
@@ -237,8 +322,6 @@ pub fn handle_map_file_actions(
     primary_window: Query<Entity, With<PrimaryWindow>>,
     mut prompt: ResMut<UnsavedChangesPrompt>,
     mut save_as: ResMut<SaveAsDialogState>,
-    open_maps: Res<OpenMaps>,
-    dirty_state: Res<MapDirtyState>,
     library: Res<AssetLibrary>,
     mut save_events: MessageWriter<SaveMapRequest>,
     mut runner: ActionRunner,
@@ -251,29 +334,68 @@ pub fn handle_map_file_actions(
         .map(|_| MapFileAction::Quit)
         .collect::<Vec<_>>();
     let maps_dir = library.library_path.join("maps");
+    let retry = prompt.retry.take();
 
-    for action in actions.read().cloned().chain(quit_requests) {
+    for action in retry
+        .into_iter()
+        .chain(actions.read().cloned())
+        .chain(quit_requests)
+    {
         let replacing = match action {
             MapFileAction::Save => {
                 // A plain save: nothing waits for it
                 prompt.after_save = None;
-                request_save(&open_maps, &maps_dir, &mut save_as, &mut save_events);
+                request_save(&runner.open_maps, &maps_dir, &mut save_as, &mut save_events);
                 continue;
             }
             MapFileAction::SaveAs => {
-                open_save_as(&open_maps, &mut save_as);
+                open_save_as(&runner.open_maps, &mut save_as);
+                continue;
+            }
+            MapFileAction::OpenAlongside(path) => {
+                // Already open: switch to it
+                let open = runner
+                    .open_maps
+                    .maps
+                    .values()
+                    .find(|m| m.path.as_ref() == Some(&path))
+                    .map(|m| m.id);
+                match open {
+                    Some(id) => runner.switch_to(id),
+                    None => {
+                        runner.load_events.write(LoadMapRequest::alongside(path));
+                    }
+                }
+                continue;
+            }
+            MapFileAction::Close(id) if runner.open_maps.active_map_id != Some(id) => {
+                let unsaved = runner
+                    .open_maps
+                    .maps
+                    .get(&id)
+                    .is_some_and(|m| m.stashed_dirty);
+                if unsaved {
+                    // Show it, then ask about its changes
+                    runner.switch_to(id);
+                    prompt.retry = Some(MapFileAction::Close(id));
+                } else {
+                    runner.open_maps.maps.remove(&id);
+                }
                 continue;
             }
             MapFileAction::New => ReplacingAction::New,
             MapFileAction::Open(path) => ReplacingAction::Open(path),
+            MapFileAction::Close(id) => ReplacingAction::Close(id),
             MapFileAction::Quit => ReplacingAction::Quit,
             MapFileAction::QuitAndInstall(path) => ReplacingAction::QuitAndInstall(path),
         };
 
-        if open_maps.has_any_unsaved(&dirty_state) {
+        // The prompt is about the map being edited; quitting also gets to the others
+        // (one at a time, see ActionRunner::run)
+        if runner.active_unsaved() {
             prompt.pending = Some(replacing);
-        } else {
-            runner.run(replacing);
+        } else if let Some(again) = runner.run(replacing) {
+            prompt.retry = Some(again);
         }
     }
 }
@@ -296,7 +418,7 @@ pub fn run_action_after_save(
         match result.outcome {
             SaveOutcome::Saved => {
                 if let Some(after) = prompt.after_save.take() {
-                    runner.run(after.action);
+                    prompt.retry = runner.run(after.action);
                 }
             }
             // The save conflict dialog decides; Overwrite or Save as Copy save again
@@ -312,8 +434,6 @@ pub fn unsaved_changes_dialog_ui(
     mut contexts: EguiContexts,
     mut prompt: ResMut<UnsavedChangesPrompt>,
     mut save_as: ResMut<SaveAsDialogState>,
-    open_maps: Res<OpenMaps>,
-    dirty_state: Res<MapDirtyState>,
     library: Res<AssetLibrary>,
     mut save_events: MessageWriter<SaveMapRequest>,
     mut runner: ActionRunner,
@@ -322,10 +442,17 @@ pub fn unsaved_changes_dialog_ui(
         return Ok(());
     };
 
-    let names: Vec<&str> = open_maps
-        .unsaved_maps(&dirty_state)
+    let active_name = runner
+        .open_maps
+        .active_map()
+        .map(|m| m.name.clone())
+        .unwrap_or_default();
+    let others: Vec<String> = runner
+        .open_maps
+        .unsaved_maps(&runner.dirty_state)
         .into_iter()
-        .map(|m| m.name.as_str())
+        .filter(|m| Some(m.id) != runner.open_maps.active_map_id)
+        .map(|m| m.name.clone())
         .collect();
     let question = match &action {
         ReplacingAction::New => "Save before creating a new map?".to_string(),
@@ -335,6 +462,7 @@ pub fn unsaved_changes_dialog_ui(
                 .and_then(|s| s.to_str())
                 .unwrap_or("the map")
         ),
+        ReplacingAction::Close(_) => "Save before closing this map?".to_string(),
         ReplacingAction::Quit => "Save before closing?".to_string(),
         ReplacingAction::QuitAndInstall(_) => {
             "The app closes to install the update. Save first?".to_string()
@@ -349,8 +477,15 @@ pub fn unsaved_changes_dialog_ui(
         .show(contexts.ctx_mut()?, |ui| {
             ui.label("You have unsaved changes in:");
             ui.add_space(4.0);
-            for name in &names {
-                ui.label(egui::RichText::new(format!("  - {}", name)).strong());
+            ui.label(egui::RichText::new(format!("  - {}", active_name)).strong());
+            if action.closes_everything() && !others.is_empty() {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "(then {}, which you'll be asked about next)",
+                        others.join(", ")
+                    ))
+                    .weak(),
+                );
             }
             ui.add_space(8.0);
             ui.label(&question);
@@ -373,12 +508,14 @@ pub fn unsaved_changes_dialog_ui(
         Some(Choice::Save) => {
             prompt.pending = None;
             let maps_dir = library.library_path.join("maps");
-            let ticket = request_save(&open_maps, &maps_dir, &mut save_as, &mut save_events);
+            let ticket = request_save(&runner.open_maps, &maps_dir, &mut save_as, &mut save_events);
             prompt.after_save = Some(AfterSave { action, ticket });
         }
         Some(Choice::Discard) => {
             prompt.pending = None;
-            runner.run(action);
+            // These changes are being dropped, so don't ask about them again
+            runner.dirty_state.is_dirty = false;
+            prompt.retry = runner.run(action);
         }
         Some(Choice::Cancel) => prompt.pending = None,
         None => {}
