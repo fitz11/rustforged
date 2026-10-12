@@ -109,6 +109,8 @@ pub struct AssetBrowserState {
     pub pending_import_dest: Option<Task<Option<PathBuf>>>,
     /// Library export or import running in the background
     pub zip_job: Option<ZipJob>,
+    /// Assets whose rows the list showed last frame, which get thumbnails
+    pub visible_assets: Vec<PathBuf>,
 }
 
 /// Exporting or importing a library zip, off the UI thread so the editor and the player
@@ -162,6 +164,7 @@ impl Default for AssetBrowserState {
             pending_import_zip_path: None,
             pending_import_dest: None,
             zip_job: None,
+            visible_assets: Vec::new(),
         }
     }
 }

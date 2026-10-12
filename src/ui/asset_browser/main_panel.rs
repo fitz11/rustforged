@@ -896,18 +896,28 @@ fn render_asset_list(
         };
         ui.label(format!("Add images to {}/", folder_display));
     } else {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for asset in filtered_assets {
-                render_asset_row(
-                    ui,
-                    asset,
-                    selected_asset,
-                    current_tool,
-                    browser_state,
-                    thumbnail_cache,
-                );
-            }
-        });
+        // Only the rows in view are laid out, and only they get thumbnails
+        let row_height =
+            (THUMBNAIL_SIZE as f32).max(ui.spacing().interact_size.y) + ui.spacing().item_spacing.y;
+        browser_state.visible_assets.clear();
+        egui::ScrollArea::vertical().show_rows(
+            ui,
+            row_height,
+            filtered_assets.len(),
+            |ui, rows| {
+                for asset in &filtered_assets[rows] {
+                    browser_state.visible_assets.push(asset.full_path.clone());
+                    render_asset_row(
+                        ui,
+                        asset,
+                        selected_asset,
+                        current_tool,
+                        browser_state,
+                        thumbnail_cache,
+                    );
+                }
+            },
+        );
     }
 }
 
@@ -945,7 +955,9 @@ fn render_asset_row(
                 .rect_filled(rect, 2.0, egui::Color32::from_rgb(60, 60, 60));
         }
 
-        let is_missing = thumbnail_cache.has_failed(&asset.full_path) || !asset.full_path.exists();
+        // The library scan and watcher keep the list current; a file that can't be read
+        // shows up as a failed thumbnail
+        let is_missing = thumbnail_cache.has_failed(&asset.full_path);
 
         let label_text = if is_missing {
             egui::RichText::new(&asset.name).color(egui::Color32::from_rgb(200, 100, 100))
@@ -955,7 +967,7 @@ fn render_asset_row(
 
         let response = ui.selectable_label(is_selected, label_text);
         let response = if is_missing {
-            response.on_hover_text("Asset file not found")
+            response.on_hover_text("Asset file can't be read")
         } else {
             response
         };
