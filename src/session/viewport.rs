@@ -9,6 +9,7 @@ use crate::theme;
 use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::state::{LiveSessionState, PlayerViewport, ViewportDragMode, ViewportDragState};
+use crate::map::render_layer;
 
 const HANDLE_SIZE: f32 = 8.0;
 const MOVE_HANDLE_WIDTH: f32 = 60.0;
@@ -23,7 +24,7 @@ pub struct ViewportGizmoGroup;
 pub fn configure_viewport_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (config, _) = config_store.config_mut::<ViewportGizmoGroup>();
     // Only render to layer 1 (editor-only)
-    config.render_layers = RenderLayers::layer(1);
+    config.render_layers = RenderLayers::layer(render_layer::EDITOR);
 }
 
 /// Draw the viewport indicator rectangle with handles

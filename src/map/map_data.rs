@@ -34,6 +34,33 @@ impl Default for MapData {
     }
 }
 
+impl MapData {
+    /// Settings for `layer`, if the map has them.
+    pub fn layer(&self, layer: Layer) -> Option<&LayerData> {
+        self.layers.iter().find(|ld| ld.layer_type == layer)
+    }
+
+    /// Settings for `layer`, mutably, if the map has them.
+    pub fn layer_mut(&mut self, layer: Layer) -> Option<&mut LayerData> {
+        self.layers.iter_mut().find(|ld| ld.layer_type == layer)
+    }
+
+    /// Whether `layer` is shown. A layer the map has no settings for is shown.
+    pub fn is_layer_visible(&self, layer: Layer) -> bool {
+        self.layer(layer).is_none_or(|ld| ld.visible)
+    }
+
+    /// Whether `layer` is locked against edits.
+    pub fn is_layer_locked(&self, layer: Layer) -> bool {
+        self.layer(layer).is_some_and(|ld| ld.locked)
+    }
+
+    /// Whether items on `layer` can be clicked, selected and edited: shown and unlocked.
+    pub fn is_layer_editable(&self, layer: Layer) -> bool {
+        self.is_layer_visible(layer) && !self.is_layer_locked(layer)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerData {
     pub layer_type: Layer,
@@ -52,6 +79,24 @@ pub struct SavedPlacedItem {
 }
 
 impl SavedPlacedItem {
+    /// The item's transform; its depth is set when it's spawned.
+    pub fn transform(&self) -> Transform {
+        Transform {
+            translation: self.position.extend(0.0),
+            rotation: Quat::from_rotation_z(self.rotation),
+            scale: self.scale.extend(1.0),
+        }
+    }
+
+    /// The item's component, without its position.
+    pub fn placed_item(&self) -> PlacedItem {
+        PlacedItem {
+            asset_path: self.asset_path.clone(),
+            layer: self.layer,
+            z_index: self.z_index,
+        }
+    }
+
     pub fn from_entity(item: &PlacedItem, transform: &Transform) -> Self {
         Self {
             asset_path: item.asset_path.clone(),

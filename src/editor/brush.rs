@@ -9,7 +9,6 @@
 //!   leaves the bounds of the last placed item
 //! - Shift+click: Grid-fitted placement - resizes asset to fit grid cell and centers it
 
-use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
@@ -164,32 +163,17 @@ pub fn handle_brush(
     });
 
     let layer = selected_layer.layer;
-    let z = layer.z_base();
-
-    // Items on non-player-visible layers go to render layer 1 (editor-only)
-    let render_layer = if layer.is_player_visible() {
-        RenderLayers::layer(0)
-    } else {
-        RenderLayers::layer(1)
+    let item = PlacedItem {
+        asset_path: asset.path.clone(),
+        layer,
+        z_index: 0,
     };
-
     let transform = Transform {
-        translation: final_pos.extend(z),
+        translation: final_pos.extend(item.depth()),
         scale,
         ..default()
     };
-    let entity = commands
-        .spawn((
-            Sprite::from_image(texture),
-            transform,
-            PlacedItem {
-                asset_path: asset.path.clone(),
-                layer,
-                z_index: 0,
-            },
-            render_layer,
-        ))
-        .id();
+    let entity = commands.spawn(item.bundle(&asset_server, transform)).id();
 
     // Accumulate for the current stroke; recorded as one undo step on release.
     brush_state.stroke_items.push(PlacedItemData {

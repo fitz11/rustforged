@@ -104,14 +104,7 @@ pub fn handle_selection(
         // Filter by visible and unlocked layers
         let mut items: Vec<_> = items_query
             .iter()
-            .filter(|(_, _, _, placed_item)| {
-                map_data
-                    .layers
-                    .iter()
-                    .find(|ld| ld.layer_type == placed_item.layer)
-                    .map(|ld| ld.visible && !ld.locked)
-                    .unwrap_or(true)
-            })
+            .filter(|(_, _, _, placed_item)| map_data.is_layer_editable(placed_item.layer))
             .collect();
         items.sort_by(|a, b| b.1.translation.z.total_cmp(&a.1.translation.z));
 

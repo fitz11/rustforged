@@ -15,7 +15,7 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData) -> bool {
     ui.add_space(4.0);
 
     for layer in Layer::all().iter().rev() {
-        if let Some(layer_data) = map_data.layers.iter_mut().find(|l| l.layer_type == *layer) {
+        if let Some(layer_data) = map_data.layer_mut(*layer) {
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(4, 4))
                 .show(ui, |ui| {

@@ -2,7 +2,7 @@
 //!
 //! While frozen, players keep seeing the map as it was at the moment of
 //! freezing, so the GM can edit it out of sight. Freezing copies every
-//! player-visible item onto [`FROZEN_LAYER`] and points the player camera at
+//! player-visible item onto [`render_layer::FROZEN`] and points the player camera at
 //! that layer instead of the live one. The player's fog and grid are drawn
 //! from a copy of the map and fog data taken at the same moment (see
 //! [`PlayerMapView`]).
@@ -14,20 +14,20 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-use crate::map::{FogOfWarData, MapData, PlacedItem};
+use crate::map::{FogOfWarData, MapData, PlacedItem, render_layer};
 
 use super::player_window::PlayerCamera;
 use super::state::{LiveSessionState, PlayerViewport};
 
-/// Render layer for the frozen copies of placed items. Only the player camera
-/// looks at it, and only while frozen.
-pub const FROZEN_LAYER: usize = 3;
-
-/// Render layers the player camera sees: live items (0) or their frozen copies,
-/// plus the player-only fog and grid (2)
+/// Render layers the player camera sees: live items or their frozen copies, plus the
+/// player-only fog and grid
 pub fn player_camera_layers(frozen: bool) -> RenderLayers {
-    let items_layer = if frozen { FROZEN_LAYER } else { 0 };
-    RenderLayers::from_layers(&[items_layer, 2])
+    let items_layer = if frozen {
+        render_layer::FROZEN
+    } else {
+        render_layer::SHARED
+    };
+    RenderLayers::from_layers(&[items_layer, render_layer::PLAYER])
 }
 
 /// Marker for the copy of a placed item shown to players while frozen.
@@ -93,7 +93,7 @@ pub fn sync_freeze(
     }
 
     if session_state.frozen && !frozen_view.is_frozen() {
-        let live_layer = RenderLayers::layer(0);
+        let live_layer = RenderLayers::layer(render_layer::SHARED);
         for (sprite, transform, visibility, layers) in &items {
             let player_visible = layers.is_none_or(|layers| layers.intersects(&live_layer));
             if *visibility == Visibility::Hidden || !player_visible {
@@ -102,7 +102,7 @@ pub fn sync_freeze(
             commands.spawn((
                 sprite.clone(),
                 *transform,
-                RenderLayers::layer(FROZEN_LAYER),
+                RenderLayers::layer(render_layer::FROZEN),
                 FrozenItem,
             ));
         }
@@ -137,7 +137,7 @@ mod tests {
         let layers = player_camera_layers(false);
         assert!(layers.intersects(&RenderLayers::layer(0)));
         assert!(layers.intersects(&RenderLayers::layer(2)));
-        assert!(!layers.intersects(&RenderLayers::layer(FROZEN_LAYER)));
+        assert!(!layers.intersects(&RenderLayers::layer(render_layer::FROZEN)));
     }
 
     #[test]
@@ -145,14 +145,14 @@ mod tests {
         let layers = player_camera_layers(true);
         assert!(!layers.intersects(&RenderLayers::layer(0)));
         assert!(layers.intersects(&RenderLayers::layer(2)));
-        assert!(layers.intersects(&RenderLayers::layer(FROZEN_LAYER)));
+        assert!(layers.intersects(&RenderLayers::layer(render_layer::FROZEN)));
     }
 
     #[test]
     fn test_editor_never_sees_frozen_items() {
         // The editor camera renders layers 0 and 1
         let editor = RenderLayers::from_layers(&[0, 1]);
-        assert!(!editor.intersects(&RenderLayers::layer(FROZEN_LAYER)));
+        assert!(!editor.intersects(&RenderLayers::layer(render_layer::FROZEN)));
     }
 
     fn freeze_test_app() -> App {

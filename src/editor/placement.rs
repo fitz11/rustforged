@@ -15,7 +15,7 @@ use bevy_egui::EguiContexts;
 
 use crate::assets::SelectedAsset;
 use crate::input::{command_held, shift_held};
-use crate::map::{MapData, PlacedItem, Selected};
+use crate::map::{MapData, PlacedItem, Selected, render_layer};
 use crate::ui::DialogState;
 
 use super::GridSettings;
@@ -49,7 +49,7 @@ pub fn spawn_placement_ghost(mut commands: Commands) {
         Transform::default(),
         Visibility::Hidden,
         // Editor-only, so players never see it
-        RenderLayers::layer(1),
+        RenderLayers::layer(render_layer::EDITOR),
     ));
 }
 
@@ -181,30 +181,13 @@ pub fn handle_placement(
 
     // Use the selected layer instead of deriving from asset category
     let layer = selected_layer.layer;
-    let z = layer.z_base();
-
-    let texture: Handle<Image> = asset_server.load(asset.asset_path());
-
-    // Items on non-player-visible layers (GM, FogOfWar) go to render layer 1 (editor-only)
-    let render_layer = if layer.is_player_visible() {
-        RenderLayers::layer(0)
-    } else {
-        RenderLayers::layer(1)
+    let item = PlacedItem {
+        asset_path: asset.path.clone(),
+        layer,
+        z_index: 0,
     };
-
-    let transform = Transform::from_translation(final_pos.extend(z));
-    let entity = commands
-        .spawn((
-            Sprite::from_image(texture),
-            transform,
-            PlacedItem {
-                asset_path: asset.path.clone(),
-                layer,
-                z_index: 0,
-            },
-            render_layer,
-        ))
-        .id();
+    let transform = Transform::from_translation(final_pos.extend(item.depth()));
+    let entity = commands.spawn(item.bundle(&asset_server, transform)).id();
 
     history_writer.write(RecordEditorCommand {
         command: EditorCommand::PlaceItems {

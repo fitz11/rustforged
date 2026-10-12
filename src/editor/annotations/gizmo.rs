@@ -1,5 +1,6 @@
 //! Custom gizmo group for annotations (editor-only rendering).
 
+use crate::map::render_layer;
 use bevy::camera::visibility::RenderLayers;
 use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
@@ -12,5 +13,5 @@ pub struct AnnotationGizmoGroup;
 pub fn configure_annotation_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (config, _) = config_store.config_mut::<AnnotationGizmoGroup>();
     // Only render to layer 1 (editor-only, not visible in player view)
-    config.render_layers = RenderLayers::layer(1);
+    config.render_layers = RenderLayers::layer(render_layer::EDITOR);
 }

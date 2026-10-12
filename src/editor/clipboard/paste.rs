@@ -1,10 +1,8 @@
 //! Paste system for clipboard operations (Ctrl+V).
 
-use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
-use crate::assets::library_asset_path;
-use crate::map::{Layer, MapData, PlacedItem, Selected};
+use crate::map::{Layer, MapData, Selected};
 
 use super::super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use super::super::history::{
@@ -46,45 +44,18 @@ pub fn handle_paste(
     // Paste placed items
     for clip_item in &clipboard.placed_items {
         // Check if target layer is locked
-        let layer_locked = map_data
-            .layers
-            .iter()
-            .find(|ld| ld.layer_type == clip_item.saved.layer)
-            .map(|ld| ld.locked)
-            .unwrap_or(false);
-
-        if layer_locked {
+        if map_data.is_layer_locked(clip_item.saved.layer) {
             continue;
         }
 
-        let new_pos = paste_pos + clip_item.offset;
-        let z = clip_item.saved.layer.z_base() + clip_item.saved.z_index as f32;
-
-        let texture: Handle<Image> =
-            asset_server.load(library_asset_path(&clip_item.saved.asset_path));
-
-        // Items on non-player-visible layers go to render layer 1 (editor-only)
-        let render_layer = if clip_item.saved.layer.is_player_visible() {
-            RenderLayers::layer(0)
-        } else {
-            RenderLayers::layer(1)
-        };
-
+        let item = clip_item.saved.placed_item();
         let transform = Transform {
-            translation: new_pos.extend(z),
-            rotation: Quat::from_rotation_z(clip_item.saved.rotation),
-            scale: clip_item.saved.scale.extend(1.0),
+            translation: (paste_pos + clip_item.offset).extend(item.depth()),
+            ..clip_item.saved.transform()
         };
         let entity = commands
             .spawn((
-                Sprite::from_image(texture),
-                transform,
-                PlacedItem {
-                    asset_path: clip_item.saved.asset_path.clone(),
-                    layer: clip_item.saved.layer,
-                    z_index: clip_item.saved.z_index,
-                },
-                render_layer,
+                item.bundle(&asset_server, transform),
                 Selected, // Auto-select pasted item
             ))
             .id();
@@ -107,14 +78,7 @@ pub fn handle_paste(
     }
 
     // Check if annotation layer is locked
-    let annotation_locked = map_data
-        .layers
-        .iter()
-        .find(|ld| ld.layer_type == Layer::Annotation)
-        .map(|ld| ld.locked)
-        .unwrap_or(false);
-
-    if annotation_locked {
+    if map_data.is_layer_locked(Layer::Annotation) {
         return;
     }
 

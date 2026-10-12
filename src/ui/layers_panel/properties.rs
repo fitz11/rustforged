@@ -203,11 +203,7 @@ fn render_single_selection(
                             // Update z position to match new layer
                             transform.translation.z = layer.z_base() + item.z_index as f32;
                             // Update render layer for player visibility
-                            *render_layers = if layer.is_player_visible() {
-                                RenderLayers::layer(0)
-                            } else {
-                                RenderLayers::layer(1)
-                            };
+                            *render_layers = layer.render_layers();
                         }
                     }
                 });

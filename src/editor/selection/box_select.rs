@@ -82,14 +82,7 @@ pub fn handle_box_select(
         // Filter by visible and unlocked layers
         for (entity, transform, sprite, placed_item) in items_query.iter() {
             // Check if layer is visible and unlocked
-            let layer_selectable = map_data
-                .layers
-                .iter()
-                .find(|ld| ld.layer_type == placed_item.layer)
-                .map(|ld| ld.visible && !ld.locked)
-                .unwrap_or(true);
-
-            if !layer_selectable {
+            if !map_data.is_layer_editable(placed_item.layer) {
                 continue;
             }
 

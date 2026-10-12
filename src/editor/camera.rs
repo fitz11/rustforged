@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use super::params::is_cursor_over_ui;
+use crate::map::render_layer;
 
 #[derive(Component)]
 pub struct EditorCamera;
@@ -25,8 +26,7 @@ pub fn spawn_camera(mut commands: Commands) {
         EditorCamera,
         CameraZoom::default(),
         Transform::from_translation(Vec3::new(0.0, 0.0, 1000.0)),
-        // Layer 0 = main content, Layer 1 = editor-only (viewport indicator)
-        RenderLayers::from_layers(&[0, 1]),
+        RenderLayers::from_layers(&[render_layer::SHARED, render_layer::EDITOR]),
     ));
 }
 

@@ -12,8 +12,8 @@
 //! ## Rendering
 //!
 //! Uses two gizmo groups:
-//! - [`FogEditorGizmoGroup`]: Semi-transparent grey for editor view (RenderLayers::layer(1))
-//! - [`FogPlayerGizmoGroup`]: Opaque black for player view (RenderLayers::layer(2))
+//! - [`FogEditorGizmoGroup`]: Semi-transparent grey for editor view (`render_layer::EDITOR`)
+//! - [`FogPlayerGizmoGroup`]: Opaque black for player view (`render_layer::PLAYER`)
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
@@ -23,7 +23,9 @@ use bevy_egui::EguiContexts;
 use super::camera::EditorCamera;
 use super::params::{CameraParams, is_cursor_over_ui};
 use crate::input::shift_held;
-use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius};
+use crate::map::{
+    FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius, render_layer,
+};
 use crate::session::{LiveSessionState, PlayerMapView, PlayerViewport};
 use crate::theme;
 
@@ -43,12 +45,12 @@ pub struct FogPlayerGizmoGroup;
 pub fn configure_fog_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     // Editor fog: layer 1 (editor-only)
     let (editor_config, _) = config_store.config_mut::<FogEditorGizmoGroup>();
-    editor_config.render_layers = RenderLayers::layer(1);
+    editor_config.render_layers = RenderLayers::layer(render_layer::EDITOR);
 
     // Player fog: layer 2 (player-only, not visible in editor)
     // Use wider lines for better coverage at high zoom levels
     let (player_config, _) = config_store.config_mut::<FogPlayerGizmoGroup>();
-    player_config.render_layers = RenderLayers::layer(2);
+    player_config.render_layers = RenderLayers::layer(render_layer::PLAYER);
     player_config.line.width = 8.0;
 }
 
@@ -58,22 +60,12 @@ pub fn configure_fog_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
 
 /// Check if the FogOfWar layer is visible in editor
 pub fn is_fog_layer_visible(map_data: &MapData) -> bool {
-    map_data
-        .layers
-        .iter()
-        .find(|ld| ld.layer_type == Layer::FogOfWar)
-        .map(|ld| ld.visible)
-        .unwrap_or(true)
+    map_data.is_layer_visible(Layer::FogOfWar)
 }
 
 /// Check if the FogOfWar layer is locked
 pub fn is_fog_layer_locked(map_data: &MapData) -> bool {
-    map_data
-        .layers
-        .iter()
-        .find(|ld| ld.layer_type == Layer::FogOfWar)
-        .map(|ld| ld.locked)
-        .unwrap_or(false)
+    map_data.is_layer_locked(Layer::FogOfWar)
 }
 
 // ============================================================================

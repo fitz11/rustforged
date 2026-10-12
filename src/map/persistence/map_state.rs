@@ -1,12 +1,10 @@
 //! Map state management: new map, switch map, and state capture.
 
-use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
-use crate::assets::library_asset_path;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{
-    FogOfWarData, Layer, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
+    FogOfWarData, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
     SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
 };
 
@@ -141,6 +139,51 @@ pub(super) fn capture_current_map_state(
     }
 }
 
+/// Spawns the placed items and annotations of `map`.
+pub(super) fn spawn_map_contents(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    map: &SavedMap,
+) {
+    for item in &map.placed_items {
+        commands.spawn(item.placed_item().bundle(asset_server, item.transform()));
+    }
+
+    for path in &map.annotations.paths {
+        commands.spawn(
+            DrawnPath {
+                points: path.points.clone(),
+                color: array_to_color(path.color),
+                stroke_width: path.stroke_width,
+            }
+            .bundle(),
+        );
+    }
+
+    for line in &map.annotations.lines {
+        commands.spawn(
+            DrawnLine {
+                start: line.start,
+                end: line.end,
+                color: array_to_color(line.color),
+                stroke_width: line.stroke_width,
+            }
+            .bundle(),
+        );
+    }
+
+    for text in &map.annotations.text_boxes {
+        commands.spawn(
+            TextAnnotation {
+                content: text.content.clone(),
+                font_size: text.font_size,
+                color: array_to_color(text.color),
+            }
+            .bundle(text.position),
+        );
+    }
+}
+
 /// System to handle switching between open maps
 #[allow(clippy::too_many_arguments)]
 pub fn switch_map_system(
@@ -205,74 +248,7 @@ pub fn switch_map_system(
                 // Restore fog of war data
                 *fog_data = FogOfWarData::from(saved_state.fog_of_war.clone());
 
-                // Spawn placed items
-                for item in &saved_state.placed_items {
-                    let texture: Handle<Image> =
-                        asset_server.load(library_asset_path(&item.asset_path));
-                    let z_index = item.z_index.clamp(0, Layer::max_z_index());
-                    let z = item.layer.z_base() + z_index as f32;
-
-                    let render_layer = if item.layer.is_player_visible() {
-                        RenderLayers::layer(0)
-                    } else {
-                        RenderLayers::layer(1)
-                    };
-
-                    commands.spawn((
-                        Sprite::from_image(texture),
-                        Transform {
-                            translation: item.position.extend(z),
-                            rotation: Quat::from_rotation_z(item.rotation),
-                            scale: item.scale.extend(1.0),
-                        },
-                        PlacedItem {
-                            asset_path: item.asset_path.clone(),
-                            layer: item.layer,
-                            z_index,
-                        },
-                        render_layer,
-                    ));
-                }
-
-                // Spawn annotations
-                let z = Layer::Annotation.z_base();
-
-                for path in &saved_state.annotations.paths {
-                    commands.spawn((
-                        Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                        DrawnPath {
-                            points: path.points.clone(),
-                            color: array_to_color(path.color),
-                            stroke_width: path.stroke_width,
-                        },
-                        AnnotationMarker,
-                    ));
-                }
-
-                for line in &saved_state.annotations.lines {
-                    commands.spawn((
-                        Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                        DrawnLine {
-                            start: line.start,
-                            end: line.end,
-                            color: array_to_color(line.color),
-                            stroke_width: line.stroke_width,
-                        },
-                        AnnotationMarker,
-                    ));
-                }
-
-                for text in &saved_state.annotations.text_boxes {
-                    commands.spawn((
-                        Transform::from_translation(text.position.extend(z)),
-                        TextAnnotation {
-                            content: text.content.clone(),
-                            font_size: text.font_size,
-                            color: array_to_color(text.color),
-                        },
-                        AnnotationMarker,
-                    ));
-                }
+                spawn_map_contents(&mut commands, &asset_server, saved_state);
             } else {
                 // No saved state, start with empty/default map
                 *map_data = MapData::default();

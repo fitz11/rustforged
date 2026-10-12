@@ -3,7 +3,7 @@ use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigGroup, GizmoConfi
 use bevy::prelude::*;
 
 use crate::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
-use crate::map::MapData;
+use crate::map::{MapData, render_layer};
 use crate::session::PlayerMapView;
 use crate::theme;
 
@@ -42,10 +42,10 @@ pub struct PlayerGridGizmoGroup;
 /// player view; players get their own grid, drawn over what they can see
 pub fn configure_grid_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (default_config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
-    default_config.render_layers = RenderLayers::layer(1);
+    default_config.render_layers = RenderLayers::layer(render_layer::EDITOR);
 
     let (player_config, _) = config_store.config_mut::<PlayerGridGizmoGroup>();
-    player_config.render_layers = RenderLayers::layer(2);
+    player_config.render_layers = RenderLayers::layer(render_layer::PLAYER);
 }
 
 /// Draw grid lines covering the world-space rectangle from `min` to `max`

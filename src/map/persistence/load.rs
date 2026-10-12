@@ -1,17 +1,16 @@
 //! Map load system and task polling.
 
-use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
 use std::path::PathBuf;
 
-use crate::assets::{AssetLibrary, LibraryIndex, library_asset_path};
+use crate::assets::{AssetLibrary, LibraryIndex};
 use crate::config::UpdateLastMapPathRequest;
-use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use crate::map::{FogOfWarData, Layer, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedMap};
+use crate::editor::AnnotationMarker;
+use crate::map::{FogOfWarData, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedMap};
 
-use super::helpers::array_to_color;
+use super::map_state::spawn_map_contents;
 use super::messages::LoadMapRequest;
 use super::resources::{
     AsyncMapOperation, CurrentMapFile, LoadMapTask, MapAssetReport, MapChangedOnDisk,
@@ -176,82 +175,13 @@ pub fn poll_load_tasks(
                 commands.entity(existing).despawn();
             }
 
+            spawn_map_contents(&mut commands, &asset_server, &saved_map);
+
             // Load map data
             *map_data = saved_map.map_data;
 
             // Load fog of war data
             *fog_data = FogOfWarData::from(saved_map.fog_of_war);
-
-            // Spawn placed items
-            for item in saved_map.placed_items {
-                let texture: Handle<Image> =
-                    asset_server.load(library_asset_path(&item.asset_path));
-                // Clamp z_index to valid range (for migration from old maps with larger ranges)
-                let z_index = item.z_index.clamp(0, Layer::max_z_index());
-                let z = item.layer.z_base() + z_index as f32;
-
-                // Items on non-player-visible layers (GM, FogOfWar) go to render layer 1 (editor-only)
-                let render_layer = if item.layer.is_player_visible() {
-                    RenderLayers::layer(0)
-                } else {
-                    RenderLayers::layer(1)
-                };
-
-                commands.spawn((
-                    Sprite::from_image(texture),
-                    Transform {
-                        translation: item.position.extend(z),
-                        rotation: Quat::from_rotation_z(item.rotation),
-                        scale: item.scale.extend(1.0),
-                    },
-                    PlacedItem {
-                        asset_path: item.asset_path,
-                        layer: item.layer,
-                        z_index,
-                    },
-                    render_layer,
-                ));
-            }
-
-            // Spawn annotations
-            let z = Layer::Annotation.z_base();
-
-            for path in saved_map.annotations.paths {
-                commands.spawn((
-                    Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                    DrawnPath {
-                        points: path.points,
-                        color: array_to_color(path.color),
-                        stroke_width: path.stroke_width,
-                    },
-                    AnnotationMarker,
-                ));
-            }
-
-            for line in saved_map.annotations.lines {
-                commands.spawn((
-                    Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                    DrawnLine {
-                        start: line.start,
-                        end: line.end,
-                        color: array_to_color(line.color),
-                        stroke_width: line.stroke_width,
-                    },
-                    AnnotationMarker,
-                ));
-            }
-
-            for text in saved_map.annotations.text_boxes {
-                commands.spawn((
-                    Transform::from_translation(text.position.extend(z)),
-                    TextAnnotation {
-                        content: text.content,
-                        font_size: text.font_size,
-                        color: array_to_color(text.color),
-                    },
-                    AnnotationMarker,
-                ));
-            }
 
             info!("Map loaded from {:?}", result.path);
             disk_change.clear_for(&result.path);

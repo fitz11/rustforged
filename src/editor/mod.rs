@@ -39,12 +39,7 @@ fn update_layer_visibility(
         if !all && !item.is_changed() {
             continue;
         }
-        let layer_visible = map_data
-            .layers
-            .iter()
-            .find(|ld| ld.layer_type == item.layer)
-            .map(|ld| ld.visible)
-            .unwrap_or(true);
+        let layer_visible = map_data.is_layer_visible(item.layer);
 
         let new_visibility = if layer_visible {
             Visibility::Inherited

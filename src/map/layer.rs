@@ -1,4 +1,24 @@
+use bevy::camera::visibility::RenderLayers;
 use serde::{Deserialize, Serialize};
+
+/// Render layers that decide which camera draws what. The editor camera sees [`SHARED`]
+/// and [`EDITOR`]; the player camera sees [`PLAYER`] plus [`SHARED`], or [`FROZEN`] while
+/// the player view is frozen.
+///
+/// [`SHARED`]: render_layer::SHARED
+/// [`EDITOR`]: render_layer::EDITOR
+/// [`PLAYER`]: render_layer::PLAYER
+/// [`FROZEN`]: render_layer::FROZEN
+pub mod render_layer {
+    /// Map content that both the GM and the players see
+    pub const SHARED: usize = 0;
+    /// Only the GM: GM-only items and editor gizmos
+    pub const EDITOR: usize = 1;
+    /// Only the players: player fog and grid
+    pub const PLAYER: usize = 2;
+    /// Only the players while frozen: copies of what they saw when the view was frozen
+    pub const FROZEN: usize = 3;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum Layer {
@@ -11,7 +31,7 @@ pub enum Layer {
     GM,
     /// Layer for drawings, lines, and text annotations (editor-only)
     Annotation,
-    /// Fog of war layer - reserved for future implementation
+    /// Fog of war: its visibility turns fog on or off for the map
     FogOfWar,
     /// Editor-only layer for the player viewport indicator
     Play,
@@ -42,6 +62,16 @@ impl Layer {
             self,
             Layer::GM | Layer::Annotation | Layer::FogOfWar | Layer::Play
         )
+    }
+
+    /// Render layers for items on this layer, so GM-only items never reach the player
+    /// view.
+    pub fn render_layers(&self) -> RenderLayers {
+        if self.is_player_visible() {
+            RenderLayers::layer(render_layer::SHARED)
+        } else {
+            RenderLayers::layer(render_layer::EDITOR)
+        }
     }
 
     /// Returns true if this layer is available for use
@@ -180,6 +210,19 @@ mod tests {
         assert!(!Layer::Annotation.is_player_visible());
         assert!(!Layer::FogOfWar.is_player_visible());
         assert!(!Layer::Play.is_player_visible());
+    }
+
+    #[test]
+    fn test_render_layers_keep_gm_items_from_players() {
+        let shared = RenderLayers::layer(render_layer::SHARED);
+        for layer in Layer::all() {
+            assert_eq!(
+                layer.render_layers().intersects(&shared),
+                layer.is_player_visible(),
+                "{:?}",
+                layer
+            );
+        }
     }
 
     #[test]

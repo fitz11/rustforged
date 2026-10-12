@@ -12,6 +12,7 @@ use crate::map::{MapData, Selected};
 
 use super::hit_detection::{get_sprite_half_size, rotate_point};
 use super::{BoxSelectState, ROTATION_HANDLE_OFFSET, ROTATION_HANDLE_RADIUS};
+use crate::map::render_layer;
 
 /// Custom gizmo group for selection indicators (editor-only rendering)
 #[derive(Default, Reflect, GizmoConfigGroup)]
@@ -21,7 +22,7 @@ pub struct SelectionGizmoGroup;
 pub fn configure_selection_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (config, _) = config_store.config_mut::<SelectionGizmoGroup>();
     // Only render to layer 1 (editor-only)
-    config.render_layers = RenderLayers::layer(1);
+    config.render_layers = RenderLayers::layer(render_layer::EDITOR);
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]

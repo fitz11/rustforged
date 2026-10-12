@@ -34,23 +34,14 @@ pub fn render_fog_controls(
     ui.add_space(4.0);
 
     // Enable/Disable toggle for fog layer
-    let mut fog_enabled = map_data
-        .layers
-        .iter()
-        .find(|l| l.layer_type == Layer::FogOfWar)
-        .map(|l| l.visible)
-        .unwrap_or(true);
+    let mut fog_enabled = map_data.is_layer_visible(Layer::FogOfWar);
 
     if ui
         .checkbox(&mut fog_enabled, "Enable Fog of War")
         .on_hover_text("Toggle fog visibility for players")
         .changed()
     {
-        if let Some(layer_data) = map_data
-            .layers
-            .iter_mut()
-            .find(|l| l.layer_type == Layer::FogOfWar)
-        {
+        if let Some(layer_data) = map_data.layer_mut(Layer::FogOfWar) {
             layer_data.visible = fog_enabled;
         }
         change.map = true;

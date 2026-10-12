@@ -3,6 +3,14 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::map::Layer;
+
+/// Annotations are drawn at the Annotation layer's depth; paths and lines keep their
+/// points in world space, so their transform stays at the origin.
+fn annotation_transform(position: Vec2) -> Transform {
+    Transform::from_translation(position.extend(Layer::Annotation.z_base()))
+}
+
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct DrawnPath {
     pub points: Vec<Vec2>,
@@ -27,6 +35,27 @@ pub struct TextAnnotation {
 
 #[derive(Component)]
 pub struct AnnotationMarker;
+
+impl DrawnPath {
+    /// Components for a freehand path entity.
+    pub fn bundle(self) -> impl Bundle {
+        (annotation_transform(Vec2::ZERO), self, AnnotationMarker)
+    }
+}
+
+impl DrawnLine {
+    /// Components for a line entity.
+    pub fn bundle(self) -> impl Bundle {
+        (annotation_transform(Vec2::ZERO), self, AnnotationMarker)
+    }
+}
+
+impl TextAnnotation {
+    /// Components for a text annotation entity at `position`.
+    pub fn bundle(self, position: Vec2) -> impl Bundle {
+        (annotation_transform(position), self, AnnotationMarker)
+    }
+}
 
 // Text tool disabled - see TODO in tools.rs
 #[allow(dead_code)]
