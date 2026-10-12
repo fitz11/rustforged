@@ -72,6 +72,11 @@ impl PlayerMapView<'_> {
     pub fn fog(&self) -> &FogOfWarData {
         self.frozen.0.as_ref().map_or(&self.fog, |f| &f.fog)
     }
+
+    /// Whether what players see may have changed since last frame
+    pub fn is_changed(&self) -> bool {
+        self.frozen.is_changed() || self.map_data.is_changed() || self.fog.is_changed()
+    }
 }
 
 /// Take or release the frozen copy of the map when `LiveSessionState::frozen`

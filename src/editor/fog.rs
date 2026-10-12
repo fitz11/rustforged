@@ -11,46 +11,33 @@
 //!
 //! ## Rendering
 //!
-//! Uses two gizmo groups:
-//! - [`FogEditorGizmoGroup`]: Semi-transparent grey for editor view (`render_layer::EDITOR`)
-//! - [`FogPlayerGizmoGroup`]: Opaque black for player view (`render_layer::PLAYER`)
+//! The fog itself is a texture per view (see `fog_overlay`); the brush preview is drawn
+//! with [`FogEditorGizmoGroup`], editor-only.
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
-use super::params::{CameraParams, CameraWithProjection, is_cursor_over_ui};
+use super::params::{CameraParams, is_cursor_over_ui};
 use crate::input::shift_held;
 use crate::map::{
     FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius, render_layer,
 };
-use crate::session::{LiveSessionState, PlayerMapView, PlayerViewport};
 use crate::theme;
 
 // ============================================================================
 // Gizmo Configuration
 // ============================================================================
 
-/// Gizmo group for fog rendering in editor view (semi-transparent grey)
+/// Gizmo group for the fog brush preview (editor-only)
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct FogEditorGizmoGroup;
 
-/// Gizmo group for fog rendering in player view (opaque black)
-#[derive(Default, Reflect, GizmoConfigGroup)]
-pub struct FogPlayerGizmoGroup;
-
-/// Configure the fog gizmo groups for their respective render layers
+/// Configure the fog brush gizmos for the editor-only render layer
 pub fn configure_fog_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
-    // Editor fog: layer 1 (editor-only)
     let (editor_config, _) = config_store.config_mut::<FogEditorGizmoGroup>();
     editor_config.render_layers = RenderLayers::layer(render_layer::EDITOR);
-
-    // Player fog: layer 2 (player-only, not visible in editor)
-    // Use wider lines for better coverage at high zoom levels
-    let (player_config, _) = config_store.config_mut::<FogPlayerGizmoGroup>();
-    player_config.render_layers = RenderLayers::layer(render_layer::PLAYER);
-    player_config.line.width = 8.0;
 }
 
 // ============================================================================
@@ -169,66 +156,8 @@ pub fn handle_fog(
 }
 
 // ============================================================================
-// Fog Rendering - Editor View
+// Brush Preview (the fog itself is drawn by fog_overlay)
 // ============================================================================
-
-/// Render fog in editor view as filled semi-transparent dark rectangles
-///
-/// Iterates over all cells in the viewport and renders fog for cells
-/// that are NOT in the revealed_cells set. Uses horizontal line fills
-/// to create a visible shading effect.
-pub fn render_fog_editor(
-    mut gizmos: Gizmos<FogEditorGizmoGroup>,
-    fog_data: Res<FogOfWarData>,
-    fog_state: Res<FogState>,
-    map_data: Res<MapData>,
-    camera: CameraWithProjection,
-) {
-    if !is_fog_layer_visible(&map_data) || !fog_state.show_in_editor {
-        return;
-    }
-
-    let grid_size = map_data.grid_size;
-    // Use theme fog color with configurable opacity
-    let base = theme::FOG_EDITOR_BASE.to_srgba();
-    let fog_color = Color::srgba(base.red, base.green, base.blue, fog_state.editor_opacity);
-
-    // The cells the editor camera shows
-    let Some((min, max)) = camera.visible_world_rect() else {
-        return;
-    };
-    let (min_cell, max_cell) = padded_cell_bounds(min, max, grid_size);
-
-    // Line spacing for fill effect - denser lines = more solid appearance
-    let line_spacing = 4.0;
-    let half_grid = grid_size / 2.0;
-
-    // Render filled fog for all cells in viewport that are NOT revealed
-    for x in min_cell.0..=max_cell.0 {
-        for y in min_cell.1..=max_cell.1 {
-            let cell = (x, y);
-            if !fog_data.is_cell_revealed(cell) {
-                let center = cell_to_world(cell, grid_size);
-
-                // Draw filled rectangle using horizontal lines
-                let mut line_y = -half_grid;
-                while line_y <= half_grid {
-                    let start = center + Vec2::new(-half_grid, line_y);
-                    let end = center + Vec2::new(half_grid, line_y);
-                    gizmos.line_2d(start, end, fog_color);
-                    line_y += line_spacing;
-                }
-
-                // Also draw outline for cleaner edges
-                gizmos.rect_2d(
-                    Isometry2d::from_translation(center),
-                    Vec2::splat(grid_size),
-                    fog_color,
-                );
-            }
-        }
-    }
-}
 
 /// Render brush preview when fog tool is active
 pub fn render_fog_brush_preview(
@@ -263,90 +192,6 @@ pub fn render_fog_brush_preview(
             theme::FOG_BRUSH_CIRCLE,
         );
     }
-}
-
-// ============================================================================
-// Fog Rendering - Player View
-// ============================================================================
-
-/// Render fog in player view as filled opaque black rectangles
-///
-/// Iterates over all cells in the player viewport and renders fog for cells
-/// that are NOT in the revealed_cells set. Uses dense line fills for
-/// complete coverage.
-pub fn render_fog_player(
-    mut gizmos: Gizmos<FogPlayerGizmoGroup>,
-    player_view: PlayerMapView,
-    session_state: Res<LiveSessionState>,
-) {
-    // Only render player fog when session is active and fog layer is visible
-    if !session_state.is_active {
-        return;
-    }
-
-    // The fog players see: frozen along with the rest of the map while frozen
-    let map_data = player_view.map_data();
-    let fog_data = player_view.fog();
-
-    // Check if fog layer is enabled
-    if !is_fog_layer_visible(map_data) {
-        return;
-    }
-
-    let grid_size = map_data.grid_size;
-    let fog_color = theme::FOG_PLAYER;
-
-    let (min_cell, max_cell) = get_player_viewport_cell_bounds(&player_view.viewport, grid_size);
-
-    // Dense line spacing for player view - want complete black coverage
-    // Spacing of 0.5 with line_width of 8.0 ensures overlap even at max zoom (10x)
-    let line_spacing = 0.5;
-    let half_grid = grid_size / 2.0;
-
-    // Render filled fog for all cells in viewport that are NOT revealed
-    for x in min_cell.0..=max_cell.0 {
-        for y in min_cell.1..=max_cell.1 {
-            let cell = (x, y);
-            if !fog_data.is_cell_revealed(cell) {
-                let center = cell_to_world(cell, grid_size);
-
-                // Draw filled rectangle using horizontal lines (dense for player)
-                let mut line_y = -half_grid;
-                while line_y <= half_grid {
-                    let start = center + Vec2::new(-half_grid, line_y);
-                    let end = center + Vec2::new(half_grid, line_y);
-                    gizmos.line_2d(start, end, fog_color);
-                    line_y += line_spacing;
-                }
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Get the cell bounds for the player viewport, accounting for rotation.
-///
-/// When the viewport is rotated, this covers the axis-aligned bounding box
-/// (AABB) that contains all four corners of the rotated rectangle.
-fn get_player_viewport_cell_bounds(
-    viewport: &PlayerViewport,
-    grid_size: f32,
-) -> ((i32, i32), (i32, i32)) {
-    let (min, max) = viewport.world_bounds();
-    padded_cell_bounds(min, max, grid_size)
-}
-
-/// Cells covering the world rectangle from `min` to `max`, plus two cells of padding for
-/// cells partly in view at the edges
-fn padded_cell_bounds(min: Vec2, max: Vec2, grid_size: f32) -> ((i32, i32), (i32, i32)) {
-    let padding = Vec2::splat(grid_size * 2.0);
-    (
-        crate::map::world_to_cell(min - padding, grid_size),
-        crate::map::world_to_cell(max + padding, grid_size),
-    )
 }
 
 #[cfg(test)]

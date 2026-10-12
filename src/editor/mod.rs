@@ -4,6 +4,7 @@ mod camera;
 mod clipboard;
 pub mod conditions;
 pub mod fog;
+mod fog_overlay;
 mod grid;
 pub mod history;
 pub mod params;
@@ -106,7 +107,6 @@ impl Plugin for EditorPlugin {
             // Register gizmo groups for editor-only rendering
             .init_gizmo_group::<annotations::AnnotationGizmoGroup>()
             .init_gizmo_group::<fog::FogEditorGizmoGroup>()
-            .init_gizmo_group::<fog::FogPlayerGizmoGroup>()
             .init_gizmo_group::<selection::SelectionGizmoGroup>()
             .init_gizmo_group::<grid::PlayerGridGizmoGroup>()
             .add_systems(
@@ -115,6 +115,7 @@ impl Plugin for EditorPlugin {
                     camera::spawn_camera,
                     annotations::configure_annotation_gizmos,
                     fog::configure_fog_gizmos,
+                    fog_overlay::spawn_fog_overlays,
                     selection::configure_selection_gizmos,
                     placement::spawn_placement_ghost,
                     grid::configure_grid_gizmos,
@@ -217,8 +218,7 @@ impl Plugin for EditorPlugin {
                 (
                     fog::handle_fog.run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open))
                         .in_set(ToolInput),
-                    fog::render_fog_editor,
-                    fog::render_fog_player.after(crate::session::PlayerViewSync),
+                    fog_overlay::update_fog_overlays.after(crate::session::PlayerViewSync),
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),
                 ),
             )
