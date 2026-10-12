@@ -569,7 +569,11 @@ fn render_maps_section(
             .on_hover_text("Rename map (F3)")
             .clicked()
         {
-            browser_state.rename_map_new_name = map_res.map_data.name.clone();
+            browser_state.rename_map_new_name = map_res
+                .open_maps
+                .active_map()
+                .map(|m| m.name.clone())
+                .unwrap_or_else(|| map_res.map_data.name.clone());
             browser_state.rename_map_dialog_open = true;
         }
     });

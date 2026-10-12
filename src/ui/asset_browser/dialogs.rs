@@ -11,6 +11,7 @@ use crate::config::SetDefaultLibraryRequest;
 use super::asset_ops::{move_asset, rename_asset};
 use super::helpers::discover_folders;
 use super::state::{AssetBrowserState, MapResources, ZipJobKind};
+use crate::ui::map_actions::sanitize_map_name;
 
 /// Render the "Set as default library" dialog.
 pub fn render_set_default_dialog(
@@ -247,6 +248,10 @@ pub fn render_rename_map_dialog(
         .show(ctx, |ui| {
             ui.label("Enter new map name:");
             ui.add_space(4.0);
+            if let Some(error) = &browser_state.rename_map_error {
+                ui.colored_label(egui::Color32::from_rgb(220, 90, 90), error);
+                ui.add_space(4.0);
+            }
 
             let response = ui.text_edit_singleline(&mut browser_state.rename_map_new_name);
 
@@ -272,22 +277,62 @@ pub fn render_rename_map_dialog(
         });
 
     if do_rename {
-        let new_name = browser_state.rename_map_new_name.trim().to_string();
-        if !new_name.is_empty() {
-            map_res.map_data.name = new_name.clone();
-            // Keep the open-maps entry in sync so the maps list and the Save
-            // dialog (which read from OpenMaps) reflect the new name.
-            if let Some(active_map) = map_res.open_maps.active_map_mut() {
-                active_map.name = new_name;
+        match rename_active_map(map_res, &browser_state.rename_map_new_name) {
+            Ok(()) => {
+                browser_state.rename_map_dialog_open = false;
+                browser_state.rename_map_error = None;
             }
-            map_res.dirty_state.is_dirty = true;
-            browser_state.rename_map_dialog_open = false;
+            Err(e) => browser_state.rename_map_error = Some(e),
         }
     }
 
     if close_dialog {
         browser_state.rename_map_dialog_open = false;
+        browser_state.rename_map_error = None;
     }
+}
+
+/// Renames the active map. A map that's been saved is its file, so the file is renamed
+/// too (in the same folder); the maps list shows the new name right away.
+fn rename_active_map(map_res: &mut MapResources, new_name: &str) -> Result<(), String> {
+    let new_name = new_name.trim();
+    let filename = sanitize_map_name(new_name);
+    if !filename.chars().any(char::is_alphanumeric) {
+        return Err("Enter a name with letters or digits.".to_string());
+    }
+    let Some(active) = map_res.open_maps.active_map_mut() else {
+        return Ok(());
+    };
+
+    if let Some(old_path) = active.path.clone() {
+        let new_path = old_path.with_file_name(format!("{}.json", filename));
+        if new_path != old_path {
+            // Comparing names case-insensitively catches a case-only rename on
+            // case-insensitive file systems, which rename can do in place
+            let case_only = new_path
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&old_path.to_string_lossy());
+            if new_path.exists() && !case_only {
+                return Err(format!("A map named \"{}\" already exists.", filename));
+            }
+            std::fs::rename(&old_path, &new_path)
+                .map_err(|e| format!("Couldn't rename the map file: {}", e))?;
+            active.path = Some(new_path.clone());
+            map_res.current_map_file.path = Some(new_path.clone());
+            map_res
+                .last_map_events
+                .write(crate::config::UpdateLastMapPathRequest { path: new_path });
+        }
+        active.name = filename.clone();
+        map_res.map_data.name = filename;
+    } else {
+        // Not saved yet: the first save uses this name for the file
+        active.name = new_name.to_string();
+        map_res.map_data.name = new_name.to_string();
+    }
+    // The name inside the file changed
+    map_res.dirty_state.is_dirty = true;
+    Ok(())
 }
 
 /// Render the rename library dialog.
@@ -493,7 +538,11 @@ pub fn handle_rename_shortcuts(
 
         // Handle F3 key to open rename map dialog
         if ctx.input(|i| i.key_pressed(egui::Key::F3)) && !browser_state.rename_map_dialog_open {
-            browser_state.rename_map_new_name = map_res.map_data.name.clone();
+            browser_state.rename_map_new_name = map_res
+                .open_maps
+                .active_map()
+                .map(|m| m.name.clone())
+                .unwrap_or_else(|| map_res.map_data.name.clone());
             browser_state.rename_map_dialog_open = true;
         }
 

@@ -64,6 +64,10 @@ pub fn save_map_system(
             .filter(|_| same_file)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         saved_map.map_id = Some(map_id.clone());
+        // A saved map is named after its file
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            saved_map.map_data.name = stem.to_string();
+        }
         saved_map.saved_by = crate::fsutil::machine_name();
         // The version of the file this map came from; None for a new file or a copy
         let expected_hash = active

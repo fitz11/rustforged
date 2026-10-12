@@ -18,7 +18,9 @@ use super::super::settings_dialog::SettingsDialogState;
 #[derive(SystemParam)]
 pub struct MapResources<'w> {
     pub map_data: ResMut<'w, MapData>,
-    pub current_map_file: Res<'w, CurrentMapFile>,
+    pub current_map_file: ResMut<'w, CurrentMapFile>,
+    /// Remembers the renamed map file as the last one opened
+    pub last_map_events: MessageWriter<'w, crate::config::UpdateLastMapPathRequest>,
     pub dirty_state: ResMut<'w, MapDirtyState>,
     pub open_maps: ResMut<'w, OpenMaps>,
     pub load_events: MessageWriter<'w, LoadMapRequest>,
@@ -77,6 +79,8 @@ pub struct AssetBrowserState {
     pub rename_error: Option<String>,
     /// Whether the rename map dialog is open
     pub rename_map_dialog_open: bool,
+    /// Why the last map rename failed
+    pub rename_map_error: Option<String>,
     /// New name input for rename map dialog
     pub rename_map_new_name: String,
     /// Whether the rename library dialog is open
@@ -143,6 +147,7 @@ impl Default for AssetBrowserState {
             rename_new_name: String::new(),
             rename_error: None,
             rename_map_dialog_open: false,
+            rename_map_error: None,
             rename_map_new_name: String::new(),
             rename_library_dialog_open: false,
             rename_library_new_name: String::new(),

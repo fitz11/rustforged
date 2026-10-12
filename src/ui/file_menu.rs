@@ -48,9 +48,14 @@ pub fn file_menu_ui(
                     ui.label("Map name:");
                     ui.text_edit_singleline(&mut menu_state.save_filename);
                 });
+                // A name of only spaces or symbols would make a hidden ".json" file
+                let filename = sanitize_map_name(&menu_state.save_filename);
+                let name_ok = filename.chars().any(char::is_alphanumeric);
+                if !name_ok {
+                    ui.label(egui::RichText::new("Enter a name with letters or digits").weak());
+                }
                 ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        let filename = sanitize_map_name(&menu_state.save_filename);
+                    if ui.add_enabled(name_ok, egui::Button::new("Save")).clicked() {
                         let path = maps_dir.join(format!("{}.json", filename));
                         save_events.write(SaveMapRequest::new(path));
                         menu_state.show_save_name_dialog = false;
