@@ -84,10 +84,16 @@ impl Default for SelectedLayer {
 pub fn handle_tool_shortcuts(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_button: Res<ButtonInput<MouseButton>>,
     mut current_tool: ResMut<CurrentTool>,
     mut selected_layer: ResMut<SelectedLayer>,
     selected_query: Query<Entity, With<Selected>>,
 ) {
+    // Not in the middle of a drag or stroke: the tool doing it has to see it through
+    if mouse_button.pressed(MouseButton::Left) {
+        return;
+    }
+
     // Bare letters only: Ctrl+S is Save, not the Select tool
     let pressed = |key| plain_key_just_pressed(&keyboard, key);
     let new_tool = if pressed(KeyCode::KeyV) || pressed(KeyCode::KeyS) {

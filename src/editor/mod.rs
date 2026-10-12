@@ -60,6 +60,29 @@ fn update_layer_visibility(
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ToolInput;
 
+/// Clears what the previous tool was in the middle of when the tool changes, such as the
+/// first point of a line, so coming back to it starts fresh. A brush stroke in progress is
+/// kept as an undo step.
+fn reset_tool_state_on_tool_change(
+    mut drag_state: ResMut<selection::DragState>,
+    mut box_select: ResMut<selection::BoxSelectState>,
+    mut line_state: ResMut<annotations::LineDrawState>,
+    mut draw_state: ResMut<annotations::DrawState>,
+    mut fog_state: ResMut<fog::FogState>,
+    mut brush_state: ResMut<brush::BrushState>,
+    mut history_writer: MessageWriter<history::RecordEditorCommand>,
+) {
+    drag_state.is_dragging = false;
+    drag_state.mode = selection::SelectionDragMode::None;
+    drag_state.original_bounds = None;
+    box_select.is_selecting = false;
+    line_state.start_point = None;
+    draw_state.is_drawing = false;
+    draw_state.current_points.clear();
+    fog_state.is_erasing = false;
+    brush_state.finish_stroke(&mut history_writer);
+}
+
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
@@ -108,6 +131,9 @@ impl Plugin for EditorPlugin {
                         .run_if(session_is_active)
                         .after(crate::session::PlayerViewSync),
                     tools::handle_tool_shortcuts.run_if(shortcuts_enabled),
+                    reset_tool_state_on_tool_change
+                        .run_if(resource_changed::<CurrentTool>)
+                        .after(tools::handle_tool_shortcuts),
                     tools::update_cursor_icon,
                     // After handle_selection: a placement can switch to Select,
                     // and the placing click mustn't also land as a Select click

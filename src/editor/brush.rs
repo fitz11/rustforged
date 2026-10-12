@@ -50,7 +50,14 @@ pub struct BrushState {
 }
 
 impl BrushState {
-    /// Emit the accumulated stroke (if any) as one PlaceItems command and reset.
+    /// Ends the stroke, recording what it placed as one undo step.
+    pub fn finish_stroke(&mut self, history_writer: &mut MessageWriter<RecordEditorCommand>) {
+        self.is_brushing = false;
+        self.last_placed_bounds = None;
+        self.flush_stroke(history_writer);
+    }
+
+    /// Emit the accumulated stroke (if any) as one undo step.
     fn flush_stroke(&mut self, history_writer: &mut MessageWriter<RecordEditorCommand>) {
         if !self.stroke_items.is_empty() {
             history_writer.write(RecordEditorCommand {
@@ -95,9 +102,7 @@ pub fn handle_brush(
     // Mouse release - stop brushing and record the stroke, wherever the mouse is (over a
     // panel too), so the stroke is one undo step right away
     if mouse_button.just_released(MouseButton::Left) {
-        brush_state.is_brushing = false;
-        brush_state.last_placed_bounds = None;
-        brush_state.flush_stroke(&mut history_writer);
+        brush_state.finish_stroke(&mut history_writer);
     }
 
     // Don't process if cursor is over UI

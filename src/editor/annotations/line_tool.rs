@@ -7,7 +7,6 @@ use crate::map::MapData;
 
 use super::super::history::{EditorCommand, MapObject, RecordEditorCommand};
 use super::super::params::{CameraParams, is_cursor_over_ui};
-use super::super::tools::{CurrentTool, EditorTool};
 use super::components::DrawnLine;
 use super::layer_helpers::is_annotation_layer_locked;
 use super::state::{AnnotationSettings, LineDrawState};
@@ -16,7 +15,6 @@ use super::state::{AnnotationSettings, LineDrawState};
 pub fn handle_line(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    current_tool: Res<CurrentTool>,
     mut line_state: ResMut<LineDrawState>,
     settings: Res<AnnotationSettings>,
     map_data: Res<MapData>,
@@ -25,11 +23,6 @@ pub fn handle_line(
     mut history_writer: MessageWriter<RecordEditorCommand>,
     asset_server: Res<AssetServer>,
 ) {
-    if current_tool.tool != EditorTool::Line {
-        line_state.start_point = None;
-        return;
-    }
-
     // Don't allow line drawing if annotation layer is locked
     if is_annotation_layer_locked(&map_data) {
         return;

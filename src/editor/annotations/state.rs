@@ -5,8 +5,6 @@ use bevy::prelude::*;
 
 use crate::map::MapData;
 
-use super::super::tools::CurrentTool;
-
 #[derive(Resource, Default)]
 pub struct DrawState {
     pub is_drawing: bool,
@@ -47,7 +45,6 @@ impl Default for AnnotationSettings {
 #[derive(SystemParam)]
 pub(crate) struct AnnotationResources<'w> {
     pub mouse_button: Res<'w, ButtonInput<MouseButton>>,
-    pub current_tool: Res<'w, CurrentTool>,
     pub draw_state: ResMut<'w, DrawState>,
     pub settings: Res<'w, AnnotationSettings>,
     pub map_data: Res<'w, MapData>,

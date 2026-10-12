@@ -8,7 +8,6 @@ use crate::editor::annotations::{
     path_overlaps_rect, text_overlaps_rect,
 };
 use crate::editor::params::{AnnotationQueries, CameraParams, is_cursor_over_ui};
-use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::input::command_held;
 use crate::map::{MapData, PlacedItem, Selected};
 
@@ -20,7 +19,6 @@ pub fn handle_box_select(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    current_tool: Res<CurrentTool>,
     camera: CameraParams,
     items_query: Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     selected_query: Query<Entity, With<Selected>>,
@@ -30,11 +28,6 @@ pub fn handle_box_select(
     map_data: Res<MapData>,
     annotations: AnnotationQueries,
 ) {
-    if current_tool.tool != EditorTool::Select {
-        box_select_state.is_selecting = false;
-        return;
-    }
-
     if !box_select_state.is_selecting {
         return;
     }

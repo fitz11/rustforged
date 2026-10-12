@@ -6,7 +6,6 @@ use bevy_egui::EguiContexts;
 use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
 use crate::editor::params::{CameraParams, is_cursor_over_ui};
-use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::input::shift_held;
 use crate::map::{ItemId, MapData, PlacedItem};
 
@@ -16,7 +15,6 @@ use super::{AnnotationDragData, DragState, ROTATION_SNAP_INCREMENT, SelectionDra
 pub fn handle_drag(
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    current_tool: Res<CurrentTool>,
     camera: CameraParams,
     mut items_query: Query<(&ItemId, &PlacedItem, &mut Transform)>,
     mut drag_state: ResMut<DragState>,
@@ -32,13 +30,6 @@ pub fn handle_drag(
     >,
     annotation_ids: Query<&ItemId, With<AnnotationMarker>>,
 ) {
-    if current_tool.tool != EditorTool::Select {
-        drag_state.is_dragging = false;
-        drag_state.mode = SelectionDragMode::None;
-        drag_state.original_bounds = None;
-        return;
-    }
-
     // Stop dragging on mouse release, recording the net change to the placed items and
     // annotations as one undo step (covers move/resize/rotate)
     if mouse_button.just_released(MouseButton::Left) {

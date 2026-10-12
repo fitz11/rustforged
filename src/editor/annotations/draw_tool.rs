@@ -8,7 +8,6 @@ use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::super::camera::EditorCamera;
 use super::super::history::{EditorCommand, MapObject, RecordEditorCommand};
-use super::super::tools::EditorTool;
 use super::components::DrawnPath;
 use super::layer_helpers::is_annotation_layer_locked;
 use super::state::{AnnotationResources, AnnotationSettings, DrawState};
@@ -22,22 +21,6 @@ pub fn handle_draw(
     mut history_writer: MessageWriter<RecordEditorCommand>,
     asset_server: Res<AssetServer>,
 ) {
-    if res.current_tool.tool != EditorTool::Draw {
-        // If we were drawing but switched tools, finalize
-        if res.draw_state.is_drawing && res.draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(
-                &mut commands,
-                &asset_server,
-                &res.draw_state,
-                &res.settings,
-                &mut history_writer,
-            );
-        }
-        res.draw_state.is_drawing = false;
-        res.draw_state.current_points.clear();
-        return;
-    }
-
     // Don't allow drawing if annotation layer is locked
     if is_annotation_layer_locked(&res.map_data) {
         return;
