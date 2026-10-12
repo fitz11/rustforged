@@ -1,5 +1,6 @@
 //! Map load system and task polling.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
@@ -11,7 +12,7 @@ use crate::editor::AnnotationMarker;
 use crate::map::{FogOfWarData, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedMap};
 
 use super::map_state::spawn_map_contents;
-use super::messages::LoadMapRequest;
+use super::messages::{LoadMapRequest, MapReplaced};
 use super::resources::{
     AsyncMapOperation, CurrentMapFile, LoadMapTask, MapAssetReport, MapChangedOnDisk,
     MapDirtyState, MapLoadError, OpenMap, OpenMaps,
@@ -114,6 +115,13 @@ pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
     }
 }
 
+/// Messages sent when a load completes
+#[derive(SystemParam)]
+pub struct LoadMessages<'w> {
+    config: MessageWriter<'w, UpdateLastMapPathRequest>,
+    replaced: MessageWriter<'w, MapReplaced>,
+}
+
 /// Polls load tasks and handles completion (spawns entities synchronously)
 #[allow(clippy::too_many_arguments)]
 pub fn poll_load_tasks(
@@ -130,7 +138,7 @@ pub fn poll_load_tasks(
     existing_items: Query<Entity, With<PlacedItem>>,
     existing_annotations: Query<Entity, With<AnnotationMarker>>,
     mut current_map_file: ResMut<CurrentMapFile>,
-    mut config_events: MessageWriter<UpdateLastMapPathRequest>,
+    mut messages: LoadMessages,
     mut dirty_state: ResMut<MapDirtyState>,
     mut open_maps: ResMut<OpenMaps>,
 ) {
@@ -183,12 +191,13 @@ pub fn poll_load_tasks(
             // Load fog of war data
             *fog_data = FogOfWarData::from(saved_map.fog_of_war);
 
+            messages.replaced.write(MapReplaced);
             info!("Map loaded from {:?}", result.path);
             disk_change.clear_for(&result.path);
 
             // Update current map file and config
             current_map_file.path = Some(result.path.clone());
-            config_events.write(UpdateLastMapPathRequest {
+            messages.config.write(UpdateLastMapPathRequest {
                 path: result.path.clone(),
             });
 

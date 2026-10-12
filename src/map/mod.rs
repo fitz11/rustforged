@@ -12,8 +12,8 @@ pub use map_data::{
 };
 pub use persistence::{
     AsyncMapOperation, CurrentMapFile, LoadMapRequest, MapAssetReport, MapChangedOnDisk,
-    MapDirtyState, MapLoadError, MapSaveError, MapSaveFinished, NewMapRequest, OpenMaps,
-    SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest, SwitchMapRequest,
+    MapDirtyState, MapLoadError, MapReplaced, MapSaveError, MapSaveFinished, NewMapRequest,
+    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest, SwitchMapRequest,
 };
 pub use placed_item::{ItemId, MissingAsset, PlacedItem, Selected};
 
@@ -36,6 +36,7 @@ impl Plugin for MapPlugin {
             .init_resource::<AsyncMapOperation>()
             .add_message::<SaveMapRequest>()
             .add_message::<persistence::MapSaveFinished>()
+            .add_message::<persistence::MapReplaced>()
             .add_message::<LoadMapRequest>()
             .add_message::<NewMapRequest>()
             .add_message::<SwitchMapRequest>()

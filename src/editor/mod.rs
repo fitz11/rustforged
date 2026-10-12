@@ -156,6 +156,13 @@ impl Plugin for EditorPlugin {
                         .run_if(command_key(KeyCode::KeyV).and_then(shortcuts_enabled)),
                     history::handle_undo_redo.run_if(shortcuts_enabled),
                     history::record_commands,
+                    // After recording, so nothing about the old map slips in
+                    (
+                        history::clear_history_on_map_change,
+                        brush::reset_brush_on_map_change,
+                    )
+                        .after(history::record_commands)
+                        .run_if(on_message::<crate::map::MapReplaced>),
                 ),
             )
             .add_systems(

@@ -8,6 +8,12 @@ use crate::map::{ItemId, MapDirtyState};
 use super::command_history::CommandHistory;
 use super::execute::execute;
 
+/// Forgets the history when the map is replaced: its steps refer to the old map's items,
+/// so undoing one in the new map would bring them back there.
+pub fn clear_history_on_map_change(mut history: ResMut<CommandHistory>) {
+    history.clear();
+}
+
 /// Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes (Cmd on macOS).
 pub fn handle_undo_redo(
     keyboard: Res<ButtonInput<KeyCode>>,

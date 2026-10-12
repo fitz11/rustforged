@@ -257,3 +257,22 @@ fn test_undo_and_redo_respawn_items_with_their_layer() {
     assert_eq!(transform.translation.z, Layer::GM.z_base() + 3.0);
     assert_eq!(*layers, Layer::GM.render_layers());
 }
+
+#[test]
+fn test_replacing_the_map_clears_history() {
+    use super::systems::clear_history_on_map_change;
+    use crate::map::MapReplaced;
+
+    let mut app = history_app();
+    app.add_message::<MapReplaced>().add_systems(
+        Update,
+        clear_history_on_map_change.run_if(on_message::<MapReplaced>),
+    );
+    record(&mut app, EditorCommand::Add(vec![path(&[Vec2::ZERO])]));
+    app.update();
+    assert!(app.world().resource::<CommandHistory>().can_undo());
+
+    app.world_mut().write_message(MapReplaced);
+    app.update();
+    assert!(!app.world().resource::<CommandHistory>().can_undo());
+}

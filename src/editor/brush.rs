@@ -60,6 +60,12 @@ impl BrushState {
     }
 }
 
+/// Drops a brush stroke in progress when the map is replaced, so it isn't recorded as
+/// an undo step of the new map.
+pub fn reset_brush_on_map_change(mut brush_state: ResMut<BrushState>) {
+    *brush_state = BrushState::default();
+}
+
 /// Uniform scale that fits an image of `image_size` inside one grid cell
 pub(super) fn fit_to_cell_scale(image_size: Vec2, grid_size: f32) -> Vec3 {
     if image_size.x > 0.0 && image_size.y > 0.0 {

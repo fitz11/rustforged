@@ -40,6 +40,12 @@ pub struct LoadMapRequest {
 #[derive(Message)]
 pub struct NewMapRequest;
 
+/// Sent when the map being edited was replaced by another: a new map, a map opened from
+/// disk, or a switch to another open map. Editor state about the old map's entities (undo
+/// history, a brush stroke in progress) no longer applies.
+#[derive(Message)]
+pub struct MapReplaced;
+
 /// Message to request switching to a different open map
 #[derive(Message)]
 #[allow(dead_code)] // Reserved for future map switching feature

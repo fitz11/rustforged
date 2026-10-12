@@ -9,7 +9,7 @@ use crate::map::{
 };
 
 use super::helpers::{array_to_color, color_to_array};
-use super::messages::{NewMapRequest, SwitchMapRequest};
+use super::messages::{MapReplaced, NewMapRequest, SwitchMapRequest};
 use super::resources::{CurrentMapFile, MapDirtyState, OpenMap, OpenMaps};
 
 #[allow(clippy::too_many_arguments)]
@@ -23,8 +23,10 @@ pub fn new_map_system(
     mut current_map_file: ResMut<CurrentMapFile>,
     mut dirty_state: ResMut<MapDirtyState>,
     mut open_maps: ResMut<OpenMaps>,
+    mut replaced: MessageWriter<MapReplaced>,
 ) {
     for _ in events.read() {
+        replaced.write(MapReplaced);
         // Clear existing items
         for entity in existing_items.iter() {
             commands.entity(entity).despawn();
@@ -201,6 +203,7 @@ pub fn switch_map_system(
     paths: Query<&DrawnPath>,
     lines: Query<&DrawnLine>,
     texts: Query<(&Transform, &TextAnnotation)>,
+    mut replaced: MessageWriter<MapReplaced>,
 ) {
     for event in events.read() {
         let target_id = event.map_id;
@@ -268,6 +271,7 @@ pub fn switch_map_system(
             // Update active map
             open_maps.active_map_id = Some(target_id);
 
+            replaced.write(MapReplaced);
             info!("Switched to map: {}", target_map.name);
         }
     }
