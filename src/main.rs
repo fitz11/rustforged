@@ -7,6 +7,7 @@ mod config;
 mod constants;
 mod editor;
 mod fsutil;
+mod input;
 mod map;
 mod paths;
 mod session;

@@ -44,6 +44,7 @@ fn update_dialog_state(
     missing_map: Res<MissingMapWarning>,
     config_reset: Res<ConfigResetNotification>,
     unsaved_changes: Res<map_actions::UnsavedChangesPrompt>,
+    open_map_picker: Res<map_actions::OpenMapPicker>,
     asset_report: Res<MapAssetReport>,
     save_conflict: Res<SaveConflictDialog>,
     save_error: Res<MapSaveError>,
@@ -64,6 +65,7 @@ fn update_dialog_state(
         || missing_map.show
         || config_reset.show
         || unsaved_changes.pending.is_some()
+        || open_map_picker.is_open()
         || asset_report.show
         || save_conflict.conflict.is_some()
         || save_error.message.is_some()
@@ -83,6 +85,7 @@ impl Plugin for UiPlugin {
             .init_resource::<asset_import::AssetImportDialog>()
             .init_resource::<file_menu::FileMenuState>()
             .init_resource::<map_actions::UnsavedChangesPrompt>()
+            .init_resource::<map_actions::OpenMapPicker>()
             .add_message::<map_actions::MapFileAction>()
             .init_resource::<layers_panel::HelpWindowState>()
             .init_resource::<settings_dialog::SettingsDialogState>()
@@ -133,6 +136,8 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
+                    map_actions::handle_file_shortcuts.run_if(crate::editor::no_dialog_open),
+                    map_actions::poll_open_map_picker,
                     map_actions::handle_map_file_actions,
                     map_actions::run_action_after_save,
                 ),

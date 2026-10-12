@@ -1,4 +1,4 @@
-//! New, Open, Save and Quit for the active map.
+//! New, Open, Save, Save As and Quit for the active map.
 //!
 //! Buttons, keyboard shortcuts and the window's close button all send a [`MapFileAction`],
 //! so they ask about unsaved changes the same way: an action that would replace or close
@@ -7,11 +7,14 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy::tasks::{IoTaskPool, Task};
 use bevy::window::{PrimaryWindow, WindowCloseRequested};
 use bevy_egui::{EguiContexts, egui};
+use futures_lite::future;
 use std::path::{Path, PathBuf};
 
 use crate::assets::AssetLibrary;
+use crate::input::command_key_just_pressed;
 use crate::map::{
     LoadMapRequest, MapDirtyState, MapSaveFinished, NewMapRequest, OpenMaps, SaveMapRequest,
 };
@@ -27,6 +30,7 @@ pub enum MapFileAction {
     New,
     Open(PathBuf),
     Save,
+    SaveAs,
     Quit,
 }
 
@@ -46,6 +50,79 @@ pub struct UnsavedChangesPrompt {
     pub pending: Option<ReplacingAction>,
     /// The user chose Save: run this once the save succeeds
     pub after_save: Option<ReplacingAction>,
+}
+
+/// The file picker opened with Ctrl+O, while it's open.
+#[derive(Resource, Default)]
+pub struct OpenMapPicker {
+    task: Option<Task<Option<PathBuf>>>,
+}
+
+impl OpenMapPicker {
+    pub fn is_open(&self) -> bool {
+        self.task.is_some()
+    }
+
+    /// Ask for a map file to open, starting in the library's maps folder.
+    pub fn open(&mut self, maps_dir: &Path) {
+        if self.task.is_some() {
+            return;
+        }
+        let maps_dir = maps_dir.to_path_buf();
+        self.task = Some(IoTaskPool::get().spawn(async move {
+            let mut dialog = rfd::AsyncFileDialog::new()
+                .set_title("Open Map")
+                .add_filter("Rustforged map", &["json"]);
+            if maps_dir.is_dir() {
+                dialog = dialog.set_directory(&maps_dir);
+            }
+            dialog.pick_file().await.map(|h| h.path().to_path_buf())
+        }));
+    }
+}
+
+/// Opens the map picked in the Ctrl+O file picker.
+pub fn poll_open_map_picker(
+    mut picker: ResMut<OpenMapPicker>,
+    mut actions: MessageWriter<MapFileAction>,
+) {
+    let Some(task) = picker.task.as_mut() else {
+        return;
+    };
+    if let Some(result) = future::block_on(future::poll_once(task)) {
+        picker.task = None;
+        if let Some(path) = result {
+            actions.write(MapFileAction::Open(path));
+        }
+    }
+}
+
+/// Ctrl+S, Ctrl+Shift+S, Ctrl+O and Ctrl+N (Cmd on macOS).
+pub fn handle_file_shortcuts(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
+    library: Res<AssetLibrary>,
+    mut picker: ResMut<OpenMapPicker>,
+    mut actions: MessageWriter<MapFileAction>,
+) {
+    // A focused text field gets the keys instead
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.egui_wants_keyboard_input()
+    {
+        return;
+    }
+
+    if command_key_just_pressed(&keyboard, KeyCode::KeyS) {
+        if crate::input::shift_held(&keyboard) {
+            actions.write(MapFileAction::SaveAs);
+        } else {
+            actions.write(MapFileAction::Save);
+        }
+    } else if command_key_just_pressed(&keyboard, KeyCode::KeyN) {
+        actions.write(MapFileAction::New);
+    } else if command_key_just_pressed(&keyboard, KeyCode::KeyO) {
+        picker.open(&library.library_path.join("maps"));
+    }
 }
 
 /// Runs a [`ReplacingAction`] once unsaved changes are dealt with.
@@ -155,6 +232,10 @@ pub fn handle_map_file_actions(
         let replacing = match action {
             MapFileAction::Save => {
                 request_save(&open_maps, &maps_dir, &mut menu_state, &mut save_events);
+                continue;
+            }
+            MapFileAction::SaveAs => {
+                open_save_as(&open_maps, &mut menu_state);
                 continue;
             }
             MapFileAction::New => ReplacingAction::New,

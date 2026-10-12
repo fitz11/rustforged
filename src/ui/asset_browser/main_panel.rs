@@ -532,8 +532,17 @@ fn render_maps_section(
             map_res.file_actions.write(MapFileAction::New);
         }
         if ui
+            .add_sized([45.0, 24.0], egui::Button::new("Open"))
+            .on_hover_text("Open a map file (Ctrl+O)")
+            .clicked()
+        {
+            map_res
+                .open_map_picker
+                .open(&library.library_path.join("maps"));
+        }
+        if ui
             .add_sized([45.0, 24.0], egui::Button::new("Save"))
-            .on_hover_text("Save map (Ctrl+S)")
+            .on_hover_text("Save map (Ctrl+S, or Ctrl+Shift+S to save as)")
             .clicked()
         {
             map_res.file_actions.write(MapFileAction::Save);

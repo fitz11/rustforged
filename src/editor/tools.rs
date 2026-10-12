@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::EguiContexts;
 
+use crate::input::{plain_key_just_pressed, shift_held};
 use crate::map::{Layer, Selected};
 use crate::ui::panel_layout::is_pointer_over_ui;
 
@@ -95,18 +96,20 @@ pub fn handle_tool_shortcuts(
         return;
     }
 
-    let new_tool = if keyboard.just_pressed(KeyCode::KeyV) || keyboard.just_pressed(KeyCode::KeyS) {
+    // Bare letters only: Ctrl+S is Save, not the Select tool
+    let pressed = |key| plain_key_just_pressed(&keyboard, key);
+    let new_tool = if pressed(KeyCode::KeyV) || pressed(KeyCode::KeyS) {
         Some(EditorTool::Select)
-    } else if keyboard.just_pressed(KeyCode::KeyP) {
+    } else if pressed(KeyCode::KeyP) {
         Some(EditorTool::Place)
-    } else if keyboard.just_pressed(KeyCode::KeyB) {
+    } else if pressed(KeyCode::KeyB) {
         Some(EditorTool::Brush)
-    } else if keyboard.just_pressed(KeyCode::KeyD) {
+    } else if pressed(KeyCode::KeyD) {
         Some(EditorTool::Draw)
-    } else if keyboard.just_pressed(KeyCode::KeyL) {
+    } else if pressed(KeyCode::KeyL) {
         Some(EditorTool::Line)
     // T key for Text tool disabled - see TODO in all()
-    } else if keyboard.just_pressed(KeyCode::KeyF) {
+    } else if pressed(KeyCode::KeyF) {
         Some(EditorTool::Fog)
     } else {
         None
@@ -124,9 +127,9 @@ pub fn handle_tool_shortcuts(
 
     // Handle C/Shift+C to cycle layers when Place or Brush tool is active
     if (current_tool.tool == EditorTool::Place || current_tool.tool == EditorTool::Brush)
-        && keyboard.just_pressed(KeyCode::KeyC)
+        && plain_key_just_pressed(&keyboard, KeyCode::KeyC)
     {
-        let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+        let shift = shift_held(&keyboard);
         let layers = Layer::all();
         let current_idx = layers
             .iter()

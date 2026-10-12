@@ -11,7 +11,7 @@ use crate::map::{
 };
 
 use super::super::asset_import::AssetImportDialog;
-use super::super::map_actions::MapFileAction;
+use super::super::map_actions::{MapFileAction, OpenMapPicker};
 use super::super::settings_dialog::SettingsDialogState;
 
 /// Bundle of map-related resources and event writers.
@@ -24,6 +24,7 @@ pub struct MapResources<'w> {
     pub load_events: MessageWriter<'w, LoadMapRequest>,
     /// New, Open and Save, which ask about unsaved changes first
     pub file_actions: MessageWriter<'w, MapFileAction>,
+    pub open_map_picker: ResMut<'w, OpenMapPicker>,
     pub switch_events: MessageWriter<'w, SwitchMapRequest>,
     pub disk_change: ResMut<'w, MapChangedOnDisk>,
 }
