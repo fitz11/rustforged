@@ -22,6 +22,7 @@ use bevy_egui::EguiContexts;
 
 use super::camera::EditorCamera;
 use super::params::{CameraParams, is_cursor_over_ui};
+use crate::input::shift_held;
 use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius};
 use crate::session::{LiveSessionState, PlayerMapView, PlayerViewport};
 use crate::theme;
@@ -131,7 +132,7 @@ pub fn handle_fog(
     };
 
     let grid_size = map_data.grid_size;
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
 
     // Handle mouse input
     if mouse_button.just_pressed(MouseButton::Left) {
@@ -248,7 +249,7 @@ pub fn render_fog_brush_preview(
     };
 
     let grid_size = map_data.grid_size;
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
 
     if shift_held {
         // Grid-aligned mode: show single cell highlight

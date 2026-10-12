@@ -100,18 +100,10 @@ pub fn poll_open_map_picker(
 /// Ctrl+S, Ctrl+Shift+S, Ctrl+O and Ctrl+N (Cmd on macOS).
 pub fn handle_file_shortcuts(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
     library: Res<AssetLibrary>,
     mut picker: ResMut<OpenMapPicker>,
     mut actions: MessageWriter<MapFileAction>,
 ) {
-    // A focused text field gets the keys instead
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     if command_key_just_pressed(&keyboard, KeyCode::KeyS) {
         if crate::input::shift_held(&keyboard) {
             actions.write(MapFileAction::SaveAs);

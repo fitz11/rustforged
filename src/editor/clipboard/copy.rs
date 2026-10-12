@@ -1,7 +1,6 @@
 //! Copy system for clipboard operations (Ctrl+C).
 
 use bevy::prelude::*;
-use bevy_egui::EguiContexts;
 
 use crate::map::{PlacedItem, SavedLine, SavedPath, SavedPlacedItem, SavedTextBox, Selected};
 
@@ -12,9 +11,7 @@ use super::types::{Clipboard, ClipboardLine, ClipboardPath, ClipboardPlacedItem,
 /// Copy selected items to clipboard (Ctrl+C)
 #[allow(clippy::type_complexity)]
 pub fn handle_copy(
-    keyboard: Res<ButtonInput<KeyCode>>,
     mut clipboard: ResMut<Clipboard>,
-    mut contexts: EguiContexts,
     // PlacedItem queries
     selected_items: Query<(&PlacedItem, &Transform), With<Selected>>,
     // Annotation queries
@@ -22,19 +19,6 @@ pub fn handle_copy(
     selected_lines: Query<&DrawnLine, (With<Selected>, With<AnnotationMarker>)>,
     selected_texts: Query<(&Transform, &TextAnnotation), (With<Selected>, With<AnnotationMarker>)>,
 ) {
-    // Check for Ctrl+C
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if !ctrl || !keyboard.just_pressed(KeyCode::KeyC) {
-        return;
-    }
-
-    // Don't copy if UI has keyboard focus (user typing)
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     // Nothing selected? Don't clear clipboard
     if selected_items.is_empty()
         && selected_paths.is_empty()

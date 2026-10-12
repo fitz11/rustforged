@@ -9,6 +9,7 @@ use crate::editor::annotations::{
 };
 use crate::editor::params::{AnnotationQueries, CameraParams, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
+use crate::input::command_held;
 use crate::map::{MapData, PlacedItem, Selected};
 
 use super::BoxSelectState;
@@ -68,8 +69,7 @@ pub fn handle_box_select(
             return;
         }
 
-        let ctrl_held =
-            keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
+        let ctrl_held = command_held(&keyboard);
 
         // If not holding ctrl, clear existing selection
         if !ctrl_held {

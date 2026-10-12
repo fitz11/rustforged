@@ -24,6 +24,20 @@ use crate::session::MonitorSelectionDialog;
 pub struct DialogState {
     /// True when any modal dialog is open that should block editor input
     pub any_modal_open: bool,
+    /// True when a text field or number field has keyboard focus, so typing must not
+    /// trigger shortcuts
+    pub text_input_focused: bool,
+}
+
+/// Records whether egui wants the keyboard (a text field has focus) for this frame's
+/// shortcut systems.
+fn track_text_input_focus(
+    mut contexts: bevy_egui::EguiContexts,
+    mut dialog_state: ResMut<DialogState>,
+) {
+    dialog_state.text_input_focused = contexts
+        .ctx_mut()
+        .is_ok_and(|ctx| ctx.egui_wants_keyboard_input());
 }
 
 /// Docked panels of the main editor layout. Each panel takes space from what the panels
@@ -136,7 +150,7 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    map_actions::handle_file_shortcuts.run_if(crate::editor::no_dialog_open),
+                    map_actions::handle_file_shortcuts.run_if(crate::editor::shortcuts_enabled),
                     map_actions::poll_open_map_picker,
                     map_actions::handle_map_file_actions,
                     map_actions::run_action_after_save,
@@ -147,8 +161,13 @@ impl Plugin for UiPlugin {
                 session_controls::monitor_selection_dialog,
             )
             .add_systems(Update, session_controls::enumerate_monitors)
-            .add_systems(Update, layers_panel::handle_help_shortcut)
+            .add_systems(
+                Update,
+                layers_panel::handle_help_shortcut.run_if(
+                    crate::editor::plain_key(KeyCode::KeyH).and_then(crate::editor::no_text_input),
+                ),
+            )
             // Update dialog state at the start of each frame
-            .add_systems(First, update_dialog_state);
+            .add_systems(First, (update_dialog_state, track_text_input_focus));
     }
 }

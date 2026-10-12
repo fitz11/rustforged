@@ -1,12 +1,12 @@
 //! Keyboard shortcuts for selection operations.
 
 use bevy::prelude::*;
-use bevy_egui::EguiContexts;
 
 use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::editor::history::{
     EditorCommand, LineData, PathData, PlacedItemData, RecordEditorCommand, TextData, TransformData,
 };
+use crate::input::shift_held;
 use crate::map::{MapData, PlacedItem, Selected};
 
 use super::hit_detection::get_sprite_half_size;
@@ -16,18 +16,10 @@ pub fn handle_fit_to_grid(
     mut selected_query: Query<(Entity, &mut Transform, &Sprite), With<Selected>>,
     map_data: Res<MapData>,
     images: Res<Assets<Image>>,
-    mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     // G = fit to grid (but not Shift+G, which is center to grid)
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
     if !keyboard.just_pressed(KeyCode::KeyG) || shift_held {
         return;
     }
@@ -58,18 +50,10 @@ pub fn handle_center_to_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
     map_data: Res<MapData>,
-    mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     // Shift+G = center to grid
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
     if !keyboard.just_pressed(KeyCode::KeyG) || !shift_held {
         return;
     }
@@ -101,16 +85,8 @@ pub fn handle_center_to_grid(
 pub fn handle_restore_aspect_ratio(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
-    mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     // A = restore aspect ratio
     if !keyboard.just_pressed(KeyCode::KeyA) {
         return;
@@ -136,17 +112,9 @@ pub fn handle_restore_aspect_ratio(
 pub fn handle_rotate_90(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
-    mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
 
     // Rotate 90 degrees: clockwise (negative) or counter-clockwise (positive) with Shift
     let angle = if shift_held { 90.0_f32 } else { -90.0_f32 };
@@ -199,16 +167,8 @@ pub fn handle_deletion(
         (Entity, &Transform, &TextAnnotation),
         (With<Selected>, With<AnnotationMarker>),
     >,
-    mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     let should_delete =
         keyboard.just_pressed(KeyCode::Delete) || keyboard.just_pressed(KeyCode::Backspace);
 
@@ -276,15 +236,7 @@ pub fn handle_escape_clear_selection(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     selected_query: Query<Entity, With<Selected>>,
-    mut contexts: EguiContexts,
 ) {
-    // Don't trigger if typing in UI
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     if keyboard.just_pressed(KeyCode::Escape) {
         for entity in selected_query.iter() {
             commands.entity(entity).remove::<Selected>();

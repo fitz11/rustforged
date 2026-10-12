@@ -9,6 +9,7 @@ use crate::editor::annotations::{
 };
 use crate::editor::params::{AnnotationQueries, CameraWithProjection, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
+use crate::input::command_held;
 use crate::map::{MapData, PlacedItem, Selected};
 use crate::session::{LiveSessionState, ViewportDragMode, get_handle_at_position};
 
@@ -61,8 +62,7 @@ pub fn handle_selection(
         return;
     }
 
-    let ctrl_held =
-        keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
+    let ctrl_held = command_held(&keyboard);
 
     if mouse_button.just_pressed(MouseButton::Left) {
         // First, check if we clicked on a selection handle or inside the selection bounds

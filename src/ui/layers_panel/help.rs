@@ -277,19 +277,6 @@ fn render_file_section(ui: &mut egui::Ui) {
 }
 
 /// Handles the H keyboard shortcut to toggle help window.
-pub fn handle_help_shortcut(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut help_state: ResMut<HelpWindowState>,
-    mut contexts: EguiContexts,
-) {
-    // Don't toggle if typing in a text field
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
-    if keyboard.just_pressed(KeyCode::KeyH) {
-        help_state.is_open = !help_state.is_open;
-    }
+pub fn handle_help_shortcut(mut help_state: ResMut<HelpWindowState>) {
+    help_state.is_open = !help_state.is_open;
 }

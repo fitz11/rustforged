@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use crate::input::{command_held, shift_held};
 use crate::map::PlacedItem;
 
 use super::super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
@@ -20,8 +21,8 @@ pub fn handle_undo(
     lines_query: Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
     texts_query: Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
 ) {
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let ctrl = command_held(&keyboard);
+    let shift = shift_held(&keyboard);
 
     // Ctrl+Z (without shift) = undo
     if ctrl
@@ -56,8 +57,8 @@ pub fn handle_redo(
     lines_query: Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
     texts_query: Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
 ) {
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let ctrl = command_held(&keyboard);
+    let shift = shift_held(&keyboard);
 
     // Ctrl+Y or Ctrl+Shift+Z = redo
     let redo_pressed = (ctrl && keyboard.just_pressed(KeyCode::KeyY))

@@ -14,11 +14,14 @@ pub mod tools;
 pub use annotations::{AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation};
 pub use camera::EditorCamera;
 pub use clipboard::Clipboard;
-pub use conditions::{no_dialog_open, session_is_active, tool_is};
+pub use conditions::{
+    command_key, no_dialog_open, no_text_input, plain_key, session_is_active, shortcuts_enabled,
+    tool_is,
+};
 pub use grid::GridSettings;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 
-use bevy::input::common_conditions::{input_just_pressed, input_pressed};
+use bevy::input::common_conditions::input_pressed;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 // EguiPrimaryContextPass import removed - text tool disabled
@@ -98,7 +101,7 @@ impl Plugin for EditorPlugin {
                     camera::apply_camera_zoom,
                     grid::draw_grid,
                     grid::draw_player_grid.run_if(session_is_active),
-                    tools::handle_tool_shortcuts.run_if(no_dialog_open),
+                    tools::handle_tool_shortcuts.run_if(shortcuts_enabled),
                     tools::update_cursor_icon,
                     // After handle_selection: a placement can switch to Select,
                     // and the placing click mustn't also land as a Select click
@@ -123,38 +126,41 @@ impl Plugin for EditorPlugin {
                     selection::draw_selection_indicators,
                     selection::draw_box_select_rect,
                     selection::handle_fit_to_grid.run_if(
-                        input_just_pressed(KeyCode::KeyG)
+                        plain_key(KeyCode::KeyG)
                             .and_then(tool_is(EditorTool::Select))
-                            .and_then(no_dialog_open),
+                            .and_then(shortcuts_enabled),
                     ),
                     selection::handle_center_to_grid.run_if(
-                        input_just_pressed(KeyCode::KeyG)
+                        plain_key(KeyCode::KeyG)
                             .and_then(tool_is(EditorTool::Select))
-                            .and_then(no_dialog_open),
+                            .and_then(shortcuts_enabled),
                     ),
                     selection::handle_restore_aspect_ratio.run_if(
-                        input_just_pressed(KeyCode::KeyA)
+                        plain_key(KeyCode::KeyA)
                             .and_then(tool_is(EditorTool::Select))
-                            .and_then(no_dialog_open),
+                            .and_then(shortcuts_enabled),
                     ),
                     selection::handle_rotate_90.run_if(
-                        input_just_pressed(KeyCode::KeyR)
+                        plain_key(KeyCode::KeyR)
                             .and_then(tool_is(EditorTool::Select))
-                            .and_then(no_dialog_open),
+                            .and_then(shortcuts_enabled),
                     ),
                     selection::handle_deletion.run_if(
-                        input_just_pressed(KeyCode::Delete)
-                            .or_else(input_just_pressed(KeyCode::Backspace))
-                            .and_then(no_dialog_open),
+                        plain_key(KeyCode::Delete)
+                            .or_else(plain_key(KeyCode::Backspace))
+                            .and_then(shortcuts_enabled),
                     ),
                     selection::handle_escape_clear_selection
-                        .run_if(input_just_pressed(KeyCode::Escape).and_then(no_dialog_open)),
+                        .run_if(plain_key(KeyCode::Escape).and_then(shortcuts_enabled)),
                     selection::update_selection_cursor.run_if(tool_is(EditorTool::Select)),
-                    clipboard::handle_copy.run_if(no_dialog_open),
-                    clipboard::handle_cut.run_if(no_dialog_open),
-                    clipboard::handle_paste.run_if(no_dialog_open),
-                    history::handle_undo.run_if(no_dialog_open),
-                    history::handle_redo.run_if(no_dialog_open),
+                    clipboard::handle_copy
+                        .run_if(command_key(KeyCode::KeyC).and_then(shortcuts_enabled)),
+                    clipboard::handle_cut
+                        .run_if(command_key(KeyCode::KeyX).and_then(shortcuts_enabled)),
+                    clipboard::handle_paste
+                        .run_if(command_key(KeyCode::KeyV).and_then(shortcuts_enabled)),
+                    history::handle_undo.run_if(shortcuts_enabled),
+                    history::handle_redo.run_if(shortcuts_enabled),
                     history::record_commands,
                 ),
             )

@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::assets::SelectedAsset;
+use crate::input::{command_held, shift_held};
 use crate::map::{MapData, PlacedItem, Selected};
 use crate::ui::DialogState;
 
@@ -60,8 +61,7 @@ fn placement_position(
     grid_settings: &GridSettings,
     grid_size: f32,
 ) -> Vec2 {
-    let ctrl_held =
-        keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
+    let ctrl_held = command_held(keyboard);
     snap_to_grid(
         world_pos,
         grid_size,
@@ -121,8 +121,7 @@ pub fn update_placement_ghost(
     let grid_size = map_data.grid_size;
     let (position, scale) = if current_tool.tool == EditorTool::Brush {
         // Mirror handle_brush: always snapped, Shift fits the asset to one cell
-        let shift_held =
-            keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+        let shift_held = shift_held(&keyboard);
         let scale = match images.get(&sprite.image) {
             Some(image) if shift_held => fit_to_cell_scale(image.size_f32(), grid_size),
             _ => Vec3::ONE,
@@ -221,7 +220,7 @@ pub fn handle_placement(
 
     // Shift keeps the Place tool for another placement; otherwise hand off to
     // Select with the new item selected so it can be adjusted right away
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
     if !shift_held {
         for selected in selected_query.iter() {
             commands.entity(selected).remove::<Selected>();

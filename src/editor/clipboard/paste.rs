@@ -2,7 +2,6 @@
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
-use bevy_egui::EguiContexts;
 
 use crate::assets::library_asset_path;
 use crate::map::{Layer, MapData, PlacedItem, Selected};
@@ -19,28 +18,13 @@ use super::types::Clipboard;
 #[allow(clippy::too_many_arguments)]
 pub fn handle_paste(
     mut commands: Commands,
-    keyboard: Res<ButtonInput<KeyCode>>,
     clipboard: Res<Clipboard>,
-    mut contexts: EguiContexts,
     asset_server: Res<AssetServer>,
     camera: CameraParams,
     selected_query: Query<Entity, With<Selected>>,
     map_data: Res<MapData>,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Check for Ctrl+V
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if !ctrl || !keyboard.just_pressed(KeyCode::KeyV) {
-        return;
-    }
-
-    // Don't paste if UI has keyboard focus
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     // Check clipboard has content
     if clipboard.is_empty() {
         return;

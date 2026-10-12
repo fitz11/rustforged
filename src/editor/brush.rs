@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::assets::SelectedAsset;
+use crate::input::shift_held;
 use crate::map::{MapData, PlacedItem};
 
 use super::grid::snap_to_grid;
@@ -123,7 +124,7 @@ pub fn handle_brush(
     };
 
     let grid_size = map_data.grid_size;
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
 
     // Load the texture handle to get dimensions
     let texture: Handle<Image> = asset_server.load(asset.asset_path());

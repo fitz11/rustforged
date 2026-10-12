@@ -7,6 +7,7 @@ use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnn
 use crate::editor::history::{EditorCommand, RecordEditorCommand, TransformData};
 use crate::editor::params::{CameraParams, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
+use crate::input::shift_held;
 use crate::map::{MapData, PlacedItem};
 
 use super::{AnnotationDragData, DragState, ROTATION_SNAP_INCREMENT, SelectionDragMode};
@@ -90,7 +91,7 @@ pub fn handle_drag(
     let mut drag_offset = world_pos - drag_state.drag_start_world;
 
     // Shift = snap the offset to grid increments (for move mode)
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = shift_held(&keyboard);
     if shift_held && drag_state.mode == SelectionDragMode::Move {
         drag_offset.x = (drag_offset.x / map_data.grid_size).round() * map_data.grid_size;
         drag_offset.y = (drag_offset.y / map_data.grid_size).round() * map_data.grid_size;

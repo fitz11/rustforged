@@ -1,7 +1,6 @@
 //! Cut system for clipboard operations (Ctrl+X).
 
 use bevy::prelude::*;
-use bevy_egui::EguiContexts;
 
 use crate::map::{PlacedItem, SavedLine, SavedPath, SavedPlacedItem, SavedTextBox, Selected};
 
@@ -12,25 +11,10 @@ use super::types::{Clipboard, ClipboardLine, ClipboardPath, ClipboardPlacedItem,
 /// Cut selected items to clipboard (Ctrl+X) - copy then delete
 pub fn handle_cut(
     mut commands: Commands,
-    keyboard: Res<ButtonInput<KeyCode>>,
     mut clipboard: ResMut<Clipboard>,
-    mut contexts: EguiContexts,
     selected_items: Query<(Entity, &PlacedItem, &Transform), With<Selected>>,
     annotations: SelectedAnnotationQueries,
 ) {
-    // Check for Ctrl+X
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if !ctrl || !keyboard.just_pressed(KeyCode::KeyX) {
-        return;
-    }
-
-    // Don't cut if UI has keyboard focus
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
-    {
-        return;
-    }
-
     // Nothing selected? Do nothing
     if selected_items.is_empty()
         && annotations.paths.is_empty()
