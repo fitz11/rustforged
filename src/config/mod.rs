@@ -100,6 +100,17 @@ struct LoadConfigResult {
     reset_reason: Option<String>,
 }
 
+/// Copies a config file that couldn't be read next to it (config.json.unreadable-<time>),
+/// so the settings in it can be recovered by hand.
+fn back_up_unreadable_config(config_path: &std::path::Path) -> std::io::Result<PathBuf> {
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let mut name = config_path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".unreadable-{}", stamp));
+    let backup = config_path.with_file_name(name);
+    std::fs::copy(config_path, &backup)?;
+    Ok(backup)
+}
+
 /// Load configuration from disk
 fn load_config() -> LoadConfigResult {
     let config_path = get_config_path();
@@ -113,9 +124,17 @@ fn load_config() -> LoadConfigResult {
                 }
                 Err(e) => {
                     warn!("Failed to parse config file: {}", e);
+                    // Keep a copy before the defaults are saved over it
+                    let kept = match back_up_unreadable_config(&config_path) {
+                        Ok(backup) => format!("\n\nThe old file was kept as {}", backup.display()),
+                        Err(err) => {
+                            warn!("Couldn't keep a copy of the config file: {}", err);
+                            String::new()
+                        }
+                    };
                     (
                         AppConfigData::default(),
-                        Some(format!("Configuration file was corrupted: {}", e)),
+                        Some(format!("Configuration file was corrupted: {}{}", e, kept)),
                     )
                 }
             },
@@ -318,5 +337,24 @@ mod tests {
         let warning = MissingMapWarning::default();
         assert!(!warning.show);
         assert!(warning.path.is_none());
+    }
+
+    #[test]
+    fn test_unreadable_config_is_kept_next_to_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, "{ not json").unwrap();
+
+        let backup = back_up_unreadable_config(&path).unwrap();
+
+        assert_eq!(backup.parent(), Some(dir.path()));
+        assert!(
+            backup
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("config.json.unreadable-")
+        );
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), "{ not json");
     }
 }
