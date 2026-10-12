@@ -93,27 +93,11 @@ pub fn cache_dir() -> Option<PathBuf> {
 ///
 /// - Dev mode: `./logs/`
 /// - Installed: `{data_dir}/logs/`
-#[allow(dead_code)]
+#[cfg_attr(not(debug_assertions), allow(dead_code))] // Logging is debug-only
 pub fn logs_dir() -> PathBuf {
     data_dir()
         .map(|p| p.join("logs"))
         .unwrap_or_else(|| PathBuf::from("logs"))
-}
-
-/// Path to bundled assets (fonts, etc.) that ship with the binary.
-///
-/// - Dev mode: `./assets/`
-/// - Installed: `{exe_dir}/assets/`
-#[allow(dead_code)]
-pub fn bundled_assets_dir() -> PathBuf {
-    if is_dev_mode() {
-        return PathBuf::from("assets");
-    }
-
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.join("assets")))
-        .unwrap_or_else(|| PathBuf::from("assets"))
 }
 
 /// Ensure all required directories exist.

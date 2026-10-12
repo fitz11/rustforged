@@ -27,40 +27,26 @@ pub fn render_layers(
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(4, 4))
                 .show(ui, |ui| {
-                    let is_available = layer.is_available();
+                    ui.horizontal(|ui| {
+                        if *layer == Layer::FogOfWar {
+                            ui.checkbox(show_fog_in_editor, "").on_hover_text(
+                                "Show the fog here in the editor. Players' fog is \
+                                 Enable Fog of War below.",
+                            );
+                        } else if ui.checkbox(&mut layer_data.visible, "").changed() {
+                            changed = true;
+                        }
+                        ui.label(egui::RichText::new(layer.display_name()).size(14.0));
 
-                    ui.add_enabled_ui(is_available, |ui| {
-                        ui.horizontal(|ui| {
-                            if *layer == Layer::FogOfWar {
-                                ui.checkbox(show_fog_in_editor, "").on_hover_text(
-                                    "Show the fog here in the editor. Players' fog is \
-                                     Enable Fog of War below.",
-                                );
-                            } else if ui.checkbox(&mut layer_data.visible, "").changed() {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let lock_text = if layer_data.locked { "🔒" } else { "🔓" };
+                            if ui
+                                .button(egui::RichText::new(lock_text).size(14.0))
+                                .clicked()
+                            {
+                                layer_data.locked = !layer_data.locked;
                                 changed = true;
                             }
-                            ui.label(egui::RichText::new(layer.display_name()).size(14.0));
-
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if !is_available {
-                                        ui.label(
-                                            egui::RichText::new("Soon").size(10.0).weak().italics(),
-                                        );
-                                    } else {
-                                        let lock_text =
-                                            if layer_data.locked { "🔒" } else { "🔓" };
-                                        if ui
-                                            .button(egui::RichText::new(lock_text).size(14.0))
-                                            .clicked()
-                                        {
-                                            layer_data.locked = !layer_data.locked;
-                                            changed = true;
-                                        }
-                                    }
-                                },
-                            );
                         });
                     });
                 });

@@ -48,22 +48,6 @@ impl DragMode {
             }
         }
     }
-
-    /// Check if this is a resize mode.
-    #[allow(dead_code)]
-    pub fn is_resize(&self) -> bool {
-        matches!(
-            self,
-            DragMode::ResizeN
-                | DragMode::ResizeS
-                | DragMode::ResizeE
-                | DragMode::ResizeW
-                | DragMode::ResizeNE
-                | DragMode::ResizeNW
-                | DragMode::ResizeSE
-                | DragMode::ResizeSW
-        )
-    }
 }
 
 /// The task's result if it has finished, without waiting. For background tasks polled once
@@ -89,14 +73,5 @@ mod tests {
     #[test]
     fn test_cursor_icon_move() {
         assert!(DragMode::Move.cursor_icon().is_some());
-    }
-
-    #[test]
-    fn test_is_resize() {
-        assert!(!DragMode::None.is_resize());
-        assert!(!DragMode::Move.is_resize());
-        assert!(!DragMode::Rotate.is_resize());
-        assert!(DragMode::ResizeN.is_resize());
-        assert!(DragMode::ResizeSW.is_resize());
     }
 }

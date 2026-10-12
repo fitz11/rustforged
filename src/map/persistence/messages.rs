@@ -73,7 +73,6 @@ pub struct MapReplaced;
 
 /// Message to request switching to a different open map
 #[derive(Message)]
-#[allow(dead_code)] // Reserved for future map switching feature
 pub struct SwitchMapRequest {
     pub map_id: u64,
 }

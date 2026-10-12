@@ -14,7 +14,6 @@ pub struct CommandHistory {
     redo_stack: Vec<EditorCommand>,
 }
 
-#[allow(dead_code)]
 impl CommandHistory {
     /// Push a new command to the history
     pub fn push(&mut self, command: EditorCommand) {
@@ -50,23 +49,21 @@ impl CommandHistory {
     }
 
     /// Check if there are commands to undo
+    #[cfg(test)]
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()
     }
 
     /// Check if there are commands to redo
+    #[cfg(test)]
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }
 
     /// Get the count of undoable commands
+    #[cfg(test)]
     pub fn undo_count(&self) -> usize {
         self.undo_stack.len()
-    }
-
-    /// Get the count of redoable commands
-    pub fn redo_count(&self) -> usize {
-        self.redo_stack.len()
     }
 
     /// Point recorded placed items at a different asset path (after a rename, move or relink),

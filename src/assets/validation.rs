@@ -26,9 +26,7 @@ pub fn detect_missing_assets(
         if let LoadState::Failed(_) = asset_server.load_state(&sprite.image) {
             warn!("Asset failed to load: {}", placed_item.asset_path);
             commands.entity(entity).insert((
-                MissingAsset {
-                    original_path: placed_item.asset_path.clone(),
-                },
+                MissingAsset,
                 Sprite {
                     image: placeholder.handle.clone(),
                     custom_size: Some(Vec2::splat(64.0)),

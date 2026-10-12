@@ -74,11 +74,6 @@ impl Layer {
         }
     }
 
-    /// Returns true if this layer is available for use
-    pub fn is_available(&self) -> bool {
-        true
-    }
-
     pub fn display_name(&self) -> &'static str {
         match self {
             Layer::Background => "Background",
@@ -235,18 +230,5 @@ mod tests {
                 layer
             );
         }
-    }
-
-    #[test]
-    fn test_is_available() {
-        // All layers are now available
-        assert!(Layer::Background.is_available());
-        assert!(Layer::Terrain.is_available());
-        assert!(Layer::Doodad.is_available());
-        assert!(Layer::Token.is_available());
-        assert!(Layer::GM.is_available());
-        assert!(Layer::Annotation.is_available());
-        assert!(Layer::FogOfWar.is_available());
-        assert!(Layer::Play.is_available());
     }
 }

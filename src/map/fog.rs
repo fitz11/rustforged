@@ -72,28 +72,20 @@ pub struct SavedFogOfWar {
     /// (Ordered, so the saved file is identical when nothing changed)
     #[serde(default)]
     pub revealed_cells: BTreeSet<(i32, i32)>,
-    /// Legacy field for backwards compatibility with old save files
-    /// Will be migrated to revealed_cells on load
-    #[serde(default, skip_serializing)]
-    #[allow(dead_code)]
-    pub fogged_cells: HashSet<(i32, i32)>,
 }
 
 impl From<&FogOfWarData> for SavedFogOfWar {
     fn from(data: &FogOfWarData) -> Self {
         Self {
             revealed_cells: data.revealed_cells.iter().copied().collect(),
-            fogged_cells: HashSet::new(), // Never save this, only for loading legacy
         }
     }
 }
 
 impl From<SavedFogOfWar> for FogOfWarData {
     fn from(saved: SavedFogOfWar) -> Self {
-        // Migration: if old fogged_cells format is present and revealed_cells is empty,
-        // we need to invert the logic. However, since we don't know the map bounds,
-        // we'll just start fresh. Old maps will lose their fog state but that's acceptable
-        // for this format migration.
+        // Maps from before the revealed-cells model listed fogged cells instead; that field
+        // is ignored (the map bounds needed to invert it aren't known), so they open fogged.
         Self {
             revealed_cells: saved.revealed_cells.into_iter().collect(),
         }
