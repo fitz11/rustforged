@@ -172,9 +172,16 @@ mod tests {
         for layer_data in &map_data.layers {
             if layer_data.layer_type == Layer::FogOfWar {
                 // FogOfWar layer is disabled by default
-                assert!(!layer_data.visible, "FogOfWar layer should be disabled by default");
+                assert!(
+                    !layer_data.visible,
+                    "FogOfWar layer should be disabled by default"
+                );
             } else {
-                assert!(layer_data.visible, "Layer {:?} should be visible by default", layer_data.layer_type);
+                assert!(
+                    layer_data.visible,
+                    "Layer {:?} should be visible by default",
+                    layer_data.layer_type
+                );
             }
         }
     }
@@ -183,7 +190,11 @@ mod tests {
     fn test_map_data_default_layers_all_unlocked() {
         let map_data = MapData::default();
         for layer_data in &map_data.layers {
-            assert!(!layer_data.locked, "Layer {:?} should be unlocked by default", layer_data.layer_type);
+            assert!(
+                !layer_data.locked,
+                "Layer {:?} should be unlocked by default",
+                layer_data.layer_type
+            );
         }
     }
 
@@ -425,7 +436,10 @@ mod tests {
         let deserialized: SavedMap = serde_json::from_str(&json).unwrap();
 
         assert_eq!(saved_map.map_data.name, deserialized.map_data.name);
-        assert_eq!(saved_map.placed_items.len(), deserialized.placed_items.len());
+        assert_eq!(
+            saved_map.placed_items.len(),
+            deserialized.placed_items.len()
+        );
         assert!(deserialized.asset_manifest.is_empty());
     }
 

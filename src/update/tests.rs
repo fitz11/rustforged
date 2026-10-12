@@ -1,6 +1,8 @@
 //! Unit tests for the update module.
 
-use super::manifest::{current_platform_key, get_platform_asset, is_newer_version, ReleaseManifest};
+use super::manifest::{
+    ReleaseManifest, current_platform_key, get_platform_asset, is_newer_version,
+};
 use super::state::UpdateCheckResult;
 use std::collections::HashMap;
 

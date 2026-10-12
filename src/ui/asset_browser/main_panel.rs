@@ -2,13 +2,13 @@
 
 use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 
 use crate::assets::{
-    create_and_open_library, get_image_dimensions, open_library_directory, AssetLibrary,
-    LibraryAsset, RefreshAssetLibrary, RenameAssetRequest, SelectedAsset, ThumbnailCache,
-    UpdateLibraryMetadataRequest, THUMBNAIL_SIZE,
+    AssetLibrary, LibraryAsset, RefreshAssetLibrary, RenameAssetRequest, SelectedAsset,
+    THUMBNAIL_SIZE, ThumbnailCache, UpdateLibraryMetadataRequest, create_and_open_library,
+    get_image_dimensions, open_library_directory,
 };
 use crate::config::{AppConfig, SetDefaultLibraryRequest};
 use crate::editor::{CurrentTool, EditorTool};
@@ -144,10 +144,7 @@ pub fn asset_browser_ui(
 }
 
 /// Poll all pending async file dialog tasks and handle their results.
-fn poll_file_dialog_tasks(
-    library: &mut AssetLibrary,
-    browser_state: &mut AssetBrowserState,
-) {
+fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetBrowserState) {
     // Poll: Open Library
     if let Some(ref mut task) = browser_state.pending_open_library
         && let Some(result) = future::block_on(future::poll_once(task))
@@ -267,7 +264,11 @@ fn render_library_section(
         if ui.button(toggle_text).clicked() {
             browser_state.library_expanded = !browser_state.library_expanded;
         }
-        ui.label(egui::RichText::new(&library.metadata.name).heading().size(18.0));
+        ui.label(
+            egui::RichText::new(&library.metadata.name)
+                .heading()
+                .size(18.0),
+        );
     });
     ui.add_space(2.0);
 
@@ -364,7 +365,9 @@ fn render_export_import_buttons(
     browser_state: &mut AssetBrowserState,
 ) {
     ui.horizontal(|ui| {
-        if ui.add_sized([70.0, 24.0], egui::Button::new("Export...")).clicked()
+        if ui
+            .add_sized([70.0, 24.0], egui::Button::new("Export..."))
+            .clicked()
             && browser_state.pending_export.is_none()
         {
             let file_name = format!("{}.zip", library.metadata.name);
@@ -380,7 +383,9 @@ fn render_export_import_buttons(
             }));
         }
 
-        if ui.add_sized([70.0, 24.0], egui::Button::new("Import...")).clicked()
+        if ui
+            .add_sized([70.0, 24.0], egui::Button::new("Import..."))
+            .clicked()
             && browser_state.pending_import_zip.is_none()
             && browser_state.pending_import_dest.is_none()
         {
@@ -516,16 +521,19 @@ fn render_maps_section(
             .clicked()
         {
             // Only prompt for name if map is untitled; otherwise save directly
-            let active_map = map_res.open_maps.maps.get(&map_res.open_maps.active_map_id.unwrap_or(0));
+            let active_map = map_res
+                .open_maps
+                .maps
+                .get(&map_res.open_maps.active_map_id.unwrap_or(0));
             if let Some(active) = active_map {
                 if active.name == "Untitled Map" {
                     dialogs.menu_state.save_filename = active.name.clone();
                     dialogs.menu_state.show_save_name_dialog = true;
                 } else if let Some(ref existing_path) = active.path {
                     // Map has been saved before, save to same path
-                    map_res
-                        .save_events
-                        .write(crate::map::SaveMapRequest { path: existing_path.clone() });
+                    map_res.save_events.write(crate::map::SaveMapRequest {
+                        path: existing_path.clone(),
+                    });
                 } else {
                     // Map has a name but no path yet - save to maps directory
                     let maps_dir = library.library_path.join("maps");
@@ -615,11 +623,7 @@ fn render_maps_section(
 }
 
 /// Render the assets management buttons.
-fn render_assets_buttons(
-    ui: &mut egui::Ui,
-    library: &AssetLibrary,
-    dialogs: &mut DialogStates,
-) {
+fn render_assets_buttons(ui: &mut egui::Ui, library: &AssetLibrary, dialogs: &mut DialogStates) {
     ui.label(egui::RichText::new("Assets").size(13.0).strong());
     ui.separator();
 
@@ -675,10 +679,7 @@ fn render_folder_tree(ui: &mut egui::Ui, browser_state: &mut AssetBrowserState) 
                 ui.horizontal(|ui| {
                     ui.add_space(depth as f32 * 12.0);
                     if ui
-                        .selectable_label(
-                            is_selected,
-                            egui::RichText::new(display_name).size(12.0),
-                        )
+                        .selectable_label(is_selected, egui::RichText::new(display_name).size(12.0))
                         .clicked()
                     {
                         browser_state.selected_folder = folder.clone();
@@ -765,8 +766,7 @@ fn render_asset_row(
                 .rect_filled(rect, 2.0, egui::Color32::from_rgb(60, 60, 60));
         }
 
-        let is_missing =
-            thumbnail_cache.has_failed(&asset.full_path) || !asset.full_path.exists();
+        let is_missing = thumbnail_cache.has_failed(&asset.full_path) || !asset.full_path.exists();
 
         let label_text = if is_missing {
             egui::RichText::new(&asset.name).color(egui::Color32::from_rgb(200, 100, 100))

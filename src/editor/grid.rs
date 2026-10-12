@@ -4,8 +4,8 @@ use crate::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
 use crate::map::MapData;
 use crate::theme;
 
-use super::camera::CameraZoom;
 use super::EditorCamera;
+use super::camera::CameraZoom;
 
 #[derive(Resource)]
 pub struct GridSettings {
@@ -180,7 +180,11 @@ mod tests {
 
         for pos in positions {
             let result = snap_to_grid(pos, grid_size, true);
-            assert_eq!(result, center, "Position {:?} should snap to {:?}", pos, center);
+            assert_eq!(
+                result, center,
+                "Position {:?} should snap to {:?}",
+                pos, center
+            );
         }
     }
 }

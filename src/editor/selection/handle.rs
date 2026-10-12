@@ -4,13 +4,13 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::editor::annotations::{
-    is_annotation_layer_locked, is_annotation_layer_visible, AnnotationMarker, DrawnLine,
-    DrawnPath, TextAnnotation,
+    AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation, is_annotation_layer_locked,
+    is_annotation_layer_visible,
 };
-use crate::editor::params::{is_cursor_over_ui, AnnotationQueries, CameraWithProjection};
+use crate::editor::params::{AnnotationQueries, CameraWithProjection, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::map::{MapData, PlacedItem, Selected};
-use crate::session::{get_handle_at_position, LiveSessionState, ViewportDragMode};
+use crate::session::{LiveSessionState, ViewportDragMode, get_handle_at_position};
 
 use super::hit_detection::{
     check_rotation_handle_hit, compute_selection_bounds, find_clicked_annotation,
@@ -68,21 +68,18 @@ pub fn handle_selection(
         // First, check if we clicked on a selection handle or inside the selection bounds
         // This takes priority over clicking on individual items
         // Check rotation handle first (it's per-item and accounts for rotation)
-        let handle_mode = if check_rotation_handle_hit(
-            world_pos,
-            camera_scale,
-            &selected_sprites_query,
-            &images,
-        ) {
-            SelectionDragMode::Rotate
-        } else {
-            get_selection_handle_at_position(
-                world_pos,
-                &selected_sprites_query,
-                &images,
-                camera_scale,
-            )
-        };
+        let handle_mode =
+            if check_rotation_handle_hit(world_pos, camera_scale, &selected_sprites_query, &images)
+            {
+                SelectionDragMode::Rotate
+            } else {
+                get_selection_handle_at_position(
+                    world_pos,
+                    &selected_sprites_query,
+                    &images,
+                    camera_scale,
+                )
+            };
 
         if handle_mode != SelectionDragMode::None && !ctrl_held {
             // Get bounds for resize operations (still needed for resize logic)
@@ -282,9 +279,7 @@ fn start_selection_drag(
                 .push((entity, t.translation.truncate()));
             drag_state.entity_start_transforms.push((entity, *t));
             drag_state.entity_start_scales.push((entity, t.scale));
-            drag_state
-                .entity_start_rotations
-                .push((entity, t.rotation));
+            drag_state.entity_start_rotations.push((entity, t.rotation));
             // Store original half-size (sprite size * scale) for rotation-aware resizing
             let half_size = get_sprite_half_size(sprite, images) * t.scale.truncate();
             drag_state.entity_start_half_sizes.push((entity, half_size));

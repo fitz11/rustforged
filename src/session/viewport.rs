@@ -45,11 +45,7 @@ pub fn draw_viewport_indicator(
     let rotation = session_state.rotation_radians();
 
     // Draw main rectangle outline (unrotated - shows actual world bounds)
-    gizmos.rect_2d(
-        Isometry2d::from_translation(center),
-        size,
-        VIEWPORT_COLOR,
-    );
+    gizmos.rect_2d(Isometry2d::from_translation(center), size, VIEWPORT_COLOR);
 
     // Draw a second slightly offset rectangle for visibility
     gizmos.rect_2d(
@@ -145,8 +141,16 @@ pub fn draw_viewport_indicator(
     // Draw arrow head
     let perp = Vec2::new(-up_dir.y, up_dir.x);
     let head_base = arrow_end - up_dir * arrow_head_size;
-    gizmos.line_2d(arrow_end, head_base + perp * arrow_head_size * 0.5, VIEWPORT_COLOR);
-    gizmos.line_2d(arrow_end, head_base - perp * arrow_head_size * 0.5, VIEWPORT_COLOR);
+    gizmos.line_2d(
+        arrow_end,
+        head_base + perp * arrow_head_size * 0.5,
+        VIEWPORT_COLOR,
+    );
+    gizmos.line_2d(
+        arrow_end,
+        head_base - perp * arrow_head_size * 0.5,
+        VIEWPORT_COLOR,
+    );
 }
 
 /// Determine which handle (if any) is under the cursor
@@ -175,10 +179,22 @@ pub fn get_handle_at_position(
 
     // Check corners (higher priority than edges)
     let corners = [
-        (center + Vec2::new(-half.x, -half.y), ViewportDragMode::ResizeSW),
-        (center + Vec2::new(half.x, -half.y), ViewportDragMode::ResizeSE),
-        (center + Vec2::new(half.x, half.y), ViewportDragMode::ResizeNE),
-        (center + Vec2::new(-half.x, half.y), ViewportDragMode::ResizeNW),
+        (
+            center + Vec2::new(-half.x, -half.y),
+            ViewportDragMode::ResizeSW,
+        ),
+        (
+            center + Vec2::new(half.x, -half.y),
+            ViewportDragMode::ResizeSE,
+        ),
+        (
+            center + Vec2::new(half.x, half.y),
+            ViewportDragMode::ResizeNE,
+        ),
+        (
+            center + Vec2::new(-half.x, half.y),
+            ViewportDragMode::ResizeNW,
+        ),
     ];
 
     for (corner, mode) in corners {

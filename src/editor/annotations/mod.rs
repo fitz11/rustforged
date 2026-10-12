@@ -46,7 +46,7 @@ pub use components::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 pub use state::{AnnotationSettings, DrawState, LineDrawState, TextEditState};
 
 // Re-exports - Gizmo
-pub use gizmo::{configure_annotation_gizmos, AnnotationGizmoGroup};
+pub use gizmo::{AnnotationGizmoGroup, configure_annotation_gizmos};
 
 // Re-exports - Hit Testing
 pub use hit_testing::{

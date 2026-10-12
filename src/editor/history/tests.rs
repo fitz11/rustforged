@@ -2,10 +2,10 @@
 
 use bevy::prelude::*;
 
+use super::MAX_HISTORY_SIZE;
 use super::command_history::CommandHistory;
 use super::commands::EditorCommand;
 use super::data_types::TransformData;
-use super::MAX_HISTORY_SIZE;
 
 #[test]
 fn test_command_history_push() {

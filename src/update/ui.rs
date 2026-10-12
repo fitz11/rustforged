@@ -2,13 +2,13 @@
 
 use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::ui::panel_layout::DockedPanel;
 
+use super::CURRENT_VERSION;
 use super::operations::{download_installer, install_and_restart};
 use super::state::{DownloadTask, UpdateState};
-use super::CURRENT_VERSION;
 
 /// UI system to show update indicator in toolbar
 pub fn update_indicator_ui(
@@ -29,10 +29,7 @@ pub fn update_indicator_ui(
             ui.horizontal(|ui| {
                 ui.add_space(ui.available_width() - 150.0);
 
-                let version = update_state
-                    .latest_version
-                    .as_deref()
-                    .unwrap_or("unknown");
+                let version = update_state.latest_version.as_deref().unwrap_or("unknown");
 
                 let label_text = if update_state.is_downloading {
                     "Downloading update...".to_string()

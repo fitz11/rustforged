@@ -6,7 +6,7 @@ use bevy_egui::EguiContexts;
 use crate::map::{Layer, MapData};
 
 use super::super::history::{EditorCommand, LineData, RecordEditorCommand};
-use super::super::params::{is_cursor_over_ui, CameraParams};
+use super::super::params::{CameraParams, is_cursor_over_ui};
 use super::super::tools::{CurrentTool, EditorTool};
 use super::components::{AnnotationMarker, DrawnLine};
 use super::layer_helpers::is_annotation_layer_locked;

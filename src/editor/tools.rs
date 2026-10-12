@@ -128,7 +128,10 @@ pub fn handle_tool_shortcuts(
     {
         let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
         let layers = Layer::all();
-        let current_idx = layers.iter().position(|l| *l == selected_layer.layer).unwrap_or(0);
+        let current_idx = layers
+            .iter()
+            .position(|l| *l == selected_layer.layer)
+            .unwrap_or(0);
 
         let new_idx = if shift {
             // Shift+C: go backwards
@@ -166,7 +169,9 @@ pub fn update_cursor_icon(
         return;
     }
 
-    commands.entity(entity).insert(current_tool.tool.cursor_icon());
+    commands
+        .entity(entity)
+        .insert(current_tool.tool.cursor_icon());
 }
 
 #[cfg(test)]
@@ -189,8 +194,16 @@ mod tests {
         // Each display name should contain its keyboard shortcut in parentheses
         for tool in EditorTool::all() {
             let name = tool.display_name();
-            assert!(name.contains('('), "Display name should contain shortcut: {}", name);
-            assert!(name.contains(')'), "Display name should contain shortcut: {}", name);
+            assert!(
+                name.contains('('),
+                "Display name should contain shortcut: {}",
+                name
+            );
+            assert!(
+                name.contains(')'),
+                "Display name should contain shortcut: {}",
+                name
+            );
         }
     }
 

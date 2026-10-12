@@ -5,11 +5,11 @@ use bevy_egui::EguiContexts;
 
 use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::editor::history::{EditorCommand, RecordEditorCommand, TransformData};
-use crate::editor::params::{is_cursor_over_ui, CameraParams};
+use crate::editor::params::{CameraParams, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::map::{MapData, PlacedItem};
 
-use super::{AnnotationDragData, DragState, SelectionDragMode, ROTATION_SNAP_INCREMENT};
+use super::{AnnotationDragData, DragState, ROTATION_SNAP_INCREMENT, SelectionDragMode};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn handle_drag(
@@ -27,7 +27,11 @@ pub fn handle_drag(
     mut lines_query: Query<&mut DrawnLine, With<AnnotationMarker>>,
     mut text_transforms_query: Query<
         &mut Transform,
-        (With<TextAnnotation>, With<AnnotationMarker>, Without<PlacedItem>),
+        (
+            With<TextAnnotation>,
+            With<AnnotationMarker>,
+            Without<PlacedItem>,
+        ),
     >,
 ) {
     if current_tool.tool != EditorTool::Select {
@@ -202,11 +206,17 @@ pub fn handle_drag(
                     }
                     SelectionDragMode::ResizeNW => {
                         // NW corner moves to mouse, SE corner fixed
-                        (Vec2::new(local_mouse.x, -h.y), Vec2::new(h.x, local_mouse.y))
+                        (
+                            Vec2::new(local_mouse.x, -h.y),
+                            Vec2::new(h.x, local_mouse.y),
+                        )
                     }
                     SelectionDragMode::ResizeSE => {
                         // SE corner moves to mouse, NW corner fixed
-                        (Vec2::new(-h.x, local_mouse.y), Vec2::new(local_mouse.x, h.y))
+                        (
+                            Vec2::new(-h.x, local_mouse.y),
+                            Vec2::new(local_mouse.x, h.y),
+                        )
                     }
                     _ => (Vec2::new(-h.x, -h.y), Vec2::new(h.x, h.y)),
                 };

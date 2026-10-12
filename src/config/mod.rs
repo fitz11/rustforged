@@ -182,10 +182,7 @@ fn check_last_map_exists(config: Res<AppConfig>, mut warning: ResMut<MissingMapW
 }
 
 /// System to save config when requested
-fn save_config_system(
-    mut events: MessageReader<SaveConfigRequest>,
-    mut config: ResMut<AppConfig>,
-) {
+fn save_config_system(mut events: MessageReader<SaveConfigRequest>, mut config: ResMut<AppConfig>) {
     for _ in events.read() {
         if config.dirty {
             save_config(&config);
@@ -216,10 +213,7 @@ fn add_recent_library_system(
 ) {
     for event in events.read() {
         // Remove if already in list (to move it to front)
-        config
-            .data
-            .recent_libraries
-            .retain(|p| p != &event.path);
+        config.data.recent_libraries.retain(|p| p != &event.path);
 
         // Add to front
         config.data.recent_libraries.insert(0, event.path.clone());
@@ -290,10 +284,7 @@ mod tests {
     fn test_app_config_data_serialization() {
         let data = AppConfigData {
             default_library_path: Some(PathBuf::from("/path/to/library")),
-            recent_libraries: vec![
-                PathBuf::from("/path/one"),
-                PathBuf::from("/path/two"),
-            ],
+            recent_libraries: vec![PathBuf::from("/path/one"), PathBuf::from("/path/two")],
             last_map_path: Some(PathBuf::from("/path/to/map.json")),
         };
 

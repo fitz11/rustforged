@@ -18,7 +18,7 @@ use crate::map::{MapData, PlacedItem};
 
 use super::grid::snap_to_grid;
 use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
-use super::params::{is_cursor_over_ui, CameraParams};
+use super::params::{CameraParams, is_cursor_over_ui};
 use super::tools::SelectedLayer;
 
 /// Bounding box for a placed item

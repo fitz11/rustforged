@@ -25,7 +25,12 @@ pub fn handle_draw(
     if res.current_tool.tool != EditorTool::Draw {
         // If we were drawing but switched tools, finalize
         if res.draw_state.is_drawing && res.draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings, &mut history_writer);
+            spawn_drawn_path(
+                &mut commands,
+                &res.draw_state,
+                &res.settings,
+                &mut history_writer,
+            );
         }
         res.draw_state.is_drawing = false;
         res.draw_state.current_points.clear();
@@ -73,7 +78,12 @@ pub fn handle_draw(
     } else if res.mouse_button.just_released(MouseButton::Left) && res.draw_state.is_drawing {
         res.draw_state.is_drawing = false;
         if res.draw_state.current_points.len() >= 2 {
-            spawn_drawn_path(&mut commands, &res.draw_state, &res.settings, &mut history_writer);
+            spawn_drawn_path(
+                &mut commands,
+                &res.draw_state,
+                &res.settings,
+                &mut history_writer,
+            );
         }
         res.draw_state.current_points.clear();
     }

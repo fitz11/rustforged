@@ -13,11 +13,7 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData, dirty_state: &mu
     ui.add_space(4.0);
 
     for layer in Layer::all().iter().rev() {
-        if let Some(layer_data) = map_data
-            .layers
-            .iter_mut()
-            .find(|l| l.layer_type == *layer)
-        {
+        if let Some(layer_data) = map_data.layers.iter_mut().find(|l| l.layer_type == *layer) {
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(4, 4))
                 .show(ui, |ui| {
@@ -35,10 +31,7 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData, dirty_state: &mu
                                 |ui| {
                                     if !is_available {
                                         ui.label(
-                                            egui::RichText::new("Soon")
-                                                .size(10.0)
-                                                .weak()
-                                                .italics(),
+                                            egui::RichText::new("Soon").size(10.0).weak().italics(),
                                         );
                                     } else {
                                         let lock_text =

@@ -3,13 +3,13 @@
 //! Note: Text tool is currently disabled - see TODO in tools.rs
 
 use bevy::prelude::*;
-use bevy_egui::egui;
 use bevy_egui::EguiContexts;
+use bevy_egui::egui;
 
 use crate::map::{Layer, MapData};
 
 use super::super::camera::EditorCamera;
-use super::super::params::{is_cursor_over_ui, CameraParams};
+use super::super::params::{CameraParams, is_cursor_over_ui};
 use super::super::tools::{CurrentTool, EditorTool};
 use super::components::{AnnotationMarker, EditingText, TextAnnotation};
 use super::layer_helpers::is_annotation_layer_locked;

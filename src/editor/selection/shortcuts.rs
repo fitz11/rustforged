@@ -195,7 +195,10 @@ pub fn handle_deletion(
     selected_items: Query<(Entity, &Transform, &PlacedItem), With<Selected>>,
     selected_paths: Query<(Entity, &DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
     selected_lines: Query<(Entity, &DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
-    selected_texts: Query<(Entity, &Transform, &TextAnnotation), (With<Selected>, With<AnnotationMarker>)>,
+    selected_texts: Query<
+        (Entity, &Transform, &TextAnnotation),
+        (With<Selected>, With<AnnotationMarker>),
+    >,
     mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {

@@ -21,8 +21,8 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use super::camera::EditorCamera;
-use super::params::{is_cursor_over_ui, CameraParams};
-use crate::map::{cell_to_world, cells_in_radius, FogOfWarData, Layer, MapData, MapDirtyState};
+use super::params::{CameraParams, is_cursor_over_ui};
+use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius};
 use crate::session::LiveSessionState;
 use crate::theme;
 
@@ -301,8 +301,7 @@ pub fn render_fog_player(
     // Calculate rotation-aware viewport bounds
     // When viewport is rotated, we need the axis-aligned bounding box that
     // contains all four corners of the rotated rectangle
-    let (min_cell, max_cell) =
-        get_rotated_viewport_cell_bounds(&session_state, grid_size);
+    let (min_cell, max_cell) = get_rotated_viewport_cell_bounds(&session_state, grid_size);
 
     // Dense line spacing for player view - want complete black coverage
     // Spacing of 0.5 with line_width of 8.0 ensures overlap even at max zoom (10x)

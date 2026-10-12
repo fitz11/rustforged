@@ -31,8 +31,8 @@ pub fn create_placeholder_image() -> Image {
             let is_border = x < 2 || x >= size - 2 || y < 2 || y >= size - 2;
 
             // Draw X pattern (diagonal lines)
-            let on_diagonal = (x as i32 - y as i32).abs() <= 2
-                || ((size - 1 - x) as i32 - y as i32).abs() <= 2;
+            let on_diagonal =
+                (x as i32 - y as i32).abs() <= 2 || ((size - 1 - x) as i32 - y as i32).abs() <= 2;
 
             let color = if is_border || on_diagonal {
                 red

@@ -199,9 +199,7 @@ pub fn handle_player_window_close(
     focused_window: Query<&Window, With<PlayerWindow>>,
 ) {
     // Check if ESC was pressed while player window is focused
-    let player_focused = focused_window
-        .iter()
-        .any(|w| w.focused);
+    let player_focused = focused_window.iter().any(|w| w.focused);
 
     if player_focused && keyboard.just_pressed(KeyCode::Escape) {
         session_state.is_active = false;

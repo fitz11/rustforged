@@ -5,8 +5,8 @@ use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 
 use crate::editor::annotations::{
-    is_annotation_layer_visible, line_bounds, path_bounds, text_bounds, AnnotationMarker,
-    DrawnLine, DrawnPath, TextAnnotation,
+    AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation, is_annotation_layer_visible,
+    line_bounds, path_bounds, text_bounds,
 };
 use crate::map::{MapData, Selected};
 
@@ -185,7 +185,10 @@ pub fn draw_selection_indicators(
     }
 }
 
-pub fn draw_box_select_rect(mut gizmos: Gizmos<SelectionGizmoGroup>, box_select_state: Res<BoxSelectState>) {
+pub fn draw_box_select_rect(
+    mut gizmos: Gizmos<SelectionGizmoGroup>,
+    box_select_state: Res<BoxSelectState>,
+) {
     if !box_select_state.is_selecting {
         return;
     }

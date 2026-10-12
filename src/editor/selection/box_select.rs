@@ -4,15 +4,15 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::editor::annotations::{
-    is_annotation_layer_locked, is_annotation_layer_visible, line_overlaps_rect, path_overlaps_rect,
-    text_overlaps_rect,
+    is_annotation_layer_locked, is_annotation_layer_visible, line_overlaps_rect,
+    path_overlaps_rect, text_overlaps_rect,
 };
-use crate::editor::params::{is_cursor_over_ui, AnnotationQueries, CameraParams};
+use crate::editor::params::{AnnotationQueries, CameraParams, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::map::{MapData, PlacedItem, Selected};
 
-use super::hit_detection::item_overlaps_rect;
 use super::BoxSelectState;
+use super::hit_detection::item_overlaps_rect;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_box_select(
@@ -54,8 +54,12 @@ pub fn handle_box_select(
     if mouse_button.just_released(MouseButton::Left) {
         box_select_state.is_selecting = false;
 
-        let rect_min = box_select_state.start_world.min(box_select_state.current_world);
-        let rect_max = box_select_state.start_world.max(box_select_state.current_world);
+        let rect_min = box_select_state
+            .start_world
+            .min(box_select_state.current_world);
+        let rect_max = box_select_state
+            .start_world
+            .max(box_select_state.current_world);
 
         // Only process if we dragged a meaningful distance (not just a click)
         let drag_distance =

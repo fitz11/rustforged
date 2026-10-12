@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiTextureHandle, EguiUserTextures};
 use std::path::PathBuf;
 
-use crate::assets::{load_thumbnail, AssetLibrary, ThumbnailCache};
+use crate::assets::{AssetLibrary, ThumbnailCache, load_thumbnail};
 use crate::constants::MAX_THUMBNAILS_PER_FRAME;
 
 /// System that loads thumbnails and registers them with egui.

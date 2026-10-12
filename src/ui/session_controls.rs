@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::{Monitor, PrimaryMonitor};
 use bevy::winit::WinitMonitors;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::session::{LiveSessionState, MonitorInfo, MonitorSelectionDialog};
 
@@ -140,4 +140,3 @@ pub fn monitor_selection_dialog(
 
     Ok(())
 }
-

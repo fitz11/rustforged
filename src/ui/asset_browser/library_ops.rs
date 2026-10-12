@@ -113,11 +113,9 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
     }
 
     if !has_library_metadata {
-        return Err(
-            "Invalid library archive: missing .library.json file.\n\n\
+        return Err("Invalid library archive: missing .library.json file.\n\n\
              This zip file does not contain a valid asset library."
-                .to_string(),
-        );
+            .to_string());
     }
 
     // Security: check for zip bombs
@@ -150,8 +148,8 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
                 std::fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create parent directory: {}", e))?;
             }
-            let mut outfile = File::create(&outpath)
-                .map_err(|e| format!("Failed to create file: {}", e))?;
+            let mut outfile =
+                File::create(&outpath).map_err(|e| format!("Failed to create file: {}", e))?;
             std::io::copy(&mut entry, &mut outfile)
                 .map_err(|e| format!("Failed to extract file: {}", e))?;
         }

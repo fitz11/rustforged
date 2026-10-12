@@ -3,8 +3,8 @@
 use bevy::gizmos::prelude::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_egui::egui;
 use bevy_egui::EguiContexts;
+use bevy_egui::egui;
 
 use super::super::camera::EditorCamera;
 use super::super::tools::{CurrentTool, EditorTool};

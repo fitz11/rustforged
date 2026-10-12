@@ -3,7 +3,9 @@ mod player_window;
 pub mod state;
 mod viewport;
 
-pub use state::{LiveSessionState, MonitorInfo, MonitorSelectionDialog, ViewportDragMode, ViewportDragState};
+pub use state::{
+    LiveSessionState, MonitorInfo, MonitorSelectionDialog, ViewportDragMode, ViewportDragState,
+};
 pub use viewport::get_handle_at_position;
 
 use bevy::prelude::*;
@@ -26,7 +28,8 @@ impl Plugin for LiveSessionPlugin {
                     keep_awake::sync_keep_awake.run_if(resource_changed::<LiveSessionState>),
                     viewport::draw_viewport_indicator.run_if(session_is_active),
                     viewport::handle_viewport_interaction.run_if(session_is_active),
-                    player_window::create_player_window.run_if(resource_changed::<LiveSessionState>),
+                    player_window::create_player_window
+                        .run_if(resource_changed::<LiveSessionState>),
                     player_window::setup_player_camera,
                     player_window::sync_player_camera.run_if(session_is_active),
                     // No run_if here - needs to run to clean up after session ends

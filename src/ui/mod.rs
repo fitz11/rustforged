@@ -7,7 +7,6 @@ mod session_controls;
 mod settings_dialog;
 mod toolbar;
 
-
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
 

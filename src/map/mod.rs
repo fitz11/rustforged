@@ -4,7 +4,7 @@ mod map_data;
 pub mod persistence;
 mod placed_item;
 
-pub use fog::{cell_to_world, cells_in_radius, world_to_cell, FogOfWarData, SavedFogOfWar};
+pub use fog::{FogOfWarData, SavedFogOfWar, cell_to_world, cells_in_radius, world_to_cell};
 pub use layer::Layer;
 pub use map_data::{
     AssetManifest, MapData, SavedAnnotations, SavedLine, SavedMap, SavedPath, SavedPlacedItem,

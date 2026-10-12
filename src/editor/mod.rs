@@ -11,9 +11,7 @@ mod placement;
 mod selection;
 pub mod tools;
 
-pub use annotations::{
-    AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation,
-};
+pub use annotations::{AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation};
 pub use camera::EditorCamera;
 pub use conditions::{no_dialog_open, session_is_active, tool_is};
 pub use grid::GridSettings;

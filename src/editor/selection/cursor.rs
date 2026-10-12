@@ -71,21 +71,17 @@ pub fn update_selection_cursor(
 
     // Check if hovering over a selection handle
     // Check rotation handle first (it's per-item and accounts for rotation)
-    let hover_mode = if check_rotation_handle_hit(
-        world_pos,
-        camera_scale,
-        &selected_sprites_query,
-        &images,
-    ) {
-        SelectionDragMode::Rotate
-    } else {
-        get_selection_handle_at_position(
-            world_pos,
-            &selected_sprites_query,
-            &images,
-            camera_scale,
-        )
-    };
+    let hover_mode =
+        if check_rotation_handle_hit(world_pos, camera_scale, &selected_sprites_query, &images) {
+            SelectionDragMode::Rotate
+        } else {
+            get_selection_handle_at_position(
+                world_pos,
+                &selected_sprites_query,
+                &images,
+                camera_scale,
+            )
+        };
 
     if let Some(cursor) = hover_mode.cursor_icon() {
         commands.entity(window_entity).insert(cursor);

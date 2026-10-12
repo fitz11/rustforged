@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowCloseRequested};
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::assets::AssetLibrary;
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
@@ -131,9 +131,11 @@ pub fn file_menu_ui(
             .resizable(true)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(contexts.ctx_mut()?, |ui| {
-                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                    ui.colored_label(egui::Color32::RED, error);
-                });
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        ui.colored_label(egui::Color32::RED, error);
+                    });
                 ui.add_space(8.0);
                 if ui.button("OK").clicked() {
                     dismiss = true;
@@ -323,15 +325,13 @@ pub fn async_operation_modal_ui(
         .show(ctx, |ui| {
             // Use viewport inner_rect for full-screen overlay
             let rect = ctx.input(|i| {
-                i.viewport()
-                    .inner_rect
-                    .unwrap_or(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(1920.0, 1080.0)))
+                i.viewport().inner_rect.unwrap_or(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::Vec2::new(1920.0, 1080.0),
+                ))
             });
-            ui.painter().rect_filled(
-                rect,
-                0.0,
-                egui::Color32::from_black_alpha(100),
-            );
+            ui.painter()
+                .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(100));
         });
 
     // Modal dialog
@@ -379,9 +379,11 @@ pub fn save_error_dialog_ui(
             ui.colored_label(egui::Color32::RED, "Failed to save map:");
             ui.add_space(8.0);
 
-            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
-                ui.label(&error_msg);
-            });
+            egui::ScrollArea::vertical()
+                .max_height(150.0)
+                .show(ui, |ui| {
+                    ui.label(&error_msg);
+                });
 
             ui.add_space(8.0);
 
@@ -425,11 +427,13 @@ pub fn save_validation_warning_ui(
             ui.label("The following assets could not be found:");
             ui.add_space(8.0);
 
-            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
-                for path in &warning.missing_assets {
-                    ui.label(egui::RichText::new(format!("  - {}", path)).weak());
-                }
-            });
+            egui::ScrollArea::vertical()
+                .max_height(150.0)
+                .show(ui, |ui| {
+                    for path in &warning.missing_assets {
+                        ui.label(egui::RichText::new(format!("  - {}", path)).weak());
+                    }
+                });
 
             ui.add_space(8.0);
             ui.label("These items will appear as placeholders when the map is loaded.");

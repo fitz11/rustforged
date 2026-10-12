@@ -1,7 +1,7 @@
 //! Help popup window and keyboard shortcut handling.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::update::UpdateState;
 

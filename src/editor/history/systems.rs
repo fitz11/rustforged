@@ -63,9 +63,7 @@ pub fn handle_redo(
     let redo_pressed = (ctrl && keyboard.just_pressed(KeyCode::KeyY))
         || (ctrl && shift && keyboard.just_pressed(KeyCode::KeyZ));
 
-    if redo_pressed
-        && let Some(command) = history.pop_redo()
-    {
+    if redo_pressed && let Some(command) = history.pop_redo() {
         let reverse_command = execute_redo(
             &command,
             &mut commands,

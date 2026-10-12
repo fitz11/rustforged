@@ -90,9 +90,7 @@ pub fn render_session_controls(ui: &mut egui::Ui, session_state: &mut LiveSessio
         if ui.add_sized([28.0, 26.0], egui::Button::new("↺")).clicked() {
             session_state.rotate_ccw();
         }
-        ui.label(
-            egui::RichText::new(format!("{}°", session_state.rotation_degrees)).size(14.0),
-        );
+        ui.label(egui::RichText::new(format!("{}°", session_state.rotation_degrees)).size(14.0));
         if ui.add_sized([28.0, 26.0], egui::Button::new("↻")).clicked() {
             session_state.rotate_cw();
         }

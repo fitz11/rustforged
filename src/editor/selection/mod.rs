@@ -26,8 +26,8 @@ pub use box_select::handle_box_select;
 pub use cursor::update_selection_cursor;
 pub use drag::handle_drag;
 pub use gizmos::{
-    configure_selection_gizmos, draw_box_select_rect, draw_selection_indicators,
-    SelectionGizmoGroup,
+    SelectionGizmoGroup, configure_selection_gizmos, draw_box_select_rect,
+    draw_selection_indicators,
 };
 pub use handle::handle_selection;
 // hit_detection items are used internally by submodules but not re-exported
@@ -48,11 +48,17 @@ pub(crate) const HANDLE_SIZE: f32 = 8.0;
 /// Information about an annotation's original state when dragging started
 #[derive(Clone)]
 pub enum AnnotationDragData {
-    Path { original_points: Vec<Vec2> },
-    Line { original_start: Vec2, original_end: Vec2 },
-    Text { original_position: Vec2 },
+    Path {
+        original_points: Vec<Vec2>,
+    },
+    Line {
+        original_start: Vec2,
+        original_end: Vec2,
+    },
+    Text {
+        original_position: Vec2,
+    },
 }
-
 
 #[derive(Resource, Default)]
 pub struct DragState {

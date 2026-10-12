@@ -10,8 +10,8 @@ use crate::map::{
     SwitchMapRequest,
 };
 
-use super::super::file_menu::FileMenuState;
 use super::super::asset_import::AssetImportDialog;
+use super::super::file_menu::FileMenuState;
 use super::super::settings_dialog::SettingsDialogState;
 
 /// Bundle of map-related resources and event writers.

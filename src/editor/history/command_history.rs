@@ -2,8 +2,8 @@
 
 use bevy::prelude::*;
 
-use super::commands::EditorCommand;
 use super::MAX_HISTORY_SIZE;
+use super::commands::EditorCommand;
 
 /// Resource tracking command history for undo/redo
 #[derive(Resource, Default)]

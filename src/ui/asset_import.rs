@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 use std::path::{Path, PathBuf};
 
@@ -38,8 +38,7 @@ fn validate_map_file(path: &Path) -> Result<(), String> {
     let content =
         std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
-    serde_json::from_str::<SavedMap>(&content)
-        .map_err(|e| format!("Invalid map format: {}", e))?;
+    serde_json::from_str::<SavedMap>(&content).map_err(|e| format!("Invalid map format: {}", e))?;
 
     Ok(())
 }
@@ -123,15 +122,15 @@ pub fn asset_import_ui(
             ui.separator();
 
             // Browse button with updated filter
-            if ui.button("Browse Files...").clicked()
-                && dialog.pending_browse.is_none()
-            {
+            if ui.button("Browse Files...").clicked() && dialog.pending_browse.is_none() {
                 let task_pool = AsyncComputeTaskPool::get();
                 dialog.pending_browse = Some(task_pool.spawn(async {
                     rfd::AsyncFileDialog::new()
                         .add_filter(
                             "Supported Files",
-                            &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "json"],
+                            &[
+                                "png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "json",
+                            ],
                         )
                         .add_filter(
                             "Images",

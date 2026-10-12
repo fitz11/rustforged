@@ -1,17 +1,17 @@
 //! Main layers panel UI orchestration.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::map::{FogOfWarData, MapData, MapDirtyState};
 use crate::session::LiveSessionState;
 use crate::ui::panel_layout::DockedPanel;
 
+use super::HelpWindowState;
 use super::fog::render_fog_controls;
 use super::layers::render_layers;
-use super::properties::{render_properties, SelectedQuery};
+use super::properties::{SelectedQuery, render_properties};
 use super::session::render_session_controls;
-use super::HelpWindowState;
 
 /// Main layers panel UI system.
 #[allow(clippy::too_many_arguments)]

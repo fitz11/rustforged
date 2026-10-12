@@ -147,11 +147,8 @@ pub fn poll_load_tasks(
                         // Check that the suffix match falls on a path separator boundary
                         if normalized.ends_with(rel_path.as_str()) {
                             let prefix_len = normalized.len() - rel_path.len();
-                            if prefix_len == 0
-                                || normalized.as_bytes()[prefix_len - 1] == b'/'
-                            {
-                                path_mapping
-                                    .insert(saved_path.clone(), bevy_path.to_string());
+                            if prefix_len == 0 || normalized.as_bytes()[prefix_len - 1] == b'/' {
+                                path_mapping.insert(saved_path.clone(), bevy_path.to_string());
                                 matched = true;
                                 break;
                             }

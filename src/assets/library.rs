@@ -95,8 +95,7 @@ pub fn validate_library_directory(path: &Path) -> LibraryValidation {
 pub fn create_library_directory(path: &Path) -> Result<(), String> {
     // Create the main directory if it doesn't exist
     if !path.exists() {
-        std::fs::create_dir_all(path)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
+        std::fs::create_dir_all(path).map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
     // Create suggested asset folders (terrain, doodads, tokens)
@@ -143,7 +142,10 @@ pub fn load_library_metadata(library_path: &Path) -> LibraryMetadata {
 }
 
 /// Save library metadata to .library.json file
-pub fn save_library_metadata(library_path: &Path, metadata: &LibraryMetadata) -> Result<(), String> {
+pub fn save_library_metadata(
+    library_path: &Path,
+    metadata: &LibraryMetadata,
+) -> Result<(), String> {
     let metadata_path = library_path.join(LIBRARY_METADATA_FILE);
 
     let json = serde_json::to_string_pretty(metadata)

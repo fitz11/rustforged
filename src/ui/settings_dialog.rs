@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
 use std::path::PathBuf;
 

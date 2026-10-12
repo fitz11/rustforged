@@ -3,12 +3,12 @@
 use bevy::prelude::*;
 
 use crate::editor::annotations::{
-    point_in_text, point_near_line, point_near_path, AnnotationMarker, DrawnLine, DrawnPath,
-    TextAnnotation,
+    AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation, point_in_text, point_near_line,
+    point_near_path,
 };
 use crate::map::Selected;
 
-use super::{SelectionDragMode, HANDLE_SIZE, ROTATION_HANDLE_OFFSET, ROTATION_HANDLE_RADIUS};
+use super::{HANDLE_SIZE, ROTATION_HANDLE_OFFSET, ROTATION_HANDLE_RADIUS, SelectionDragMode};
 
 /// Rotate a point around a center by the given angle (in radians)
 pub(crate) fn rotate_point(point: Vec2, center: Vec2, angle: f32) -> Vec2 {
@@ -104,11 +104,7 @@ pub fn compute_selection_bounds(
         found_any = true;
     }
 
-    if found_any {
-        Some((min, max))
-    } else {
-        None
-    }
+    if found_any { Some((min, max)) } else { None }
 }
 
 /// Check if the cursor is over any selected item's rotation handle (accounting for rotation)
@@ -156,10 +152,22 @@ pub fn get_selection_handle_at_position(
 
         // Local corner positions (before rotation)
         let local_corners = [
-            (Vec2::new(-half_size.x, -half_size.y), SelectionDragMode::ResizeSW),
-            (Vec2::new(half_size.x, -half_size.y), SelectionDragMode::ResizeSE),
-            (Vec2::new(half_size.x, half_size.y), SelectionDragMode::ResizeNE),
-            (Vec2::new(-half_size.x, half_size.y), SelectionDragMode::ResizeNW),
+            (
+                Vec2::new(-half_size.x, -half_size.y),
+                SelectionDragMode::ResizeSW,
+            ),
+            (
+                Vec2::new(half_size.x, -half_size.y),
+                SelectionDragMode::ResizeSE,
+            ),
+            (
+                Vec2::new(half_size.x, half_size.y),
+                SelectionDragMode::ResizeNE,
+            ),
+            (
+                Vec2::new(-half_size.x, half_size.y),
+                SelectionDragMode::ResizeNW,
+            ),
         ];
 
         // Check corners (high priority)

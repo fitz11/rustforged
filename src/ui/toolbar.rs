@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::editor::fog::FogState;
 use crate::editor::{AnnotationSettings, CurrentTool, EditorTool, SelectedLayer};
@@ -31,11 +31,10 @@ pub fn toolbar_ui(
                     let selected = current_tool.tool == *tool;
                     let button_text = tool_button_label(tool);
 
-                    let button = egui::Button::new(
-                        egui::RichText::new(button_text).size(14.0).strong(),
-                    )
-                    .min_size(egui::vec2(0.0, 28.0))
-                    .selected(selected);
+                    let button =
+                        egui::Button::new(egui::RichText::new(button_text).size(14.0).strong())
+                            .min_size(egui::vec2(0.0, 28.0))
+                            .selected(selected);
 
                     let response = ui.add(button);
                     if response.clicked() {
@@ -169,11 +168,7 @@ pub fn tool_settings_ui(
                                 "Green",
                                 egui::Color32::from_rgb(0, 200, 0),
                             ),
-                            (
-                                Color::srgb(1.0, 1.0, 0.0),
-                                "Yellow",
-                                egui::Color32::YELLOW,
-                            ),
+                            (Color::srgb(1.0, 1.0, 0.0), "Yellow", egui::Color32::YELLOW),
                             (Color::srgb(0.0, 0.0, 0.0), "Black", egui::Color32::BLACK),
                             (Color::srgb(1.0, 1.0, 1.0), "White", egui::Color32::WHITE),
                             (
@@ -241,8 +236,7 @@ pub fn tool_settings_ui(
                     EditorTool::Fog => {
                         // Fog tool settings
                         ui.label(
-                            egui::RichText::new("Fog Settings:")
-                                .color(egui::Color32::LIGHT_GRAY),
+                            egui::RichText::new("Fog Settings:").color(egui::Color32::LIGHT_GRAY),
                         );
 
                         ui.add_space(8.0);

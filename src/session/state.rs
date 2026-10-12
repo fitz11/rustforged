@@ -64,9 +64,7 @@ impl LiveSessionState {
     pub fn rotate_ccw(&mut self) {
         self.rotation_degrees = (self.rotation_degrees - 90 + 360) % 360;
     }
-
 }
-
 
 /// Resource tracking viewport drag state
 #[derive(Resource, Default)]

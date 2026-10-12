@@ -1,8 +1,8 @@
 //! Core update operations: checking, downloading, and installing.
 
-use super::manifest::{get_platform_asset, is_newer_version, ReleaseManifest, MANIFEST_URL};
-use super::state::{DownloadResult, UpdateCheckResult};
 use super::CURRENT_VERSION;
+use super::manifest::{MANIFEST_URL, ReleaseManifest, get_platform_asset, is_newer_version};
+use super::state::{DownloadResult, UpdateCheckResult};
 
 /// Check for updates by fetching the release manifest
 pub fn check_for_updates() -> UpdateCheckResult {
@@ -66,7 +66,7 @@ pub fn download_installer(url: String, version: String) -> DownloadResult {
                         success: false,
                         path: None,
                         error: Some(format!("Failed to create file: {}", e)),
-                    }
+                    };
                 }
             };
 

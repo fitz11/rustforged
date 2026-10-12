@@ -5,10 +5,10 @@ use bevy_egui::EguiContexts;
 use crate::assets::SelectedAsset;
 use crate::map::{MapData, PlacedItem};
 
-use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
-use super::params::{is_cursor_over_ui, CameraParams};
-use super::tools::{CurrentTool, EditorTool, SelectedLayer};
 use super::GridSettings;
+use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
+use super::params::{CameraParams, is_cursor_over_ui};
+use super::tools::{CurrentTool, EditorTool, SelectedLayer};
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_placement(
@@ -47,8 +47,7 @@ pub fn handle_placement(
     };
 
     // Snap to grid unless Shift is held (either Shift key)
-    let shift_held =
-        keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
     let snap_enabled = grid_settings.snap_enabled && !shift_held;
     let final_pos = super::grid::snap_to_grid(world_pos, map_data.grid_size, snap_enabled);
 

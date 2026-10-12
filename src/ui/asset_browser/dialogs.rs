@@ -1,11 +1,10 @@
 //! Dialog windows for the asset browser (rename, move, import errors, etc.).
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::assets::{
-    AssetLibrary, RenameAssetRequest, SelectedAsset, ThumbnailCache,
-    UpdateLibraryMetadataRequest,
+    AssetLibrary, RenameAssetRequest, SelectedAsset, ThumbnailCache, UpdateLibraryMetadataRequest,
 };
 use crate::config::SetDefaultLibraryRequest;
 
@@ -153,9 +152,7 @@ pub fn render_rename_asset_dialog(
         });
 
     // Handle rename action
-    if do_rename
-        && let Some(ref asset) = selected_asset.asset.clone()
-    {
+    if do_rename && let Some(ref asset) = selected_asset.asset.clone() {
         match rename_asset(
             &asset.full_path,
             &browser_state.rename_new_name,
@@ -438,11 +435,7 @@ pub fn render_move_asset_dialog(
                 browser_state.move_dialog_open = false;
                 browser_state.move_error = None;
                 browser_state.move_new_folder_name.clear();
-                let folder_display = if folder.is_empty() {
-                    "(root)"
-                } else {
-                    &folder
-                };
+                let folder_display = if folder.is_empty() { "(root)" } else { &folder };
                 info!("Moved asset '{}' to {}", asset.name, folder_display);
             }
             Err(e) => {
@@ -484,8 +477,7 @@ pub fn handle_rename_shortcuts(
         }
 
         // Handle F4 key to open rename library dialog
-        if ctx.input(|i| i.key_pressed(egui::Key::F4))
-            && !browser_state.rename_library_dialog_open
+        if ctx.input(|i| i.key_pressed(egui::Key::F4)) && !browser_state.rename_library_dialog_open
         {
             browser_state.rename_library_new_name = library.metadata.name.clone();
             browser_state.rename_library_dialog_open = true;
@@ -496,8 +488,7 @@ pub fn handle_rename_shortcuts(
             browser_state.rename_dialog_open = false;
             browser_state.rename_error = None;
         }
-        if browser_state.rename_map_dialog_open && ctx.input(|i| i.key_pressed(egui::Key::Escape))
-        {
+        if browser_state.rename_map_dialog_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             browser_state.rename_map_dialog_open = false;
         }
         if browser_state.rename_library_dialog_open

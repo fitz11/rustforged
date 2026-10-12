@@ -24,8 +24,8 @@ use bevy_egui::EguiContexts;
 use crate::map::Selected;
 use crate::ui::panel_layout::is_pointer_over_ui;
 
-use super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use super::EditorCamera;
+use super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 
 /// Bundled camera and window queries for cursor-to-world calculations
 #[derive(SystemParam)]
@@ -48,8 +48,16 @@ impl CameraParams<'_, '_> {
 #[derive(SystemParam)]
 pub struct CameraWithProjection<'w, 's> {
     pub window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
-    pub camera:
-        Query<'w, 's, (&'static Camera, &'static GlobalTransform, &'static Projection), With<EditorCamera>>,
+    pub camera: Query<
+        'w,
+        's,
+        (
+            &'static Camera,
+            &'static GlobalTransform,
+            &'static Projection,
+        ),
+        With<EditorCamera>,
+    >,
 }
 
 impl CameraWithProjection<'_, '_> {
@@ -82,16 +90,22 @@ impl CameraWithProjection<'_, '_> {
 pub struct AnnotationQueries<'w, 's> {
     pub paths: Query<'w, 's, (Entity, &'static DrawnPath), With<AnnotationMarker>>,
     pub lines: Query<'w, 's, (Entity, &'static DrawnLine), With<AnnotationMarker>>,
-    pub texts:
-        Query<'w, 's, (Entity, &'static Transform, &'static TextAnnotation), With<AnnotationMarker>>,
+    pub texts: Query<
+        'w,
+        's,
+        (Entity, &'static Transform, &'static TextAnnotation),
+        With<AnnotationMarker>,
+    >,
 }
 
 /// Bundled queries for selected annotations (used in clipboard operations)
 #[derive(SystemParam)]
 #[allow(clippy::type_complexity)]
 pub struct SelectedAnnotationQueries<'w, 's> {
-    pub paths: Query<'w, 's, (Entity, &'static DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
-    pub lines: Query<'w, 's, (Entity, &'static DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
+    pub paths:
+        Query<'w, 's, (Entity, &'static DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
+    pub lines:
+        Query<'w, 's, (Entity, &'static DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
     pub texts: Query<
         'w,
         's,
