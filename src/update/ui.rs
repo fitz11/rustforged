@@ -217,8 +217,9 @@ pub fn update_dialog_ui(
         update_state.is_downloading = true;
         update_state.download_error = None;
 
+        let sha256 = update_state.download_sha256.clone();
         let task_pool = AsyncComputeTaskPool::get();
-        let task = task_pool.spawn(async move { download_installer(url, version) });
+        let task = task_pool.spawn(async move { download_installer(url, version, sha256) });
 
         commands.spawn(DownloadTask(task));
     }

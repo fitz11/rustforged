@@ -27,6 +27,8 @@ pub struct UpdateState {
     // Download state
     /// Direct URL to the installer for current platform
     pub download_url: Option<String>,
+    /// Expected SHA-256 (lowercase hex) of that installer
+    pub download_sha256: Option<String>,
     /// Whether we're currently downloading
     pub is_downloading: bool,
     /// Download error message
@@ -50,6 +52,7 @@ pub struct UpdateCheckResult {
     pub release_url: Option<String>,
     pub release_notes: Option<String>,
     pub download_url: Option<String>,
+    pub download_sha256: Option<String>,
     pub error: Option<String>,
 }
 
@@ -68,6 +71,7 @@ impl UpdateCheckResult {
             release_url: None,
             release_notes: None,
             download_url: None,
+            download_sha256: None,
             error: None,
         }
     }
@@ -79,6 +83,7 @@ impl UpdateCheckResult {
             release_url: None,
             release_notes: None,
             download_url: None,
+            download_sha256: None,
             error: Some(msg),
         }
     }

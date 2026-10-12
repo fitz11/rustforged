@@ -19,8 +19,11 @@ pub const MANIFEST_URL: &str =
 ///   "release_notes": "Bug fixes and improvements...",
 ///   "assets": {
 ///     "windows-x64": "https://example.com/rustforged-1.2.3-x64.msi",
-///     "windows-arm64": "https://example.com/rustforged-1.2.3-arm64.msi",
+///     "windows-arm64": "https://example.com/rustforged-1.2.3-arm64-setup.exe",
 ///     "macos-aarch64": "https://example.com/rustforged-1.2.3-aarch64.dmg"
+///   },
+///   "checksums": {
+///     "windows-x64": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 ///   }
 /// }
 /// ```
@@ -36,6 +39,10 @@ pub struct ReleaseManifest {
     /// Platform-specific download URLs (key: platform, value: URL)
     #[serde(default)]
     pub assets: HashMap<String, String>,
+    /// SHA-256 of each platform's download, as `sha256:<hex>` (key: platform). A download
+    /// is only installed if it matches.
+    #[serde(default)]
+    pub checksums: HashMap<String, String>,
 }
 
 /// Compare versions, returns true if `latest` is newer than `current`
@@ -60,15 +67,20 @@ pub fn current_platform_key() -> &'static str {
     {
         "macos-aarch64"
     }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        "macos-x86_64"
+    }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         "linux-x64"
     }
-    // Fallback for other configurations (e.g., macOS x86_64)
+    // Fallback for other configurations
     #[cfg(not(any(
         all(target_os = "windows", target_arch = "x86_64"),
         all(target_os = "windows", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "x86_64")
     )))]
     {
@@ -79,4 +91,12 @@ pub fn current_platform_key() -> &'static str {
 /// Get download URL for current platform from assets map
 pub fn get_platform_asset(assets: &HashMap<String, String>) -> Option<String> {
     assets.get(current_platform_key()).cloned()
+}
+
+/// The expected SHA-256 (lowercase hex) of the current platform's download, if published.
+pub fn get_platform_checksum(checksums: &HashMap<String, String>) -> Option<String> {
+    let value = checksums.get(current_platform_key())?.trim();
+    let hex = value.strip_prefix("sha256:").unwrap_or(value);
+    (hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| hex.to_ascii_lowercase())
 }

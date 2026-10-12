@@ -365,29 +365,64 @@ jobs:
           # Get asset URLs from the GitHub release
           RELEASE_DATA=$(gh api repos/${{ github.repository }}/releases/tags/v${VERSION})
 
-          # Extract asset URLs for each platform
-          WIN_X64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("x64.*\\.msi$")) | .browser_download_url' | head -1)
-          WIN_ARM64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("(arm64|aarch64).*setup\\.exe$")) | .browser_download_url' | head -1)
-          MACOS_ARM64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("aarch64\\.dmg$")) | .browser_download_url' | head -1)
-          MACOS_X64_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | test("_x64\\.dmg$")) | .browser_download_url' | head -1)
-
-          # Generate manifest JSON
-          cat > releases/latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "release_url": "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
-            "release_notes": "See the release page for full release notes.",
-            "assets": {
-              "windows-x64": "${WIN_X64_URL:-}",
-              "windows-arm64": "${WIN_ARM64_URL:-}",
-              "macos-aarch64": "${MACOS_ARM64_URL:-}",
-              "macos-x86_64": "${MACOS_X64_URL:-}"
-            }
+          # URL and SHA-256 of the asset whose name matches a pattern. GitHub reports a
+          # digest for each asset; compute it from the download if it's missing.
+          asset_url() {
+            echo "$RELEASE_DATA" | jq -r --arg re "$1" \
+              '.assets[] | select(.name | test($re)) | .browser_download_url' | head -1
           }
-          EOF
+          asset_sha256() {
+            local digest
+            digest=$(echo "$RELEASE_DATA" | jq -r --arg re "$1" \
+              '.assets[] | select(.name | test($re)) | .digest // empty' | head -1)
+            if [ -z "$digest" ] && [ -n "$2" ]; then
+              digest="sha256:$(curl -fsSL "$2" | sha256sum | cut -d' ' -f1)"
+            fi
+            echo "$digest"
+          }
 
-          # Remove empty asset entries
-          jq 'del(.assets[] | select(. == ""))' releases/latest.json > releases/latest.tmp && mv releases/latest.tmp releases/latest.json
+          WIN_X64_RE='x64.*\.msi$'
+          WIN_ARM64_RE='(arm64|aarch64).*setup\.exe$'
+          MACOS_ARM64_RE='aarch64\.dmg$'
+          MACOS_X64_RE='_x64\.dmg$'
+          WIN_X64_URL=$(asset_url "$WIN_X64_RE")
+          WIN_ARM64_URL=$(asset_url "$WIN_ARM64_RE")
+          MACOS_ARM64_URL=$(asset_url "$MACOS_ARM64_RE")
+          MACOS_X64_URL=$(asset_url "$MACOS_X64_RE")
+
+          # The app only installs a download whose SHA-256 matches its checksum here
+          jq -n \
+            --arg version "$VERSION" \
+            --arg release_url "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" \
+            --arg win_x64 "$WIN_X64_URL" \
+            --arg win_arm64 "$WIN_ARM64_URL" \
+            --arg mac_arm64 "$MACOS_ARM64_URL" \
+            --arg mac_x64 "$MACOS_X64_URL" \
+            --arg win_x64_sha "$(asset_sha256 "$WIN_X64_RE" "$WIN_X64_URL")" \
+            --arg win_arm64_sha "$(asset_sha256 "$WIN_ARM64_RE" "$WIN_ARM64_URL")" \
+            --arg mac_arm64_sha "$(asset_sha256 "$MACOS_ARM64_RE" "$MACOS_ARM64_URL")" \
+            --arg mac_x64_sha "$(asset_sha256 "$MACOS_X64_RE" "$MACOS_X64_URL")" \
+            '{
+              version: $version,
+              release_url: $release_url,
+              release_notes: "See the release page for full release notes.",
+              assets: {
+                "windows-x64": $win_x64,
+                "windows-arm64": $win_arm64,
+                "macos-aarch64": $mac_arm64,
+                "macos-x86_64": $mac_x64
+              },
+              checksums: {
+                "windows-x64": $win_x64_sha,
+                "windows-arm64": $win_arm64_sha,
+                "macos-aarch64": $mac_arm64_sha,
+                "macos-x86_64": $mac_x64_sha
+              }
+            }
+            # Drop platforms this release has no installer for
+            | .assets |= with_entries(select(.value != ""))
+            | .checksums |= with_entries(select(.value != ""))' \
+            > releases/latest.json
 
           echo "Generated manifest:"
           cat releases/latest.json

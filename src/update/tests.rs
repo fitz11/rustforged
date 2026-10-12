@@ -1,8 +1,10 @@
 //! Unit tests for the update module.
 
 use super::manifest::{
-    ReleaseManifest, current_platform_key, get_platform_asset, is_newer_version,
+    ReleaseManifest, current_platform_key, get_platform_asset, get_platform_checksum,
+    is_newer_version,
 };
+use super::operations::{copy_and_hash, download_installer, installer_extension};
 use super::state::UpdateCheckResult;
 use std::collections::HashMap;
 
@@ -125,4 +127,68 @@ fn test_current_platform_key_not_empty() {
         "unknown",
     ];
     assert!(valid_keys.contains(&key));
+}
+
+#[test]
+fn test_manifest_checksums_parse_and_validate() {
+    let hash = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+    let mut checksums = HashMap::new();
+    checksums.insert(
+        current_platform_key().to_string(),
+        format!("sha256:{}", hash.to_uppercase()),
+    );
+    assert_eq!(get_platform_checksum(&checksums), Some(hash.to_string()));
+
+    // Not a SHA-256: no checksum rather than one that can never match
+    checksums.insert(current_platform_key().to_string(), "sha256:abc".to_string());
+    assert_eq!(get_platform_checksum(&checksums), None);
+    assert_eq!(get_platform_checksum(&HashMap::new()), None);
+}
+
+#[test]
+fn test_installer_extension_follows_url() {
+    assert_eq!(
+        installer_extension("https://x/rustforged_0.2.0_x64_en-US.msi"),
+        ".msi"
+    );
+    assert_eq!(
+        installer_extension("https://x/rustforged_0.2.0_arm64-setup.exe"),
+        ".exe"
+    );
+    assert_eq!(
+        installer_extension("https://x/Rustforged_0.2.0_aarch64.dmg?dl=1"),
+        ".dmg"
+    );
+    assert_eq!(
+        installer_extension("https://x/rustforged.tar.gz"),
+        ".tar.gz"
+    );
+}
+
+#[test]
+fn test_copy_and_hash_is_sha256() {
+    let mut out = Vec::new();
+    let hash = copy_and_hash(&b"test"[..], &mut out).unwrap();
+    assert_eq!(out, b"test");
+    assert_eq!(
+        hash,
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    );
+}
+
+#[test]
+fn test_download_refuses_insecure_or_unverifiable_installers() {
+    let insecure = download_installer(
+        "http://example.com/a.msi".to_string(),
+        "1.0.0".to_string(),
+        Some("0".repeat(64)),
+    );
+    assert!(!insecure.success);
+
+    let unverifiable = download_installer(
+        "https://example.com/a.msi".to_string(),
+        "1.0.0".to_string(),
+        None,
+    );
+    assert!(!unverifiable.success);
 }

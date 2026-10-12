@@ -31,6 +31,7 @@ pub fn poll_update_check(
             update_state.release_url = result.release_url;
             update_state.release_notes = result.release_notes;
             update_state.download_url = result.download_url;
+            update_state.download_sha256 = result.download_sha256;
             update_state.error = result.error;
 
             commands.entity(entity).despawn();
