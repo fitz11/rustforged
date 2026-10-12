@@ -10,12 +10,87 @@ use crate::map::SavedMap;
 #[derive(Resource, Default)]
 pub struct AssetImportDialog {
     pub is_open: bool,
-    pub files_to_import: Vec<PathBuf>,
+    /// The picked files, sorted into images, maps and files that can't be imported
+    pub selection: Option<ImportSelection>,
     pub import_status: Option<String>,
-    /// Files detected as invalid (neither image nor valid map)
-    pub invalid_files: Vec<(PathBuf, String)>,
-    /// Pending async file dialog for browsing files
-    pub pending_browse: Option<Task<Option<Vec<PathBuf>>>>,
+    /// File picker, then sorting the picked files (reading each map to check it), off the
+    /// UI thread
+    pub pending_browse: Option<Task<Option<ImportSelection>>>,
+    /// Copying the files into the library, off the UI thread
+    pub pending_import: Option<Task<ImportOutcome>>,
+}
+
+/// Picked files, sorted once when they're picked rather than every frame.
+#[derive(Default)]
+pub struct ImportSelection {
+    pub images: Vec<PathBuf>,
+    pub maps: Vec<PathBuf>,
+    /// Files that are neither an image nor a valid map, with why
+    pub invalid: Vec<(PathBuf, String)>,
+}
+
+impl ImportSelection {
+    fn sort(paths: Vec<PathBuf>) -> Self {
+        let mut selection = Self::default();
+        for path in paths {
+            match categorize_import_file(&path) {
+                ImportFileType::Image => selection.images.push(path),
+                ImportFileType::Map => selection.maps.push(path),
+                ImportFileType::Invalid(reason) => selection.invalid.push((path, reason)),
+            }
+        }
+        selection
+    }
+
+    fn total(&self) -> usize {
+        self.images.len() + self.maps.len() + self.invalid.len()
+    }
+}
+
+/// What an import copied, and what it couldn't
+pub struct ImportOutcome {
+    imported: usize,
+    errors: Vec<String>,
+}
+
+/// Copies `sources` into `dest_dir`, never replacing a file that's already there.
+fn copy_into(sources: &[PathBuf], dest_dir: &Path, outcome: &mut ImportOutcome) {
+    if let Err(e) = std::fs::create_dir_all(dest_dir) {
+        outcome
+            .errors
+            .push(format!("Failed to create {}: {}", dest_dir.display(), e));
+        return;
+    }
+    for source in sources {
+        let Some(filename) = source.file_name() else {
+            continue;
+        };
+        let name = filename.to_string_lossy();
+        let result = std::fs::File::open(source).and_then(|mut from| {
+            let mut to = std::fs::File::create_new(dest_dir.join(filename))?;
+            std::io::copy(&mut from, &mut to)
+        });
+        match result {
+            Ok(_) => outcome.imported += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                outcome
+                    .errors
+                    .push(format!("{}: file already exists", name));
+            }
+            Err(e) => outcome.errors.push(format!("{}: {}", name, e)),
+        }
+    }
+}
+
+/// Images go to the library root and maps to its maps folder.
+fn import_files(images: Vec<PathBuf>, maps: Vec<PathBuf>, library_path: PathBuf) -> ImportOutcome {
+    let mut outcome = ImportOutcome {
+        imported: 0,
+        errors: Vec::new(),
+    };
+    copy_into(&images, &library_path, &mut outcome);
+    copy_into(&maps, &library_path.join("maps"), &mut outcome);
+    outcome
 }
 
 /// Check if a file is a valid image
@@ -79,10 +154,28 @@ pub fn asset_import_ui(
         && let Some(result) = future::block_on(future::poll_once(task))
     {
         dialog.pending_browse = None;
-        if let Some(paths) = result {
-            dialog.files_to_import = paths;
+        if let Some(selection) = result {
+            dialog.selection = Some(selection);
             dialog.import_status = None;
-            dialog.invalid_files.clear();
+        }
+    }
+
+    // Poll the copy
+    if let Some(ref mut task) = dialog.pending_import
+        && let Some(outcome) = future::block_on(future::poll_once(task))
+    {
+        dialog.pending_import = None;
+        dialog.import_status = Some(if outcome.errors.is_empty() {
+            format!("Successfully imported {} file(s)", outcome.imported)
+        } else {
+            format!(
+                "Imported {} file(s). Errors:\n{}",
+                outcome.imported,
+                outcome.errors.join("\n")
+            )
+        });
+        if outcome.imported > 0 {
+            refresh_events.write(RefreshAssetLibrary);
         }
     }
 
@@ -91,6 +184,8 @@ pub fn asset_import_ui(
     }
 
     let mut should_close = false;
+    let mut start_import = false;
+    let mut clear = false;
 
     egui::Window::new("Import Files")
         .collapsible(false)
@@ -121,11 +216,13 @@ pub fn asset_import_ui(
 
             ui.separator();
 
-            // Browse button with updated filter
-            if ui.button("Browse Files...").clicked() && dialog.pending_browse.is_none() {
-                let task_pool = IoTaskPool::get();
-                dialog.pending_browse = Some(task_pool.spawn(async {
-                    rfd::AsyncFileDialog::new()
+            let busy = dialog.pending_browse.is_some() || dialog.pending_import.is_some();
+            if ui
+                .add_enabled(!busy, egui::Button::new("Browse Files..."))
+                .clicked()
+            {
+                dialog.pending_browse = Some(IoTaskPool::get().spawn(async {
+                    let picked = rfd::AsyncFileDialog::new()
                         .add_filter(
                             "Supported Files",
                             &[
@@ -139,180 +236,42 @@ pub fn asset_import_ui(
                         .add_filter("Map Files", &["json"])
                         .set_title("Select files to import")
                         .pick_files()
-                        .await
-                        .map(|handles| handles.iter().map(|h| h.path().to_path_buf()).collect())
+                        .await?;
+                    let paths = picked.iter().map(|h| h.path().to_path_buf()).collect();
+                    Some(ImportSelection::sort(paths))
                 }));
             }
 
-            if !dialog.files_to_import.is_empty() {
+            if dialog.pending_import.is_some() {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Importing...");
+                });
+            }
+
+            if let Some(selection) = &dialog.selection {
                 ui.separator();
-
-                // Categorize files (clone paths to avoid borrow issues)
-                let mut images: Vec<PathBuf> = Vec::new();
-                let mut maps: Vec<PathBuf> = Vec::new();
-                let mut invalid_files: Vec<(PathBuf, String)> = Vec::new();
-
-                for path in &dialog.files_to_import {
-                    match categorize_import_file(path) {
-                        ImportFileType::Image => images.push(path.clone()),
-                        ImportFileType::Map => maps.push(path.clone()),
-                        ImportFileType::Invalid(reason) => {
-                            invalid_files.push((path.clone(), reason));
-                        }
-                    }
-                }
-
-                let file_count = dialog.files_to_import.len();
-
-                ui.label(format!("Selected {} file(s):", file_count));
+                ui.label(format!("Selected {} file(s):", selection.total()));
 
                 egui::ScrollArea::vertical()
                     .max_height(150.0)
-                    .show(ui, |ui| {
-                        if !images.is_empty() {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Images ({}) -> library root:",
-                                    images.len()
-                                ))
-                                .strong(),
-                            );
-                            for path in &images {
-                                if let Some(name) = path.file_name() {
-                                    ui.label(format!("  {}", name.to_string_lossy()));
-                                }
-                            }
-                        }
-
-                        if !maps.is_empty() {
-                            if !images.is_empty() {
-                                ui.add_space(4.0);
-                            }
-                            ui.label(
-                                egui::RichText::new(format!("Maps ({}) -> maps/:", maps.len()))
-                                    .strong(),
-                            );
-                            for path in &maps {
-                                if let Some(name) = path.file_name() {
-                                    ui.label(format!("  {}", name.to_string_lossy()));
-                                }
-                            }
-                        }
-
-                        if !invalid_files.is_empty() {
-                            if !images.is_empty() || !maps.is_empty() {
-                                ui.add_space(4.0);
-                            }
-                            ui.label(
-                                egui::RichText::new(format!("Invalid ({}):", invalid_files.len()))
-                                    .color(egui::Color32::RED),
-                            );
-                            for (path, reason) in &invalid_files {
-                                if let Some(name) = path.file_name() {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "  {} - {}",
-                                            name.to_string_lossy(),
-                                            reason
-                                        ))
-                                        .color(egui::Color32::from_rgb(200, 100, 100)),
-                                    );
-                                }
-                            }
-                        }
-                    });
+                    .show(ui, |ui| render_selection(ui, selection));
 
                 ui.separator();
 
-                let can_import = !images.is_empty() || !maps.is_empty();
+                let can_import =
+                    !busy && (!selection.images.is_empty() || !selection.maps.is_empty());
 
                 ui.horizontal(|ui| {
                     if ui
                         .add_enabled(can_import, egui::Button::new("Import"))
                         .clicked()
                     {
-                        let mut imported = 0;
-                        let mut errors = Vec::new();
-
-                        // Import images to library root
-                        let image_dest = library.library_path.clone();
-                        if !image_dest.exists()
-                            && let Err(e) = std::fs::create_dir_all(&image_dest)
-                        {
-                            errors.push(format!("Failed to create library directory: {}", e));
-                        }
-                        if image_dest.exists() {
-                            for src_path in &images {
-                                if let Some(filename) = src_path.file_name() {
-                                    let dest_path = image_dest.join(filename);
-                                    if dest_path.exists() {
-                                        errors.push(format!(
-                                            "{}: file already exists",
-                                            filename.to_string_lossy()
-                                        ));
-                                    } else {
-                                        match std::fs::copy(src_path, &dest_path) {
-                                            Ok(_) => imported += 1,
-                                            Err(e) => errors.push(format!(
-                                                "{}: {}",
-                                                filename.to_string_lossy(),
-                                                e
-                                            )),
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Import maps to maps folder
-                        let maps_dest = library.library_path.join("maps");
-                        if let Err(e) = std::fs::create_dir_all(&maps_dest) {
-                            errors.push(format!("Failed to create maps directory: {}", e));
-                        } else {
-                            for src_path in &maps {
-                                if let Some(filename) = src_path.file_name() {
-                                    let dest_path = maps_dest.join(filename);
-                                    if dest_path.exists() {
-                                        errors.push(format!(
-                                            "{}: file already exists",
-                                            filename.to_string_lossy()
-                                        ));
-                                    } else {
-                                        match std::fs::copy(src_path, &dest_path) {
-                                            Ok(_) => imported += 1,
-                                            Err(e) => errors.push(format!(
-                                                "{}: {}",
-                                                filename.to_string_lossy(),
-                                                e
-                                            )),
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Set status
-                        if errors.is_empty() {
-                            dialog.import_status =
-                                Some(format!("Successfully imported {} file(s)", imported));
-                        } else {
-                            dialog.import_status = Some(format!(
-                                "Imported {} file(s). Errors:\n{}",
-                                imported,
-                                errors.join("\n")
-                            ));
-                        }
-
-                        if imported > 0 {
-                            refresh_events.write(RefreshAssetLibrary);
-                        }
-
-                        dialog.files_to_import.clear();
+                        start_import = true;
                     }
 
                     if ui.button("Clear").clicked() {
-                        dialog.files_to_import.clear();
-                        dialog.import_status = None;
+                        clear = true;
                     }
                 });
             }
@@ -329,13 +288,110 @@ pub fn asset_import_ui(
             }
         });
 
+    if start_import && let Some(selection) = dialog.selection.take() {
+        let library_path = library.library_path.clone();
+        dialog.pending_import =
+            Some(IoTaskPool::get().spawn(async move {
+                import_files(selection.images, selection.maps, library_path)
+            }));
+    }
+    if clear {
+        dialog.selection = None;
+        dialog.import_status = None;
+    }
+
     if should_close {
         dialog.is_open = false;
-        dialog.files_to_import.clear();
-        dialog.invalid_files.clear();
+        dialog.selection = None;
         dialog.import_status = None;
         dialog.pending_browse = None;
     }
 
     Ok(())
+}
+
+/// Lists the picked files by what happens to them.
+fn render_selection(ui: &mut egui::Ui, selection: &ImportSelection) {
+    let file_name = |path: &PathBuf| {
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+
+    if !selection.images.is_empty() {
+        ui.label(
+            egui::RichText::new(format!(
+                "Images ({}) -> library root:",
+                selection.images.len()
+            ))
+            .strong(),
+        );
+        for path in &selection.images {
+            ui.label(format!("  {}", file_name(path)));
+        }
+    }
+
+    if !selection.maps.is_empty() {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!("Maps ({}) -> maps/:", selection.maps.len())).strong(),
+        );
+        for path in &selection.maps {
+            ui.label(format!("  {}", file_name(path)));
+        }
+    }
+
+    if !selection.invalid.is_empty() {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!("Invalid ({}):", selection.invalid.len()))
+                .color(egui::Color32::RED),
+        );
+        for (path, reason) in &selection.invalid {
+            ui.label(
+                egui::RichText::new(format!("  {} - {}", file_name(path), reason))
+                    .color(egui::Color32::from_rgb(200, 100, 100)),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_import_never_replaces_library_files() {
+        let source = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let orc = source.path().join("orc.png");
+        std::fs::write(&orc, "new orc").unwrap();
+        std::fs::write(library.path().join("orc.png"), "my orc").unwrap();
+        let goblin = source.path().join("goblin.png");
+        std::fs::write(&goblin, "goblin").unwrap();
+
+        let outcome = import_files(vec![orc, goblin], vec![], library.path().to_path_buf());
+
+        assert_eq!(outcome.imported, 1);
+        assert_eq!(outcome.errors.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(library.path().join("orc.png")).unwrap(),
+            "my orc"
+        );
+    }
+
+    #[test]
+    fn test_selection_sorts_files_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("a.png");
+        let bad_map = dir.path().join("b.json");
+        std::fs::write(&image, "x").unwrap();
+        std::fs::write(&bad_map, "not a map").unwrap();
+
+        let selection = ImportSelection::sort(vec![image, bad_map, dir.path().join("c.txt")]);
+
+        assert_eq!(selection.images.len(), 1);
+        assert!(selection.maps.is_empty());
+        assert_eq!(selection.invalid.len(), 2);
+    }
 }
