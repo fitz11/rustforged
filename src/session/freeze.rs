@@ -124,8 +124,18 @@ pub fn sync_freeze(
         info!("Unfroze the player view");
     }
 
-    // Every frame, so a camera spawned mid-freeze gets the right layers too
-    let wanted = player_camera_layers(frozen_view.is_frozen());
+    // A session always starts with the player screen showing
+    if !session_state.is_active && session_state.blackout {
+        session_state.blackout = false;
+    }
+
+    // Every frame, so a camera spawned mid-freeze gets the right layers too. A blackout
+    // shows nothing at all: the camera's black clear color.
+    let wanted = if session_state.blackout {
+        RenderLayers::none()
+    } else {
+        player_camera_layers(frozen_view.is_frozen())
+    };
     for mut layers in &mut player_cameras {
         if *layers != wanted {
             *layers = wanted.clone();
@@ -283,6 +293,28 @@ mod tests {
         );
 
         app.world_mut().resource_mut::<LiveSessionState>().frozen = false;
+        app.update();
+        assert_eq!(
+            app.world().get::<RenderLayers>(camera),
+            Some(&player_camera_layers(false))
+        );
+    }
+
+    #[test]
+    fn test_blackout_shows_players_nothing() {
+        let mut app = freeze_test_app();
+        let camera = app
+            .world_mut()
+            .spawn((PlayerCamera, player_camera_layers(false)))
+            .id();
+        app.world_mut().resource_mut::<LiveSessionState>().blackout = true;
+        app.update();
+        assert_eq!(
+            app.world().get::<RenderLayers>(camera),
+            Some(&RenderLayers::none())
+        );
+
+        app.world_mut().resource_mut::<LiveSessionState>().blackout = false;
         app.update();
         assert_eq!(
             app.world().get::<RenderLayers>(camera),

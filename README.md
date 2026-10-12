@@ -150,6 +150,7 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 
 | Keys | Action |
 |------|--------|
+| Ctrl+B | Black out the player screen, or show the map again |
 | Escape (player window) | End the session |
 
 ## Asset Library

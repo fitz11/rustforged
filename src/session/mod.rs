@@ -16,6 +16,11 @@ use crate::editor::session_is_active;
 
 pub struct LiveSessionPlugin;
 
+/// Ctrl+B (Cmd+B on macOS): black out the player screen, or show the map again
+fn toggle_blackout(mut session_state: ResMut<LiveSessionState>) {
+    session_state.blackout = !session_state.blackout;
+}
+
 /// Systems that settle what players see this frame: the frozen snapshot and the player
 /// camera. Anything drawn for players (fog, grid) runs after them, so it covers the area
 /// the camera shows this frame rather than last frame's.
@@ -36,6 +41,13 @@ impl Plugin for LiveSessionPlugin {
                 Update,
                 (
                     keep_awake::sync_keep_awake.run_if(resource_changed::<LiveSessionState>),
+                    toggle_blackout
+                        .run_if(
+                            session_is_active
+                                .and_then(crate::editor::command_key(KeyCode::KeyB))
+                                .and_then(crate::editor::shortcuts_enabled),
+                        )
+                        .before(PlayerViewSync),
                     viewport::draw_viewport_indicator.run_if(session_is_active),
                     // Before the tools, so grabbing a viewport handle keeps the click
                     // from also revealing fog, placing an item or selecting

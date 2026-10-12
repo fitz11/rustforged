@@ -72,7 +72,13 @@ pub fn toolbar_ui(
 
                 // Right-aligned session controls
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if session_state.is_active && session_state.frozen {
+                    if session_state.is_active && session_state.blackout {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 200, 200),
+                            egui::RichText::new("● LIVE · BLACKOUT").strong(),
+                        )
+                        .on_hover_text("Players see a black screen (Ctrl+B to show the map)");
+                    } else if session_state.is_active && session_state.frozen {
                         ui.colored_label(
                             egui::Color32::from_rgb(115, 205, 255),
                             egui::RichText::new("● LIVE · FROZEN").strong(),

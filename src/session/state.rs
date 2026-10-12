@@ -44,6 +44,8 @@ pub struct LiveSessionState {
     pub rotation_degrees: i32,
     /// Players keep seeing the map as it was when this was turned on
     pub frozen: bool,
+    /// The player screen shows nothing (black), e.g. while the GM sets up the next scene
+    pub blackout: bool,
 }
 
 impl LiveSessionState {

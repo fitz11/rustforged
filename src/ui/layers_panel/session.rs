@@ -41,6 +41,13 @@ pub fn render_session_controls(
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {
+        changed |= toggle_switch(ui, &mut session_state.blackout)
+            .on_hover_text("Show players a black screen (Ctrl+B)")
+            .changed();
+        ui.label(egui::RichText::new("Blackout").size(14.0));
+    });
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
         changed |= toggle_switch(ui, &mut session_state.frozen)
             .on_hover_text("Hold the player view while you edit the map")
             .changed();

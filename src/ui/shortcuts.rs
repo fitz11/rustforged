@@ -114,7 +114,13 @@ pub const SHORTCUTS: &[ShortcutGroup] = &[
     },
     ShortcutGroup {
         title: "Live session",
-        shortcuts: &[s("Escape (player window)", "End the session")],
+        shortcuts: &[
+            s(
+                "Ctrl+B",
+                "Black out the player screen, or show the map again",
+            ),
+            s("Escape (player window)", "End the session"),
+        ],
     },
 ];
 
