@@ -23,13 +23,28 @@ env:
   CARGO_TERM_COLOR: always
   # Reduce noise in CI logs
   CARGO_INCREMENTAL: 0
-  # Modern linker: clang driver + mold for faster linking (mold installed below).
-  RUSTFLAGS: "-Clinker=clang -Clink-arg=-fuse-ld=mold"
 
 jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
   ci:
     name: Lint & Test
     runs-on: ubuntu-latest
+    env:
+      # Modern linker: clang driver + mold for faster linking (mold installed below).
+      RUSTFLAGS: "-Clinker=clang -Clink-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v5
 
@@ -41,7 +56,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y mold clang libxkbcommon-dev libasound2-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          sudo apt-get install -y mold clang libxkbcommon-dev libudev-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -56,3 +71,43 @@ jobs:
 
       - name: Run tests
         run: cargo test --profile ci
+
+  # Windows and macOS code (installer launch, player window placement, Cmd shortcuts) is
+  # behind cfg(target_os) and otherwise only compiled at release time. Clippy compiles it
+  # without the cost of running the tests there.
+  lint-other-platforms:
+    name: Lint (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1
+          cache-on-failure: true
+
+      - name: Run clippy
+        run: cargo clippy --profile ci --all-targets -- -D warnings
+
+  # Known vulnerabilities in dependencies (the updater downloads and runs installers, so
+  # its HTTP and archive crates matter)
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Audit dependencies
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
