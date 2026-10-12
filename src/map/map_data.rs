@@ -19,7 +19,7 @@ impl Default for MapData {
     fn default() -> Self {
         Self {
             name: "Untitled Map".to_string(),
-            grid_size: 70.0,
+            grid_size: DEFAULT_GRID_SIZE,
             grid_visible: true,
             layers: Layer::all()
                 .iter()
@@ -34,7 +34,31 @@ impl Default for MapData {
     }
 }
 
+/// Grid sizes the app accepts, in world units per cell; outside this a grid would be
+/// unusable, and a size of zero hangs the grid and fog drawing
+pub const GRID_SIZE_RANGE: std::ops::RangeInclusive<f32> = 10.0..=1000.0;
+/// Grid size of a new map
+pub const DEFAULT_GRID_SIZE: f32 = 70.0;
+
 impl MapData {
+    /// Repairs settings a hand-edited or damaged map file can get wrong: a grid size outside
+    /// [`GRID_SIZE_RANGE`], and layers missing from or repeated in the layer list (a missing
+    /// layer had no row in the Layers panel, so it couldn't be shown or hidden).
+    pub fn normalize(&mut self) {
+        if !self.grid_size.is_finite() || !GRID_SIZE_RANGE.contains(&self.grid_size) {
+            warn!(
+                "Map grid size {} is out of range, using {}",
+                self.grid_size, DEFAULT_GRID_SIZE
+            );
+            self.grid_size = DEFAULT_GRID_SIZE;
+        }
+        let defaults = MapData::default().layers;
+        self.layers = defaults
+            .into_iter()
+            .map(|default| self.layer(default.layer_type).cloned().unwrap_or(default))
+            .collect();
+    }
+
     /// Settings for `layer`, if the map has them.
     pub fn layer(&self, layer: Layer) -> Option<&LayerData> {
         self.layers.iter().find(|ld| ld.layer_type == layer)
@@ -136,6 +160,25 @@ pub struct SavedMap {
 }
 
 impl SavedMap {
+    /// Repairs what a hand-edited or damaged file can get wrong (see [`MapData::normalize`]),
+    /// and drops items and annotations with non-finite coordinates, which can't be drawn.
+    pub fn normalize(&mut self) {
+        self.map_data.normalize();
+        let finite = |v: Vec2| v.is_finite();
+        self.placed_items.retain(|item| {
+            finite(item.position) && finite(item.scale) && item.rotation.is_finite()
+        });
+        self.annotations
+            .paths
+            .retain(|path| path.points.iter().copied().all(finite));
+        self.annotations
+            .lines
+            .retain(|line| finite(line.start) && finite(line.end));
+        self.annotations
+            .text_boxes
+            .retain(|text| finite(text.position) && text.font_size.is_finite());
+    }
+
     /// Point placed items at a different asset path (after a rename, move or relink).
     /// Returns true if any item changed.
     pub fn retarget_asset(&mut self, old_path: &str, new_path: &str) -> bool {
@@ -526,5 +569,42 @@ mod tests {
         assert!(deserialized.annotations.lines.is_empty());
         assert!(deserialized.annotations.text_boxes.is_empty());
         assert!(deserialized.asset_fingerprints.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_repairs_grid_size_and_layers() {
+        let mut map = MapData {
+            grid_size: 0.0,
+            layers: vec![
+                LayerData {
+                    layer_type: Layer::Token,
+                    visible: false,
+                    locked: true,
+                },
+                LayerData {
+                    layer_type: Layer::Token,
+                    visible: true,
+                    locked: false,
+                },
+            ],
+            ..MapData::default()
+        };
+        map.normalize();
+
+        assert_eq!(map.grid_size, DEFAULT_GRID_SIZE);
+        assert_eq!(map.layers.len(), Layer::all().len());
+        // The first entry for a layer wins; missing layers get their defaults
+        assert!(!map.is_layer_visible(Layer::Token));
+        assert!(map.is_layer_locked(Layer::Token));
+        assert!(!map.is_layer_visible(Layer::FogOfWar));
+        assert!(map.is_layer_visible(Layer::Background));
+
+        map.grid_size = f32::NAN;
+        map.normalize();
+        assert_eq!(map.grid_size, DEFAULT_GRID_SIZE);
+
+        map.grid_size = 140.0;
+        map.normalize();
+        assert_eq!(map.grid_size, 140.0);
     }
 }

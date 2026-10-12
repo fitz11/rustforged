@@ -77,7 +77,10 @@ pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
             }
         });
     let mut saved_map = match parsed {
-        Ok(saved_map) => saved_map,
+        Ok(mut saved_map) => {
+            saved_map.normalize();
+            saved_map
+        }
         Err(error) => {
             return LoadResult {
                 path,
