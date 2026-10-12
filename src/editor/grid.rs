@@ -31,6 +31,29 @@ pub fn snap_to_grid(position: Vec2, grid_size: f32, snap_enabled: bool) -> Vec2 
     )
 }
 
+/// Pixels per grid cell that battlemap makers commonly export at, most likely first
+const COMMON_PIXELS_PER_CELL: [u32; 12] = [70, 100, 140, 128, 256, 200, 50, 72, 64, 150, 300, 96];
+
+/// How many grid cells a battlemap image of `size` pixels most likely spans. Of the common
+/// export resolutions that divide it exactly, the one that makes a typical map (about 30
+/// cells across), favoring the more common resolutions; otherwise as if at 70px per cell.
+pub fn guess_battlemap_cells(size: UVec2) -> UVec2 {
+    const TYPICAL_CELLS: f32 = 30.0;
+    COMMON_PIXELS_PER_CELL
+        .into_iter()
+        .enumerate()
+        .filter(|(_, ppc)| size.x.is_multiple_of(*ppc) && size.y.is_multiple_of(*ppc))
+        .map(|(rank, ppc)| {
+            let cells = size / ppc;
+            let across = cells.max_element() as f32;
+            let score = (across / TYPICAL_CELLS).ln().abs() + rank as f32 * 0.1;
+            (score, cells)
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, cells)| cells)
+        .unwrap_or_else(|| ((size.as_vec2() / 70.0).round().as_uvec2()).max(UVec2::ONE))
+}
+
 /// Gizmo group for the grid in the player view (player-only render layer 2)
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct PlayerGridGizmoGroup;
@@ -103,6 +126,26 @@ pub fn draw_player_grid(mut gizmos: Gizmos<PlayerGridGizmoGroup>, player_view: P
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_guess_battlemap_cells() {
+        // 30x20 cells at 140px
+        assert_eq!(
+            guess_battlemap_cells(UVec2::new(4200, 2800)),
+            UVec2::new(30, 20)
+        );
+        // 70px per cell comes first
+        assert_eq!(
+            guess_battlemap_cells(UVec2::new(1400, 700)),
+            UVec2::new(20, 10)
+        );
+        // No exact fit: rounded at 70px
+        assert_eq!(
+            guess_battlemap_cells(UVec2::new(1003, 701)),
+            UVec2::new(14, 10)
+        );
+        assert_eq!(guess_battlemap_cells(UVec2::new(10, 10)), UVec2::new(1, 1));
+    }
 
     // GridSettings tests
     #[test]

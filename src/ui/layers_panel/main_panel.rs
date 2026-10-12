@@ -3,13 +3,13 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::assets::{RetargetAssetRequest, SelectedAsset};
+use crate::assets::RetargetAssetRequest;
 use crate::config::AppConfig;
 use crate::editor::SelectionEdit;
 use crate::editor::fog::FogState;
 use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
 use crate::editor::params::MapExtent;
-use crate::map::{FogOfWarData, MapData, MapDirtyState, MissingAsset, Selected};
+use crate::map::{FogOfWarData, MapData, MapDirtyState};
 use crate::session::LiveSessionState;
 use crate::ui::panel_layout::DockedPanel;
 
@@ -17,7 +17,7 @@ use super::HelpWindowState;
 use super::fog::render_fog_controls;
 use super::layers::render_layers;
 use super::properties::{
-    ItemEdit, OtherItemsStack, PropertiesOutput, SelectedQuery, render_properties,
+    ItemEdit, PropertiesContext, PropertiesOutput, SelectedQuery, render_properties,
 };
 use super::session::render_session_controls;
 
@@ -31,8 +31,7 @@ pub fn layers_panel_ui(
     mut selected_query: SelectedQuery,
     mut session_state: ResMut<LiveSessionState>,
     mut help_state: ResMut<HelpWindowState>,
-    missing_query: Query<Entity, (With<Selected>, With<MissingAsset>)>,
-    selected_asset: Res<SelectedAsset>,
+    properties_context: PropertiesContext,
     mut retarget_events: MessageWriter<RetargetAssetRequest>,
     config: Res<AppConfig>,
     mut edit_events: (
@@ -40,12 +39,9 @@ pub fn layers_panel_ui(
         MessageWriter<RecordEditorCommand>,
     ),
     mut unfinished_edit: Local<Option<MapObject>>,
-    stack: OtherItemsStack,
     mut fog_state: ResMut<FogState>,
     map_extent: MapExtent,
 ) -> Result {
-    let missing: Vec<Entity> = missing_query.iter().collect();
-    let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
     let mut properties = PropertiesOutput::default();
 
     egui::Panel::right("layers_panel")
@@ -78,8 +74,8 @@ pub fn layers_panel_ui(
             }
 
             // Properties section
-            properties =
-                render_properties(ui, &mut selected_query, &stack, &missing, library_selection);
+            let grid_size = map_data.grid_size;
+            properties = render_properties(ui, &mut selected_query, &properties_context, grid_size);
 
             // Live Session controls (when active)
             if render_session_controls(

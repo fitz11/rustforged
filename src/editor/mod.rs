@@ -19,7 +19,7 @@ pub use conditions::{
     command_key, no_dialog_open, no_text_input, plain_key, session_is_active, shortcuts_enabled,
     tool_is,
 };
-pub use grid::GridSettings;
+pub use grid::{GridSettings, guess_battlemap_cells};
 pub use selection::SelectionEdit;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 

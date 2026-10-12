@@ -4,10 +4,12 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use crate::assets::RetargetAssetRequest;
-use crate::editor::SelectionEdit;
+use bevy::ecs::system::SystemParam;
+
+use crate::assets::{RetargetAssetRequest, SelectedAsset};
 use crate::editor::history::MapObject;
-use crate::map::{ItemId, Layer, PlacedItem, Selected, StackTops};
+use crate::editor::{SelectionEdit, guess_battlemap_cells};
+use crate::map::{ItemId, Layer, MissingAsset, PlacedItem, Selected, StackTops};
 
 /// Selected item query type for the properties panel.
 pub type SelectedQuery<'w, 's> = Query<
@@ -19,9 +21,21 @@ pub type SelectedQuery<'w, 's> = Query<
         &'static mut PlacedItem,
         &'static mut Transform,
         &'static mut RenderLayers,
+        &'static Sprite,
     ),
     With<Selected>,
 >;
+
+/// What the Properties section reads besides the selection
+#[derive(SystemParam)]
+pub struct PropertiesContext<'w, 's> {
+    /// Selected items whose asset is missing
+    pub missing: Query<'w, 's, Entity, (With<Selected>, With<MissingAsset>)>,
+    /// The asset selected in the library browser, to relink a missing one to
+    pub selected_asset: Res<'w, SelectedAsset>,
+    pub stack: OtherItemsStack<'w, 's>,
+    pub images: Res<'w, Assets<Image>>,
+}
 
 /// What the user did in the Properties panel this frame.
 #[derive(Default)]
@@ -47,15 +61,11 @@ pub struct ItemEdit {
 pub type OtherItemsStack<'w, 's> = StackTops<'w, 's, Without<Selected>>;
 
 /// Renders the properties section for selected items.
-///
-/// `missing` lists selected items whose asset is missing; `library_selection` is the asset
-/// selected in the library browser.
 pub fn render_properties(
     ui: &mut egui::Ui,
     selected_query: &mut SelectedQuery,
-    stack: &OtherItemsStack,
-    missing: &[Entity],
-    library_selection: Option<&str>,
+    context: &PropertiesContext,
+    grid_size: f32,
 ) -> PropertiesOutput {
     ui.add_space(4.0);
     ui.label(egui::RichText::new("Properties").heading().size(18.0));
@@ -73,14 +83,7 @@ pub fn render_properties(
         ui.add_space(8.0);
         output.selection_edit = render_selection_edit_buttons(ui);
     } else {
-        render_single_selection(
-            ui,
-            selected_query,
-            stack,
-            missing,
-            library_selection,
-            &mut output,
-        );
+        render_single_selection(ui, selected_query, context, grid_size, &mut output);
     }
     output
 }
@@ -156,15 +159,21 @@ fn number_field(ui: &mut egui::Ui, label: &str, value: &mut f32, speed: f64, suf
 fn render_single_selection(
     ui: &mut egui::Ui,
     selected_query: &mut SelectedQuery,
-    stack: &OtherItemsStack,
-    missing: &[Entity],
-    library_selection: Option<&str>,
+    context: &PropertiesContext,
+    grid_size: f32,
     output: &mut PropertiesOutput,
 ) {
-    let Ok((entity, id, mut item, mut transform, mut render_layers)) = selected_query.single_mut()
+    let Ok((entity, id, mut item, mut transform, mut render_layers, sprite)) =
+        selected_query.single_mut()
     else {
         return;
     };
+    let stack = &context.stack;
+    let library_selection = context
+        .selected_asset
+        .asset
+        .as_ref()
+        .map(|a| a.path.as_str());
 
     // Asset path (truncated if too long)
     let asset_name = item
@@ -176,7 +185,7 @@ fn render_single_selection(
 
     ui.add_space(8.0);
 
-    if missing.contains(&entity) {
+    if context.missing.contains(entity) {
         output.relink = render_missing_asset(ui, &item.asset_path, library_selection);
     }
 
@@ -253,6 +262,18 @@ fn render_single_selection(
     editing |= number_field(ui, "Scale Y:", &mut new_transform.scale.y, 0.01, "");
 
     ui.add_space(8.0);
+    // Size in grid cells, for lining a battlemap up with the grid
+    let image_size = sprite.custom_size.or_else(|| {
+        context
+            .images
+            .get(&sprite.image)
+            .map(|i| i.size().as_vec2())
+    });
+    if let Some(image_size) = image_size {
+        render_fit_to_cells(ui, entity, image_size, grid_size, &mut new_transform);
+        ui.add_space(8.0);
+    }
+
     output.selection_edit = render_selection_edit_buttons(ui);
 
     // Moved to another layer or z-index: on top of the items there
@@ -280,4 +301,47 @@ fn render_single_selection(
         after,
         editing,
     });
+}
+
+/// "Size in cells: W x H, Fit": scales the item to span exactly that many grid cells and
+/// puts its lower-left corner on a grid line, for lining up a battlemap that has its own
+/// grid drawn in. The cell counts start at a guess from the image's size.
+fn render_fit_to_cells(
+    ui: &mut egui::Ui,
+    entity: Entity,
+    image_size: Vec2,
+    grid_size: f32,
+    transform: &mut Transform,
+) {
+    let id = egui::Id::new(("fit_to_cells", entity));
+    let mut cells = ui
+        .data(|d| d.get_temp::<UVec2>(id))
+        .unwrap_or_else(|| guess_battlemap_cells(image_size.as_uvec2()));
+
+    let mut fit = false;
+    ui.label(egui::RichText::new("Size in cells:").size(14.0));
+    ui.horizontal(|ui| {
+        ui.add(egui::DragValue::new(&mut cells.x).range(1..=1000));
+        ui.label("×");
+        ui.add(egui::DragValue::new(&mut cells.y).range(1..=1000));
+        fit = ui
+            .button("Fit")
+            .on_hover_text(
+                "Scale to exactly this many grid cells, with the lower-left corner on a grid line",
+            )
+            .clicked();
+    });
+    ui.data_mut(|d| d.insert_temp(id, cells));
+
+    if fit && image_size.x > 0.0 && image_size.y > 0.0 {
+        let size = cells.as_vec2() * grid_size;
+        transform.scale = (size / image_size).extend(1.0);
+        transform.rotation = Quat::IDENTITY;
+        // Lower-left corner to the nearest grid line, keeping the item where it was
+        let corner = transform.translation.truncate() - size / 2.0;
+        let snapped = (corner / grid_size).round() * grid_size;
+        let center = snapped + size / 2.0;
+        transform.translation.x = center.x;
+        transform.translation.y = center.y;
+    }
 }
