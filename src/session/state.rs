@@ -31,6 +31,9 @@ impl MonitorInfo {
 }
 
 /// Main resource tracking the live session state
+/// Smallest viewport width, in world units
+pub const MIN_VIEWPORT_SIZE: f32 = 100.0;
+
 #[derive(Resource, Default)]
 pub struct LiveSessionState {
     pub is_active: bool,
@@ -55,6 +58,46 @@ impl LiveSessionState {
     /// Get rotation in radians
     pub fn rotation_radians(&self) -> f32 {
         (self.rotation_degrees as f32).to_radians()
+    }
+
+    /// The player display is turned a quarter (90 or 270 degrees), so the world area it
+    /// shows is the viewport with width and height swapped
+    pub fn is_quarter_turned(&self) -> bool {
+        self.rotation_degrees.rem_euclid(180) == 90
+    }
+
+    /// Width and height of the world area players see, after rotation
+    pub fn world_extent(&self) -> Vec2 {
+        if self.is_quarter_turned() {
+            Vec2::new(self.viewport_size.y, self.viewport_size.x)
+        } else {
+            self.viewport_size
+        }
+    }
+
+    /// Resize so players see `width` world units across (keeping the monitor's shape)
+    pub fn set_world_width(&mut self, width: f32) {
+        let aspect = self.monitor_aspect_ratio();
+        if self.is_quarter_turned() {
+            let height = width.max(MIN_VIEWPORT_SIZE / aspect);
+            self.viewport_size = Vec2::new(height * aspect, height);
+        } else {
+            let width = width.max(MIN_VIEWPORT_SIZE);
+            self.viewport_size = Vec2::new(width, width / aspect);
+        }
+    }
+
+    /// Resize so players see `height` world units top to bottom (keeping the monitor's
+    /// shape)
+    pub fn set_world_height(&mut self, height: f32) {
+        let aspect = self.monitor_aspect_ratio();
+        if self.is_quarter_turned() {
+            let width = height.max(MIN_VIEWPORT_SIZE);
+            self.viewport_size = Vec2::new(width, width / aspect);
+        } else {
+            let height = height.max(MIN_VIEWPORT_SIZE / aspect);
+            self.viewport_size = Vec2::new(height * aspect, height);
+        }
     }
 
     /// Rotate viewport by 90 degrees clockwise
@@ -331,6 +374,35 @@ mod tests {
         let (min, max) = viewport.world_bounds();
         assert_near(min, Vec2::new(-150.0, -200.0));
         assert_near(max, Vec2::new(150.0, 200.0));
+    }
+
+    #[test]
+    fn test_world_extent_matches_what_players_see() {
+        let mut state = LiveSessionState {
+            viewport_size: Vec2::new(400.0, 300.0),
+            rotation_degrees: 90,
+            ..Default::default()
+        };
+        let viewport = PlayerViewport::of(&state);
+        let (min, max) = viewport.world_bounds();
+        assert_near(state.world_extent(), max - min);
+
+        state.rotation_degrees = 180;
+        assert_eq!(state.world_extent(), Vec2::new(400.0, 300.0));
+    }
+
+    #[test]
+    fn test_resizing_a_quarter_turned_viewport_keeps_monitor_shape() {
+        let mut state = LiveSessionState {
+            selected_monitor: Some(create_test_monitor(1920, 1080)),
+            viewport_size: Vec2::new(1600.0, 900.0),
+            rotation_degrees: 270,
+            ..Default::default()
+        };
+        // Players see 900 wide; make that 450
+        state.set_world_width(450.0);
+        assert_near(state.world_extent(), Vec2::new(450.0, 800.0));
+        assert_near(state.viewport_size, Vec2::new(800.0, 450.0));
     }
 
     // ViewportDragMode tests

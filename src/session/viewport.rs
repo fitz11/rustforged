@@ -27,17 +27,81 @@ pub fn configure_viewport_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     config.render_layers = RenderLayers::layer(render_layer::EDITOR);
 }
 
-/// Draw the viewport indicator rectangle with handles
-/// The gizmo shows the actual world-space bounds that the player camera sees.
-/// Rotation is indicated by an arrow showing the "up" direction on the player display.
+/// Viewport handle sizes in world units at the editor camera's zoom, so they look and
+/// respond the same on screen at any zoom. Drawing and hit testing both use these.
+struct ViewportHandles {
+    handle: f32,
+    tab_size: Vec2,
+    tab_offset: f32,
+}
+
+impl ViewportHandles {
+    fn at_zoom(camera_scale: f32) -> Self {
+        Self {
+            handle: HANDLE_SIZE * camera_scale,
+            tab_size: Vec2::new(MOVE_HANDLE_WIDTH, MOVE_HANDLE_HEIGHT) * camera_scale,
+            tab_offset: MOVE_HANDLE_OFFSET * camera_scale,
+        }
+    }
+
+    /// Center of the move tab above a viewport with half extent `half`
+    fn tab_center(&self, center: Vec2, half: Vec2) -> Vec2 {
+        center + Vec2::new(0.0, half.y + self.tab_offset)
+    }
+}
+
+/// Corner and edge handles of a box with half extent `half` around `center`
+fn handle_positions(center: Vec2, half: Vec2) -> [(Vec2, ViewportDragMode); 8] {
+    [
+        (
+            center + Vec2::new(-half.x, -half.y),
+            ViewportDragMode::ResizeSW,
+        ),
+        (
+            center + Vec2::new(half.x, -half.y),
+            ViewportDragMode::ResizeSE,
+        ),
+        (
+            center + Vec2::new(half.x, half.y),
+            ViewportDragMode::ResizeNE,
+        ),
+        (
+            center + Vec2::new(-half.x, half.y),
+            ViewportDragMode::ResizeNW,
+        ),
+        (center + Vec2::new(0.0, -half.y), ViewportDragMode::ResizeS),
+        (center + Vec2::new(0.0, half.y), ViewportDragMode::ResizeN),
+        (center + Vec2::new(-half.x, 0.0), ViewportDragMode::ResizeW),
+        (center + Vec2::new(half.x, 0.0), ViewportDragMode::ResizeE),
+    ]
+}
+
+/// The editor camera's zoom (world units per screen pixel)
+fn editor_camera_scale(projection: &Projection) -> f32 {
+    match projection {
+        Projection::Orthographic(ortho) => ortho.scale,
+        _ => 1.0,
+    }
+}
+
+/// Draw the viewport indicator rectangle with handles.
+/// The box is the world area the player camera shows: at a quarter turn its width and
+/// height are the viewport's swapped. The arrow shows which way is "up" on the player
+/// display.
 pub fn draw_viewport_indicator(
     mut gizmos: Gizmos<ViewportGizmoGroup>,
     session_state: Res<LiveSessionState>,
     player_viewport: Res<PlayerViewport>,
+    camera_query: Query<&Projection, With<EditorCamera>>,
 ) {
     if !session_state.is_active {
         return;
     }
+    let camera_scale = camera_query
+        .single()
+        .map(editor_camera_scale)
+        .unwrap_or(1.0);
+    let handles = ViewportHandles::at_zoom(camera_scale);
 
     // Ice blue while frozen, as a reminder that players aren't seeing edits
     let (outline_color, fill_color, handle_color) = if session_state.frozen {
@@ -57,86 +121,67 @@ pub fn draw_viewport_indicator(
     // Where the players are looking, once a frozen view stops following the
     // viewport (see AppConfigData::move_player_view_while_frozen)
     if session_state.frozen && *player_viewport != PlayerViewport::of(&session_state) {
+        let (min, max) = player_viewport.world_bounds();
         gizmos.rect_2d(
-            Isometry2d::from_translation(player_viewport.center),
-            player_viewport.size,
+            Isometry2d::from_translation((min + max) / 2.0),
+            max - min,
             outline_color.with_alpha(0.35),
         );
     }
 
     let center = session_state.viewport_center;
-    let size = session_state.viewport_size;
+    let size = session_state.world_extent();
     let rotation = session_state.rotation_radians();
 
-    // Draw main rectangle outline (unrotated - shows actual world bounds)
+    // Main outline: the world area players see
     gizmos.rect_2d(Isometry2d::from_translation(center), size, outline_color);
 
-    // Draw a second slightly offset rectangle for visibility
+    // A second, slightly larger outline for visibility
     gizmos.rect_2d(
         Isometry2d::from_translation(center),
-        size + Vec2::splat(2.0),
+        size + Vec2::splat(2.0 * camera_scale),
         outline_color.with_alpha(0.5),
     );
 
     let half = size / 2.0;
 
-    // Draw corner handles (unrotated)
-    let corners = [
-        center + Vec2::new(-half.x, -half.y), // SW
-        center + Vec2::new(half.x, -half.y),  // SE
-        center + Vec2::new(half.x, half.y),   // NE
-        center + Vec2::new(-half.x, half.y),  // NW
-    ];
-
-    for corner in corners {
+    // Corner handles, then smaller edge handles
+    for (i, (position, _)) in handle_positions(center, half).into_iter().enumerate() {
+        let side = if i < 4 {
+            handles.handle
+        } else {
+            handles.handle * 0.75
+        };
         gizmos.rect_2d(
-            Isometry2d::from_translation(corner),
-            Vec2::splat(HANDLE_SIZE),
+            Isometry2d::from_translation(position),
+            Vec2::splat(side),
             outline_color,
         );
     }
 
-    // Draw edge handles (unrotated)
-    let edges = [
-        center + Vec2::new(0.0, -half.y), // S
-        center + Vec2::new(0.0, half.y),  // N
-        center + Vec2::new(-half.x, 0.0), // W
-        center + Vec2::new(half.x, 0.0),  // E
-    ];
-
-    for edge in edges {
-        gizmos.rect_2d(
-            Isometry2d::from_translation(edge),
-            Vec2::splat(HANDLE_SIZE * 0.75),
-            outline_color,
-        );
-    }
-
-    // Draw move handle (small tab above top edge)
-    let move_handle_center = center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET);
-
-    // Draw move handle rectangle
+    // Move handle: a tab above the top edge, with grip lines
+    let tab_center = handles.tab_center(center, half);
     gizmos.rect_2d(
-        Isometry2d::from_translation(move_handle_center),
-        Vec2::new(MOVE_HANDLE_WIDTH, MOVE_HANDLE_HEIGHT),
+        Isometry2d::from_translation(tab_center),
+        handles.tab_size,
         handle_color,
     );
-
-    // Draw filled appearance with horizontal lines in move handle
-    let handle_half_h = MOVE_HANDLE_HEIGHT / 2.0;
-    let handle_half_w = MOVE_HANDLE_WIDTH / 2.0;
+    let grip_half_w = handles.tab_size.x / 2.0 - 8.0 * camera_scale;
     for i in [-4.0, 0.0, 4.0] {
-        let line_start = center + Vec2::new(-handle_half_w + 8.0, half.y + MOVE_HANDLE_OFFSET + i);
-        let line_end = center + Vec2::new(handle_half_w - 8.0, half.y + MOVE_HANDLE_OFFSET + i);
-        gizmos.line_2d(line_start, line_end, handle_color);
+        let y = tab_center.y + i * camera_scale;
+        gizmos.line_2d(
+            Vec2::new(tab_center.x - grip_half_w, y),
+            Vec2::new(tab_center.x + grip_half_w, y),
+            handle_color,
+        );
     }
 
-    // Draw connector line from viewport to move handle
-    let connector_top = center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET - handle_half_h);
+    // Connector line from viewport to move handle
+    let connector_top = tab_center - Vec2::new(0.0, handles.tab_size.y / 2.0);
     let connector_bottom = center + Vec2::new(0.0, half.y);
     gizmos.line_2d(connector_bottom, connector_top, outline_color);
 
-    // Draw fill lines for visibility (unrotated)
+    // Fill lines for visibility
     let step = 40.0;
     let mut y = -half.y + step;
     while y < half.y {
@@ -184,65 +229,21 @@ pub fn get_handle_at_position(
     camera_scale: f32,
 ) -> ViewportDragMode {
     let center = session_state.viewport_center;
-    let half = session_state.viewport_size / 2.0;
+    let half = session_state.world_extent() / 2.0;
+    let handles = ViewportHandles::at_zoom(camera_scale);
+    let hit_radius = handles.handle * 1.5;
 
-    // Adjust handle hit area based on camera zoom
-    let hit_size = HANDLE_SIZE * camera_scale * 1.5;
-
-    // Check move handle first (highest priority - the tab above the viewport)
-    let move_handle_center = center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET);
-    let move_handle_hit_width = MOVE_HANDLE_WIDTH * camera_scale * 0.6;
-    let move_handle_hit_height = MOVE_HANDLE_HEIGHT * camera_scale * 0.8;
-
-    let to_handle = world_pos - move_handle_center;
-    if to_handle.x.abs() < move_handle_hit_width / 2.0
-        && to_handle.y.abs() < move_handle_hit_height / 2.0
-    {
+    // Move tab first (highest priority), then corners, then edges
+    let to_tab = world_pos - handles.tab_center(center, half);
+    if to_tab.x.abs() < handles.tab_size.x / 2.0 && to_tab.y.abs() < handles.tab_size.y / 2.0 {
         return ViewportDragMode::Move;
     }
-
-    // Check corners (higher priority than edges)
-    let corners = [
-        (
-            center + Vec2::new(-half.x, -half.y),
-            ViewportDragMode::ResizeSW,
-        ),
-        (
-            center + Vec2::new(half.x, -half.y),
-            ViewportDragMode::ResizeSE,
-        ),
-        (
-            center + Vec2::new(half.x, half.y),
-            ViewportDragMode::ResizeNE,
-        ),
-        (
-            center + Vec2::new(-half.x, half.y),
-            ViewportDragMode::ResizeNW,
-        ),
-    ];
-
-    for (corner, mode) in corners {
-        if (world_pos - corner).length() < hit_size {
-            return mode;
-        }
-    }
-
-    // Check edge handles
-    let edges = [
-        (center + Vec2::new(0.0, -half.y), ViewportDragMode::ResizeS),
-        (center + Vec2::new(0.0, half.y), ViewportDragMode::ResizeN),
-        (center + Vec2::new(-half.x, 0.0), ViewportDragMode::ResizeW),
-        (center + Vec2::new(half.x, 0.0), ViewportDragMode::ResizeE),
-    ];
-
-    for (edge, mode) in edges {
-        if (world_pos - edge).length() < hit_size {
-            return mode;
-        }
-    }
-
-    // Interior is no longer selectable - only handles work
-    ViewportDragMode::None
+    handle_positions(center, half)
+        .into_iter()
+        .find(|(position, _)| position.distance(world_pos) < hit_radius)
+        .map(|(_, mode)| mode)
+        // Interior is no longer selectable - only handles work
+        .unwrap_or(ViewportDragMode::None)
 }
 
 /// Handle viewport move and resize interactions
@@ -289,11 +290,7 @@ pub fn handle_viewport_interaction(
         return;
     };
 
-    // Get the camera scale from projection
-    let camera_scale = match projection {
-        Projection::Orthographic(ortho) => ortho.scale,
-        _ => 1.0,
-    };
+    let camera_scale = editor_camera_scale(projection);
 
     // Handle mouse press - start drag
     if mouse_button.just_pressed(MouseButton::Left) {
@@ -306,46 +303,32 @@ pub fn handle_viewport_interaction(
         }
     }
 
-    // Handle ongoing drag
+    // Handle ongoing drag. Resizing works on the world area players see (the box drawn),
+    // growing both sides around the center, and keeps the monitor's shape.
     if drag_state.mode != ViewportDragMode::None && mouse_button.pressed(MouseButton::Left) {
         let delta = world_pos - drag_state.drag_start_world;
-        let aspect_ratio = session_state.monitor_aspect_ratio();
+        let original = if session_state.is_quarter_turned() {
+            drag_state.original_size.yx()
+        } else {
+            drag_state.original_size
+        };
 
         match drag_state.mode {
             ViewportDragMode::Move => {
                 session_state.viewport_center = drag_state.original_center + delta;
             }
-            ViewportDragMode::ResizeE => {
-                let new_width = (drag_state.original_size.x + delta.x * 2.0).max(100.0);
-                session_state.viewport_size.x = new_width;
-                session_state.viewport_size.y = new_width / aspect_ratio;
+            // Corners follow the horizontal movement
+            ViewportDragMode::ResizeE | ViewportDragMode::ResizeNE | ViewportDragMode::ResizeSE => {
+                session_state.set_world_width(original.x + delta.x * 2.0);
             }
-            ViewportDragMode::ResizeW => {
-                let new_width = (drag_state.original_size.x - delta.x * 2.0).max(100.0);
-                session_state.viewport_size.x = new_width;
-                session_state.viewport_size.y = new_width / aspect_ratio;
+            ViewportDragMode::ResizeW | ViewportDragMode::ResizeNW | ViewportDragMode::ResizeSW => {
+                session_state.set_world_width(original.x - delta.x * 2.0);
             }
             ViewportDragMode::ResizeN => {
-                let new_height = (drag_state.original_size.y + delta.y * 2.0).max(100.0);
-                session_state.viewport_size.y = new_height;
-                session_state.viewport_size.x = new_height * aspect_ratio;
+                session_state.set_world_height(original.y + delta.y * 2.0);
             }
             ViewportDragMode::ResizeS => {
-                let new_height = (drag_state.original_size.y - delta.y * 2.0).max(100.0);
-                session_state.viewport_size.y = new_height;
-                session_state.viewport_size.x = new_height * aspect_ratio;
-            }
-            ViewportDragMode::ResizeNE | ViewportDragMode::ResizeSE => {
-                // Use horizontal movement as primary
-                let new_width = (drag_state.original_size.x + delta.x * 2.0).max(100.0);
-                session_state.viewport_size.x = new_width;
-                session_state.viewport_size.y = new_width / aspect_ratio;
-            }
-            ViewportDragMode::ResizeNW | ViewportDragMode::ResizeSW => {
-                // Use horizontal movement as primary
-                let new_width = (drag_state.original_size.x - delta.x * 2.0).max(100.0);
-                session_state.viewport_size.x = new_width;
-                session_state.viewport_size.y = new_width / aspect_ratio;
+                session_state.set_world_height(original.y - delta.y * 2.0);
             }
             ViewportDragMode::Rotate | ViewportDragMode::None => {
                 // Rotate is not used for viewport, only for selection
