@@ -34,6 +34,7 @@ pub const SHORTCUTS: &[ShortcutGroup] = &[
             ),
             s("D", "Draw: freehand annotation paths"),
             s("L", "Line: straight line annotations"),
+            s("T", "Text: click to type a note, click a note to edit it"),
             s("F", "Fog: drag to reveal fog of war"),
             s("C / Shift+C", "Cycle the target layer (Place and Brush)"),
             s("H", "Show or hide this help"),
@@ -77,6 +78,13 @@ pub const SHORTCUTS: &[ShortcutGroup] = &[
     ShortcutGroup {
         title: "Fog",
         shortcuts: &[s("Shift+Drag (Fog)", "Reveal single cells")],
+    },
+    ShortcutGroup {
+        title: "Notes",
+        shortcuts: &[
+            s("Enter (Text)", "Keep the note"),
+            s("Escape (Text)", "Cancel the edit"),
+        ],
     },
     ShortcutGroup {
         title: "Camera",

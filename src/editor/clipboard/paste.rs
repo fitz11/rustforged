@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::map::{ItemId, Layer, MapData, Selected, StackTops};
+use crate::map::{Layer, MapData, Selected, StackTops};
 
 use super::super::annotations::{DrawnLine, DrawnPath, TextAnnotation};
 use super::super::history::{EditorCommand, MapObject, RecordEditorCommand};
@@ -88,15 +88,14 @@ pub fn handle_paste(
 
         // Paste text annotations
         for clip_text in &clipboard.texts {
-            pasted.push(MapObject::Text {
-                id: ItemId::new(),
-                text: TextAnnotation {
+            pasted.push(MapObject::new_text(
+                TextAnnotation {
                     content: clip_text.saved.content.clone(),
                     font_size: clip_text.saved.font_size,
                     color: array_to_color(clip_text.saved.color),
                 },
-                position: paste_pos + clip_text.offset,
-            });
+                paste_pos + clip_text.offset,
+            ));
         }
     }
 

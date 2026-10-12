@@ -14,7 +14,6 @@ pub enum EditorTool {
     Brush,
     Draw,
     Line,
-    #[allow(dead_code)] // Text tool disabled - see TODO in all()
     Text,
     Fog,
 }
@@ -44,7 +43,6 @@ impl EditorTool {
         }
     }
 
-    // TODO: Rewire Text tool when implementation is ready
     pub fn all() -> &'static [EditorTool] {
         &[
             EditorTool::Select,
@@ -52,14 +50,13 @@ impl EditorTool {
             EditorTool::Brush,
             EditorTool::Draw,
             EditorTool::Line,
-            // EditorTool::Text, // Disabled - see TODO above
+            EditorTool::Text,
             EditorTool::Fog,
         ]
     }
 
     pub fn is_annotation_tool(&self) -> bool {
-        // Text tool disabled - see TODO above
-        matches!(self, EditorTool::Draw | EditorTool::Line)
+        matches!(self, EditorTool::Draw | EditorTool::Line | EditorTool::Text)
     }
 }
 
@@ -106,7 +103,8 @@ pub fn handle_tool_shortcuts(
         Some(EditorTool::Draw)
     } else if pressed(KeyCode::KeyL) {
         Some(EditorTool::Line)
-    // T key for Text tool disabled - see TODO in all()
+    } else if pressed(KeyCode::KeyT) {
+        Some(EditorTool::Text)
     } else if pressed(KeyCode::KeyF) {
         Some(EditorTool::Fog)
     } else {
@@ -211,14 +209,13 @@ mod tests {
     #[test]
     fn test_all_returns_all_tools() {
         let all = EditorTool::all();
-        // Text tool is disabled - see TODO in all()
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
         assert!(all.contains(&EditorTool::Select));
         assert!(all.contains(&EditorTool::Place));
         assert!(all.contains(&EditorTool::Brush));
         assert!(all.contains(&EditorTool::Draw));
         assert!(all.contains(&EditorTool::Line));
-        // assert!(all.contains(&EditorTool::Text)); // Disabled
+        assert!(all.contains(&EditorTool::Text));
         assert!(all.contains(&EditorTool::Fog));
     }
 
@@ -229,10 +226,8 @@ mod tests {
         assert!(!EditorTool::Place.is_annotation_tool());
         assert!(!EditorTool::Brush.is_annotation_tool());
         assert!(!EditorTool::Fog.is_annotation_tool());
-        // Text tool disabled - see TODO in all()
-        assert!(!EditorTool::Text.is_annotation_tool());
-
         // Annotation tools
+        assert!(EditorTool::Text.is_annotation_tool());
         assert!(EditorTool::Draw.is_annotation_tool());
         assert!(EditorTool::Line.is_annotation_tool());
     }

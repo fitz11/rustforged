@@ -3,12 +3,10 @@
 use bevy::gizmos::prelude::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_egui::EguiContexts;
-use bevy_egui::egui;
 
 use super::super::camera::EditorCamera;
 use super::super::tools::{CurrentTool, EditorTool};
-use super::components::{DrawnLine, DrawnPath, EditingText, TextAnnotation};
+use super::components::{DrawnLine, DrawnPath};
 use super::gizmo::AnnotationGizmoGroup;
 use super::layer_helpers::is_annotation_layer_visible;
 use super::state::{AnnotationSettings, DrawState, LineDrawState};
@@ -101,64 +99,5 @@ pub fn render_draw_preview(
 
     for window in draw_state.current_points.windows(2) {
         gizmos.line_2d(window[0], window[1], settings.stroke_color);
-    }
-}
-
-// Text tool disabled - see TODO in tools.rs
-#[allow(dead_code)]
-/// Render text annotations using egui (editor-only, doesn't show in player view)
-pub fn render_text_annotations(
-    mut contexts: EguiContexts,
-    camera_query: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
-    texts: Query<(&Transform, &TextAnnotation), Without<EditingText>>,
-    map_data: Res<MapData>,
-) {
-    if !is_annotation_layer_visible(&map_data) {
-        return;
-    }
-
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
-    };
-
-    for (transform, text) in texts.iter() {
-        // Skip empty text
-        if text.content.is_empty() {
-            continue;
-        }
-
-        let world_pos = transform.translation.truncate();
-
-        // Convert world position to screen position
-        let Ok(screen_pos) = camera.world_to_viewport(camera_transform, world_pos.extend(0.0))
-        else {
-            continue;
-        };
-
-        // Convert Bevy color to egui color
-        let srgba = text.color.to_srgba();
-        let egui_color = egui::Color32::from_rgba_unmultiplied(
-            (srgba.red * 255.0) as u8,
-            (srgba.green * 255.0) as u8,
-            (srgba.blue * 255.0) as u8,
-            255,
-        );
-
-        // Render the text at the screen position using egui
-        egui::Area::new(egui::Id::new(format!("text_annotation_{}", world_pos)))
-            .fixed_pos(egui::pos2(screen_pos.x, screen_pos.y))
-            .pivot(egui::Align2::LEFT_CENTER)
-            .interactable(false)
-            .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new(&text.content)
-                        .color(egui_color)
-                        .size(text.font_size),
-                );
-            });
     }
 }

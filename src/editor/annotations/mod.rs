@@ -64,8 +64,4 @@ pub use rendering::{
     render_draw_preview, render_drawn_lines, render_drawn_paths, render_line_preview,
 };
 
-// Text tool disabled - see TODO in tools.rs
-#[allow(unused_imports)]
-pub use rendering::render_text_annotations;
-#[allow(unused_imports)]
-pub use text_tool::{handle_text, text_annotation_input_ui};
+pub use text_tool::{handle_text, sync_text_annotations, text_annotation_input_ui};

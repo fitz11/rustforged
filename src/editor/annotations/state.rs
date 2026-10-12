@@ -5,6 +5,8 @@ use bevy::prelude::*;
 
 use crate::map::MapData;
 
+use super::super::history::MapObject;
+
 #[derive(Resource, Default)]
 pub struct DrawState {
     pub is_drawing: bool,
@@ -16,13 +18,15 @@ pub struct LineDrawState {
     pub start_point: Option<Vec2>,
 }
 
-// Text tool disabled - see TODO in tools.rs
-#[allow(dead_code)]
+/// The note being typed with the Text tool
 #[derive(Resource, Default)]
 pub struct TextEditState {
     pub editing_entity: Option<Entity>,
     pub text_buffer: String,
-    pub cursor_position: Vec2,
+    /// The note as it was before this edit; None for a new note
+    pub before: Option<MapObject>,
+    /// Set by another system to end the edit (true keeps the typed text)
+    pub finish: Option<bool>,
 }
 
 #[derive(Resource)]

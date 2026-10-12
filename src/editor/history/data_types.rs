@@ -65,7 +65,6 @@ impl MapObject {
     }
 
     /// A text annotation that isn't on the map yet.
-    #[allow(dead_code)] // Text tool disabled - see TODO in tools.rs
     pub fn new_text(text: TextAnnotation, position: Vec2) -> Self {
         Self::Text {
             id: ItemId::new(),

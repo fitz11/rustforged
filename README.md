@@ -75,6 +75,7 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 | B | Brush: drag to paint the selected asset into each cell |
 | D | Draw: freehand annotation paths |
 | L | Line: straight line annotations |
+| T | Text: click to type a note, click a note to edit it |
 | F | Fog: drag to reveal fog of war |
 | C / Shift+C | Cycle the target layer (Place and Brush) |
 | H | Show or hide this help |
@@ -116,6 +117,13 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 | Keys | Action |
 |------|--------|
 | Shift+Drag (Fog) | Reveal single cells |
+
+### Notes
+
+| Keys | Action |
+|------|--------|
+| Enter (Text) | Keep the note |
+| Escape (Text) | Cancel the edit |
 
 ### Camera
 

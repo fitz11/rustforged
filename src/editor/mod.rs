@@ -26,7 +26,7 @@ pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 use bevy::input::common_conditions::input_pressed;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-// EguiPrimaryContextPass import removed - text tool disabled
+use bevy_egui::EguiPrimaryContextPass;
 
 use crate::map::{MapData, PlacedItem};
 
@@ -62,8 +62,9 @@ fn update_layer_visibility(
 pub struct ToolInput;
 
 /// Clears what the previous tool was in the middle of when the tool changes, such as the
-/// first point of a line, so coming back to it starts fresh. A brush stroke in progress is
-/// kept as an undo step.
+/// first point of a line, so coming back to it starts fresh. A brush stroke in progress, and
+/// a note being typed, are kept as undo steps.
+#[allow(clippy::too_many_arguments)]
 fn reset_tool_state_on_tool_change(
     mut drag_state: ResMut<selection::DragState>,
     mut box_select: ResMut<selection::BoxSelectState>,
@@ -71,6 +72,7 @@ fn reset_tool_state_on_tool_change(
     mut draw_state: ResMut<annotations::DrawState>,
     mut fog_state: ResMut<fog::FogState>,
     mut brush_state: ResMut<brush::BrushState>,
+    mut text_state: ResMut<annotations::TextEditState>,
     mut history_writer: MessageWriter<history::RecordEditorCommand>,
 ) {
     drag_state.is_dragging = false;
@@ -82,6 +84,10 @@ fn reset_tool_state_on_tool_change(
     draw_state.current_points.clear();
     fog_state.is_erasing = false;
     brush_state.finish_stroke(&mut history_writer);
+    // A note being typed is kept
+    if text_state.editing_entity.is_some() {
+        text_state.finish = Some(true);
+    }
 }
 
 pub struct EditorPlugin;
@@ -204,9 +210,10 @@ impl Plugin for EditorPlugin {
                     annotations::handle_line
                         .run_if(tool_is(EditorTool::Line).and_then(no_dialog_open))
                         .in_set(ToolInput),
-                    // Text tool disabled - see TODO in tools.rs
-                    // annotations::handle_text
-                    //     .run_if(tool_is(EditorTool::Text).and_then(no_dialog_open)),
+                    annotations::handle_text
+                        .run_if(tool_is(EditorTool::Text).and_then(no_dialog_open))
+                        .in_set(ToolInput),
+                    annotations::sync_text_annotations,
                     annotations::render_drawn_paths,
                     annotations::render_drawn_lines,
                     annotations::render_line_preview.run_if(tool_is(EditorTool::Line)),
@@ -216,20 +223,16 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    fog::handle_fog.run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open))
+                    fog::handle_fog
+                        .run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open))
                         .in_set(ToolInput),
                     fog_overlay::update_fog_overlays.after(crate::session::PlayerViewSync),
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),
                 ),
             )
-            // Text annotation systems disabled - see TODO in tools.rs
-            // .add_systems(
-            //     EguiPrimaryContextPass,
-            //     (
-            //         annotations::text_annotation_input_ui,
-            //         annotations::render_text_annotations,
-            //     ),
-            // );
-            ;
+            .add_systems(
+                EguiPrimaryContextPass,
+                annotations::text_annotation_input_ui,
+            );
     }
 }

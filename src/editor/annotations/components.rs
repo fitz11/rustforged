@@ -58,7 +58,6 @@ impl TextAnnotation {
     }
 }
 
-// Text tool disabled - see TODO in tools.rs
-#[allow(dead_code)]
+/// Marks the note being typed with the Text tool
 #[derive(Component)]
 pub struct EditingText;
