@@ -8,7 +8,8 @@ use bevy::prelude::*;
 use crate::input::{command_key_just_pressed, plain_key_just_pressed};
 
 use crate::editor::tools::{CurrentTool, EditorTool};
-use crate::session::state::LiveSessionState;
+use crate::session::ViewportDragMode;
+use crate::session::state::{LiveSessionState, ViewportDragState};
 use crate::ui::DialogState;
 
 /// Run condition: returns true when the current tool matches the specified tool.
@@ -23,6 +24,12 @@ pub fn tool_is(tool: EditorTool) -> impl FnMut(Res<CurrentTool>) -> bool + Clone
 /// Usage: `.run_if(session_is_active)`
 pub fn session_is_active(state: Res<LiveSessionState>) -> bool {
     state.is_active
+}
+
+/// Run condition: the player viewport isn't being moved or resized, so the mouse belongs
+/// to the current tool.
+pub fn viewport_not_grabbed(drag_state: Res<ViewportDragState>) -> bool {
+    drag_state.mode == ViewportDragMode::None
 }
 
 /// Run condition: returns true when no modal dialog is open.

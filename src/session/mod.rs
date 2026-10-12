@@ -9,7 +9,6 @@ pub use state::{
     LiveSessionState, MonitorInfo, MonitorSelectionDialog, PlayerViewport, ViewportDragMode,
     ViewportDragState,
 };
-pub use viewport::get_handle_at_position;
 
 use bevy::prelude::*;
 
@@ -32,7 +31,11 @@ impl Plugin for LiveSessionPlugin {
                 (
                     keep_awake::sync_keep_awake.run_if(resource_changed::<LiveSessionState>),
                     viewport::draw_viewport_indicator.run_if(session_is_active),
-                    viewport::handle_viewport_interaction.run_if(session_is_active),
+                    // Before the tools, so grabbing a viewport handle keeps the click
+                    // from also revealing fog, placing an item or selecting
+                    viewport::handle_viewport_interaction
+                        .run_if(session_is_active)
+                        .before(crate::editor::ToolInput),
                     player_window::create_player_window
                         .run_if(resource_changed::<LiveSessionState>),
                     player_window::setup_player_camera,

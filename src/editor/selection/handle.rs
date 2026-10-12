@@ -11,7 +11,6 @@ use crate::editor::params::{AnnotationQueries, CameraWithProjection, is_cursor_o
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::input::command_held;
 use crate::map::{MapData, PlacedItem, Selected};
-use crate::session::{LiveSessionState, ViewportDragMode, get_handle_at_position};
 
 use super::hit_detection::{
     check_rotation_handle_hit, compute_selection_bounds, find_clicked_annotation,
@@ -34,7 +33,6 @@ pub fn handle_selection(
     mut contexts: EguiContexts,
     images: Res<Assets<Image>>,
     map_data: Res<MapData>,
-    session_state: Res<LiveSessionState>,
     annotations: AnnotationQueries,
 ) {
     if current_tool.tool != EditorTool::Select {
@@ -52,15 +50,6 @@ pub fn handle_selection(
 
     // Get camera scale for handle detection
     let camera_scale = camera.zoom_scale();
-
-    // Check if clicking on a live session viewport handle FIRST
-    // This prevents selecting items beneath the viewport gizmo
-    if mouse_button.just_pressed(MouseButton::Left)
-        && session_state.is_active
-        && get_handle_at_position(world_pos, &session_state, camera_scale) != ViewportDragMode::None
-    {
-        return;
-    }
 
     let ctrl_held = command_held(&keyboard);
 

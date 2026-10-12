@@ -54,11 +54,18 @@ fn update_layer_visibility(
     }
 }
 
+/// Systems that act on mouse input over the map with the current tool. They wait while
+/// the player viewport has the mouse (its handles are being dragged), and run after the
+/// viewport has had the chance to take a click, so one click never does both.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ToolInput;
+
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<tools::CurrentTool>()
+        app.configure_sets(Update, ToolInput.run_if(conditions::viewport_not_grabbed))
+            .init_resource::<tools::CurrentTool>()
             .init_resource::<tools::SelectedLayer>()
             .init_resource::<GridSettings>()
             .init_resource::<selection::DragState>()
@@ -104,10 +111,12 @@ impl Plugin for EditorPlugin {
                     // and the placing click mustn't also land as a Select click
                     placement::handle_placement
                         .run_if(tool_is(EditorTool::Place).and_then(no_dialog_open))
-                        .after(selection::handle_selection),
+                        .after(selection::handle_selection)
+                        .in_set(ToolInput),
                     placement::update_placement_ghost,
                     brush::handle_brush
-                        .run_if(tool_is(EditorTool::Brush).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Brush).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     update_layer_visibility,
                 ),
             )
@@ -115,11 +124,14 @@ impl Plugin for EditorPlugin {
                 Update,
                 (
                     selection::handle_selection
-                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     selection::handle_box_select
-                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     selection::handle_drag
-                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     selection::draw_selection_indicators,
                     selection::draw_box_select_rect,
                     selection::selection_edit_shortcuts
@@ -156,9 +168,11 @@ impl Plugin for EditorPlugin {
                 Update,
                 (
                     annotations::handle_draw
-                        .run_if(tool_is(EditorTool::Draw).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Draw).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     annotations::handle_line
-                        .run_if(tool_is(EditorTool::Line).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Line).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     // Text tool disabled - see TODO in tools.rs
                     // annotations::handle_text
                     //     .run_if(tool_is(EditorTool::Text).and_then(no_dialog_open)),
@@ -171,7 +185,8 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    fog::handle_fog.run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open)),
+                    fog::handle_fog.run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open))
+                        .in_set(ToolInput),
                     fog::render_fog_editor,
                     fog::render_fog_player,
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),
