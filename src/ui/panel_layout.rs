@@ -73,6 +73,13 @@ impl DockedPanel for egui::Panel {
     }
 }
 
+/// The map canvas: the part of the window the panels left in the last pass, in egui
+/// points (the window's logical pixels).
+pub fn canvas_rect(ctx: &egui::Context) -> Option<egui::Rect> {
+    ctx.data(|data| data.get_temp::<PanelLayout>(layout_id()))
+        .map(|layout| layout.canvas)
+}
+
 /// Returns true if the pointer is over any egui UI: a docked panel, window, or area.
 pub fn is_pointer_over_ui(ctx: &egui::Context) -> bool {
     if ctx.is_pointer_over_egui() {

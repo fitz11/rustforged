@@ -98,7 +98,16 @@ pub const SHORTCUTS: &[ShortcutGroup] = &[
     },
     ShortcutGroup {
         title: "Camera",
-        shortcuts: &[s("Middle-mouse drag", "Pan"), s("Scroll wheel", "Zoom")],
+        shortcuts: &[
+            s("Middle-mouse drag / Space+Drag", "Pan"),
+            s("Arrow keys", "Pan (faster with Shift)"),
+            s("Scroll wheel", "Zoom toward the cursor"),
+            s(
+                "Trackpad scroll / pinch",
+                "Pan / zoom (Ctrl+scroll zooms too)",
+            ),
+            s("Home", "Frame the map, or the player view during a session"),
+        ],
     },
     ShortcutGroup {
         title: "Files",

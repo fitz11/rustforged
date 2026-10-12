@@ -131,8 +131,11 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 
 | Keys | Action |
 |------|--------|
-| Middle-mouse drag | Pan |
-| Scroll wheel | Zoom |
+| Middle-mouse drag / Space+Drag | Pan |
+| Arrow keys | Pan (faster with Shift) |
+| Scroll wheel | Zoom toward the cursor |
+| Trackpad scroll / pinch | Pan / zoom (Ctrl+scroll zooms too) |
+| Home | Frame the map, or the player view during a session |
 
 ### Files
 

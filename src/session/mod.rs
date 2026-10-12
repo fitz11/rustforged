@@ -52,7 +52,8 @@ impl Plugin for LiveSessionPlugin {
                     // Before the tools, so grabbing a viewport handle keeps the click
                     // from also revealing fog, placing an item or selecting
                     viewport::handle_viewport_interaction
-                        .run_if(session_is_active)
+                        .run_if(session_is_active.and_then(crate::editor::not_space_panning))
+                        .after(crate::editor::CameraInput)
                         .before(crate::editor::ToolInput),
                     player_window::create_player_window
                         .run_if(resource_changed::<LiveSessionState>),

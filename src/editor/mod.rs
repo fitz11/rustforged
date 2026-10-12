@@ -13,7 +13,7 @@ mod selection;
 pub mod tools;
 
 pub use annotations::{AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation};
-pub use camera::EditorCamera;
+pub use camera::{CameraInput, EditorCamera, not_space_panning};
 pub use clipboard::Clipboard;
 pub use conditions::{
     command_key, no_dialog_open, no_text_input, plain_key, session_is_active, shortcuts_enabled,
@@ -23,7 +23,7 @@ pub use grid::{GridSettings, guess_battlemap_cells, snap_to_grid};
 pub use selection::SelectionEdit;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 
-use bevy::input::common_conditions::input_pressed;
+use bevy::input::gestures::PinchGesture;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
@@ -94,7 +94,14 @@ pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        app.configure_sets(Update, ToolInput.run_if(conditions::viewport_not_grabbed))
+        app.configure_sets(
+            Update,
+            (
+                camera::CameraInput.before(ToolInput),
+                ToolInput.run_if(conditions::viewport_not_grabbed.and_then(not_space_panning)),
+            ),
+        );
+        app.init_resource::<camera::CameraPan>()
             .init_resource::<tools::CurrentTool>()
             .init_resource::<params::MapExtent>()
             .init_resource::<tools::SelectedLayer>()
@@ -131,9 +138,20 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    camera::camera_pan.run_if(input_pressed(MouseButton::Middle)),
-                    camera::camera_zoom.run_if(on_message::<MouseWheel>),
-                    camera::apply_camera_zoom,
+                    (
+                        (camera::update_space_pan, camera::camera_pan).chain(),
+                        camera::keyboard_pan.run_if(shortcuts_enabled),
+                        camera::camera_zoom
+                            .run_if(on_message::<MouseWheel>.or_else(on_message::<PinchGesture>)),
+                        camera::frame_view
+                            .run_if(plain_key(KeyCode::Home).and_then(shortcuts_enabled)),
+                    )
+                        .in_set(camera::CameraInput),
+                    camera::apply_camera_zoom.after(camera::CameraInput),
+                    camera::pan_cursor
+                        .run_if(camera::is_panning)
+                        .after(tools::update_cursor_icon)
+                        .after(selection::update_selection_cursor),
                     grid::draw_grid,
                     grid::draw_player_grid
                         .run_if(session_is_active)
