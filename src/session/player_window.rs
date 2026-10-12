@@ -88,6 +88,8 @@ fn create_platform_window(monitor_info: &super::state::MonitorInfo) -> Window {
             position,
             resolution: WindowResolution::new(logical_w, logical_h),
             window_level: bevy::window::WindowLevel::AlwaysOnTop,
+            // Keyboard focus stays in the editor (see keep_focus_in_editor)
+            focused: false,
             ..default()
         }
     }
@@ -103,6 +105,8 @@ fn create_platform_window(monitor_info: &super::state::MonitorInfo) -> Window {
             title: "Player View".into(),
             decorations: false,
             mode,
+            // Keyboard focus stays in the editor (see keep_focus_in_editor)
+            focused: false,
             ..default()
         }
     }
@@ -196,6 +200,37 @@ pub fn sync_player_camera(
                 max_width: size.x,
                 max_height: size.y,
             };
+        }
+    }
+}
+
+/// How long after the player window opens it gives focus back to the editor
+const FOCUS_RETURN_SECONDS: f64 = 2.0;
+
+/// Gives keyboard focus back to the editor when the player window takes it as it opens.
+/// It's created unfocused, but some platforms (X11, Wayland) focus new windows anyway;
+/// the GM should keep typing in the editor, and a reflexive Esc there mustn't end the
+/// session (Esc in the player window does).
+pub fn keep_focus_in_editor(
+    mut focus_events: MessageReader<bevy::window::WindowFocused>,
+    new_player_windows: Query<(), (With<PlayerWindow>, Added<Window>)>,
+    player_windows: Query<(), With<PlayerWindow>>,
+    mut primary: Query<&mut Window, (With<bevy::window::PrimaryWindow>, Without<PlayerWindow>)>,
+    time: Res<Time>,
+    mut opened_at: Local<Option<f64>>,
+) {
+    let now = time.elapsed_secs_f64();
+    if !new_player_windows.is_empty() {
+        *opened_at = Some(now);
+    }
+    let just_opened = opened_at.is_some_and(|at| now - at < FOCUS_RETURN_SECONDS);
+    for event in focus_events.read() {
+        if just_opened
+            && event.focused
+            && player_windows.contains(event.window)
+            && let Ok(mut window) = primary.single_mut()
+        {
+            window.focused = true;
         }
     }
 }

@@ -45,6 +45,7 @@ impl Plugin for LiveSessionPlugin {
                     player_window::create_player_window
                         .run_if(resource_changed::<LiveSessionState>),
                     player_window::setup_player_camera,
+                    player_window::keep_focus_in_editor,
                     // No run_if here - needs to run to unfreeze after session ends
                     freeze::sync_freeze
                         .before(player_window::sync_player_camera)
