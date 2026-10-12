@@ -43,6 +43,13 @@ impl Default for AssetLibrary {
 }
 
 impl AssetLibrary {
+    /// Replaces the list of assets with a fresh scan.
+    pub fn set_assets(&mut self, assets: Vec<LibraryAsset>) {
+        self.assets = assets;
+        self.error = None;
+        self.generation += 1;
+    }
+
     /// Creates the library resource around the `lib://` source's shared root.
     pub fn with_root(root: LibraryRoot) -> Self {
         let library_path = crate::paths::default_library_dir();
@@ -189,21 +196,26 @@ pub fn relative_to_library(library_path: &Path, path: &Path) -> Option<String> {
 
 /// Scans assets from a library directory into the AssetLibrary resource
 fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
-    library.assets.clear();
-    library.error = None;
-    library.generation += 1;
+    let assets = scan_library_files(library_path);
+    library.set_assets(assets);
+}
 
+/// The image assets in the library at `library_path`. Reads only folder listings and file
+/// metadata, so it's safe on a background thread.
+pub fn scan_library_files(library_path: &Path) -> Vec<LibraryAsset> {
+    let mut assets = Vec::new();
     scan_directory_recursive(
-        library,
+        &mut assets,
         library_path,
         library_path,
         &mut crate::fsutil::VisitedDirs::default(),
     );
+    assets
 }
 
 /// Recursively scans a directory for image assets
 fn scan_directory_recursive(
-    library: &mut AssetLibrary,
+    assets: &mut Vec<LibraryAsset>,
     base_path: &Path,
     current_path: &Path,
     visited: &mut crate::fsutil::VisitedDirs,
@@ -243,7 +255,7 @@ fn scan_directory_recursive(
                 continue;
             }
             // Recurse into subdirectories
-            scan_directory_recursive(library, base_path, &path, visited);
+            scan_directory_recursive(assets, base_path, &path, visited);
             continue;
         }
 
@@ -274,7 +286,7 @@ fn scan_directory_recursive(
             .map(|m| FileStamp::of_metadata(&m))
             .unwrap_or_default();
 
-        library.assets.push(LibraryAsset {
+        assets.push(LibraryAsset {
             name,
             path: relative_path,
             folder_path,
@@ -427,14 +439,44 @@ pub fn thumbnail_to_image(rgba: image::RgbaImage) -> Image {
     )
 }
 
+/// A rescan running in the background
+#[derive(Resource, Default)]
+pub struct LibraryRescan {
+    task: Option<(PathBuf, bevy::tasks::Task<Vec<LibraryAsset>>)>,
+    /// Another refresh came in while scanning; scan again when this one is done
+    again: bool,
+}
+
+/// Rescans the library on the IoTaskPool when asked (the Refresh button, or the watcher
+/// seeing files change), so a big or slow synced library doesn't stall the editor.
 pub fn refresh_asset_library(
     mut events: MessageReader<RefreshAssetLibrary>,
     mut library: ResMut<AssetLibrary>,
+    mut rescan: ResMut<LibraryRescan>,
 ) {
-    for _ in events.read() {
-        let library_path = library.library_path.clone();
-        scan_library_at_path(&mut library, &library_path);
-        info!("Refreshed asset library: {} assets", library.assets.len());
+    let requested = events.read().count() > 0;
+
+    if let Some((path, task)) = rescan.task.as_mut()
+        && let Some(assets) = futures_lite::future::block_on(futures_lite::future::poll_once(task))
+    {
+        // A scan of a library that's no longer open is dropped
+        if *path == library.library_path {
+            library.set_assets(assets);
+            info!("Refreshed asset library: {} assets", library.assets.len());
+        }
+        rescan.task = None;
+    }
+
+    if requested {
+        rescan.again = true;
+    }
+    if rescan.again && rescan.task.is_none() {
+        rescan.again = false;
+        let path = library.library_path.clone();
+        let scan_path = path.clone();
+        let task =
+            bevy::tasks::IoTaskPool::get().spawn(async move { scan_library_files(&scan_path) });
+        rescan.task = Some((path, task));
     }
 }
 
@@ -508,4 +550,38 @@ pub fn track_library_changes(
     }
 
     *last_path = Some(library.library_path.clone());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_refresh_rescans_in_the_background() {
+        use bevy::tasks::{IoTaskPool, TaskPool};
+        IoTaskPool::get_or_init(TaskPool::new);
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new();
+        let mut library = AssetLibrary::default();
+        library.set_library_path(dir.path().to_path_buf());
+        app.insert_resource(library)
+            .init_resource::<LibraryRescan>()
+            .add_message::<RefreshAssetLibrary>()
+            .add_systems(Update, refresh_asset_library);
+
+        std::fs::write(dir.path().join("orc.png"), "orc").unwrap();
+        app.world_mut().write_message(RefreshAssetLibrary);
+        for _ in 0..200 {
+            app.update();
+            if !app.world().resource::<AssetLibrary>().assets.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        let library = app.world().resource::<AssetLibrary>();
+        assert_eq!(library.assets.len(), 1);
+        assert_eq!(library.assets[0].path, "orc.png");
+    }
 }

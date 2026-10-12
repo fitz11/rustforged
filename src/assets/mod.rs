@@ -61,6 +61,7 @@ impl Plugin for AssetLibraryPlugin {
             .init_resource::<SelectedAsset>()
             .init_resource::<ThumbnailCache>()
             .add_message::<RefreshAssetLibrary>()
+            .init_resource::<library::LibraryRescan>()
             .add_message::<UpdateLibraryMetadataRequest>()
             .add_message::<RetargetAssetRequest>()
             .add_message::<MapFilesChanged>()
@@ -79,7 +80,8 @@ impl Plugin for AssetLibraryPlugin {
             .add_systems(
                 Update,
                 (
-                    library::refresh_asset_library.run_if(on_message::<RefreshAssetLibrary>),
+                    // Every frame while a rescan runs in the background
+                    library::refresh_asset_library,
                     library::track_library_changes.run_if(resource_changed::<AssetLibrary>),
                     update_library_metadata_system
                         .run_if(on_message::<UpdateLibraryMetadataRequest>),
