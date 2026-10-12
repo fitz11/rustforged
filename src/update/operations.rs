@@ -3,6 +3,7 @@
 use super::CURRENT_VERSION;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
@@ -11,9 +12,19 @@ use super::manifest::{
 };
 use super::state::{DownloadResult, UpdateCheckResult};
 
+/// HTTP client with timeouts, so a stalled connection fails instead of hanging forever.
+/// The read timeout applies between chunks, so long downloads still finish.
+fn agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(30))
+        .build()
+}
+
 /// Check for updates by fetching the release manifest
 pub fn check_for_updates() -> UpdateCheckResult {
-    let response = ureq::get(MANIFEST_URL)
+    let response = agent()
+        .get(MANIFEST_URL)
         .set("User-Agent", "rustforged-update-checker")
         .call();
 
@@ -112,7 +123,8 @@ pub fn download_installer(
         );
     };
 
-    let response = match ureq::get(&url)
+    let response = match agent()
+        .get(&url)
         .set("User-Agent", "rustforged-updater")
         .call()
     {

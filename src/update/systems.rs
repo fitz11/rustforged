@@ -1,7 +1,7 @@
 //! Bevy systems for update checking and downloading.
 
 use bevy::prelude::*;
-use bevy::tasks::AsyncComputeTaskPool;
+use bevy::tasks::IoTaskPool;
 use futures_lite::future;
 
 use super::operations::check_for_updates;
@@ -11,7 +11,9 @@ use super::state::{DownloadTask, UpdateCheckTask, UpdateState};
 pub fn start_update_check(mut commands: Commands, mut update_state: ResMut<UpdateState>) {
     update_state.is_checking = true;
 
-    let task_pool = AsyncComputeTaskPool::get();
+    // The I/O pool: blocking network calls here mustn't hold up the compute pool, which
+    // rendering also uses
+    let task_pool = IoTaskPool::get();
     let task = task_pool.spawn(async move { check_for_updates() });
 
     commands.spawn(UpdateCheckTask(task));
