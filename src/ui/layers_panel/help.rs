@@ -3,6 +3,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
+use crate::ui::shortcuts::{SHORTCUTS, ShortcutGroup, display_keys};
 use crate::update::UpdateState;
 
 use super::HelpWindowState;
@@ -45,41 +46,12 @@ pub fn help_popup_ui(
 
                 ui.separator();
 
-                // Tools Section
-                render_tools_section(ui);
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Selection Shortcuts
-                render_selection_section(ui);
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Camera Controls
-                render_camera_section(ui);
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Placement
-                render_placement_section(ui);
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Asset Management
-                render_assets_section(ui);
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // File Operations
-                render_file_section(ui);
-
-                ui.add_space(10.0);
-                ui.separator();
+                // Every shortcut, from the one table the README is checked against
+                for group in SHORTCUTS {
+                    render_shortcut_group(ui, group);
+                    ui.add_space(10.0);
+                    ui.separator();
+                }
 
                 ui.horizontal(|ui| {
                     ui.label("GitHub:");
@@ -104,175 +76,17 @@ pub fn help_popup_ui(
     Ok(())
 }
 
-fn render_tools_section(ui: &mut egui::Ui) {
-    ui.heading("Tools");
-    egui::Grid::new("tools_grid")
+fn render_shortcut_group(ui: &mut egui::Ui, group: &ShortcutGroup) {
+    ui.heading(group.title);
+    egui::Grid::new(group.title)
         .num_columns(2)
         .spacing([20.0, 4.0])
         .show(ui, |ui| {
-            ui.strong("V / S");
-            ui.label("Select - Click to select items, drag to move");
-            ui.end_row();
-
-            ui.strong("P");
-            ui.label("Place - Single-click to place selected asset");
-            ui.end_row();
-
-            ui.strong("B");
-            ui.label("Brush - Drag to continuously place assets");
-            ui.end_row();
-
-            ui.strong("D");
-            ui.label("Draw - Freehand annotation paths");
-            ui.end_row();
-
-            ui.strong("L");
-            ui.label("Line - Straight line annotations");
-            ui.end_row();
-
-            ui.strong("F");
-            ui.label("Fog - Reveal/hide fog of war areas");
-            ui.end_row();
-
-            ui.strong("C / Shift+C");
-            ui.label("Cycle layer (Place/Brush tools)");
-            ui.end_row();
-        });
-}
-
-fn render_selection_section(ui: &mut egui::Ui) {
-    ui.heading("Selection");
-    egui::Grid::new("selection_grid")
-        .num_columns(2)
-        .spacing([20.0, 4.0])
-        .show(ui, |ui| {
-            ui.strong("Click");
-            ui.label("Select topmost item");
-            ui.end_row();
-
-            ui.strong("Ctrl+Click");
-            ui.label("Toggle selection (multi-select)");
-            ui.end_row();
-
-            ui.strong("Drag (empty)");
-            ui.label("Box selection");
-            ui.end_row();
-
-            ui.strong("Escape");
-            ui.label("Clear selection");
-            ui.end_row();
-
-            ui.strong("Delete / Backspace");
-            ui.label("Delete selected items");
-            ui.end_row();
-
-            ui.strong("G");
-            ui.label("Fit selected to grid cell");
-            ui.end_row();
-
-            ui.strong("Shift+G");
-            ui.label("Center selected to grid");
-            ui.end_row();
-
-            ui.strong("A");
-            ui.label("Restore aspect ratio");
-            ui.end_row();
-
-            ui.strong("R / Shift+R");
-            ui.label("Rotate 90° CW / CCW");
-            ui.end_row();
-
-            ui.strong("Ctrl+C / Ctrl+X");
-            ui.label("Copy / Cut selected items");
-            ui.end_row();
-
-            ui.strong("Ctrl+V");
-            ui.label("Paste items");
-            ui.end_row();
-        });
-}
-
-fn render_camera_section(ui: &mut egui::Ui) {
-    ui.heading("Camera");
-    egui::Grid::new("camera_grid")
-        .num_columns(2)
-        .spacing([20.0, 4.0])
-        .show(ui, |ui| {
-            ui.strong("Middle Mouse Drag");
-            ui.label("Pan camera");
-            ui.end_row();
-
-            ui.strong("Scroll Wheel");
-            ui.label("Zoom in/out");
-            ui.end_row();
-        });
-}
-
-fn render_placement_section(ui: &mut egui::Ui) {
-    ui.heading("Placement");
-    egui::Grid::new("placement_grid")
-        .num_columns(2)
-        .spacing([20.0, 4.0])
-        .show(ui, |ui| {
-            ui.strong("Click (Place tool)");
-            ui.label("Place asset at grid-snapped position");
-            ui.end_row();
-
-            ui.strong("Shift+Click");
-            ui.label("Free placement (bypass grid snap)");
-            ui.end_row();
-
-            ui.strong("Shift+Drag");
-            ui.label("Snap selected to grid while dragging");
-            ui.end_row();
-        });
-}
-
-fn render_assets_section(ui: &mut egui::Ui) {
-    ui.heading("Assets");
-    egui::Grid::new("asset_grid")
-        .num_columns(2)
-        .spacing([20.0, 4.0])
-        .show(ui, |ui| {
-            ui.strong("F2");
-            ui.label("Rename selected asset");
-            ui.end_row();
-
-            ui.strong("F3");
-            ui.label("Rename current map");
-            ui.end_row();
-
-            ui.strong("F4");
-            ui.label("Rename library");
-            ui.end_row();
-        });
-}
-
-fn render_file_section(ui: &mut egui::Ui) {
-    ui.heading("File");
-    egui::Grid::new("file_grid")
-        .num_columns(2)
-        .spacing([20.0, 4.0])
-        .show(ui, |ui| {
-            ui.strong("Ctrl+S");
-            ui.label("Save map");
-            ui.end_row();
-
-            ui.strong("Ctrl+Shift+S");
-            ui.label("Save as...");
-            ui.end_row();
-
-            ui.strong("Ctrl+O");
-            ui.label("Open map");
-            ui.end_row();
-
-            ui.strong("Ctrl+N");
-            ui.label("New map");
-            ui.end_row();
-
-            ui.strong("H");
-            ui.label("Toggle this help window");
-            ui.end_row();
+            for shortcut in group.shortcuts {
+                ui.strong(display_keys(shortcut.keys));
+                ui.label(shortcut.action);
+                ui.end_row();
+            }
         });
 }
 

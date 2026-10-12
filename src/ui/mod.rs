@@ -6,6 +6,7 @@ pub mod map_actions;
 pub mod panel_layout;
 mod session_controls;
 mod settings_dialog;
+pub mod shortcuts;
 mod toolbar;
 
 use bevy::prelude::*;

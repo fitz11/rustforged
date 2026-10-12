@@ -64,49 +64,83 @@ If the binary fails to start with a missing-library error (`error while loading 
 
 ## Controls
 
+Ctrl is Cmd on macOS. Press **H** in the app for this list.
+
+### Tools
+
+| Keys | Action |
+|------|--------|
+| V / S | Select: click to select, drag to move |
+| P | Place: click to place the selected asset, then back to Select |
+| B | Brush: drag to paint the selected asset into each cell |
+| D | Draw: freehand annotation paths |
+| L | Line: straight line annotations |
+| F | Fog: drag to reveal fog of war |
+| C / Shift+C | Cycle the target layer (Place and Brush) |
+| H | Show or hide this help |
+
+### Placing
+
+| Keys | Action |
+|------|--------|
+| Shift+Click | Place and keep the Place tool for another |
+| Ctrl+Click | Place without snapping to the grid |
+| Shift+Drag (Brush) | Fit each painted asset to one cell |
+
+### Selection
+
+| Keys | Action |
+|------|--------|
+| Click | Select the topmost item |
+| Ctrl+Click | Add to or remove from the selection |
+| Drag on empty space | Box select |
+| Drag | Move the selection (Shift: whole cells) |
+| Drag a handle | Resize (Shift keeps the shape) or rotate (Shift: 15° steps) |
+| Escape | Clear the selection |
+| Delete / Backspace | Delete the selection |
+| G | Fit to one grid cell |
+| Shift+G | Center in its grid cell |
+| A | Restore the aspect ratio |
+| R / Shift+R | Rotate 90° clockwise / counter-clockwise |
+
+### Editing
+
+| Keys | Action |
+|------|--------|
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste |
+| Ctrl+Z | Undo |
+| Ctrl+Y / Ctrl+Shift+Z | Redo |
+
+### Fog
+
+| Keys | Action |
+|------|--------|
+| Shift+Drag (Fog) | Reveal single cells |
+
 ### Camera
 
-| Action | Control |
-|--------|---------|
-| Pan | Middle-mouse drag |
-| Zoom | Scroll wheel |
+| Keys | Action |
+|------|--------|
+| Middle-mouse drag | Pan |
+| Scroll wheel | Zoom |
 
-### Tool Shortcuts
+### Files
 
-| Key | Tool |
-|-----|------|
-| V / S | Select - Click to select, drag to move |
-| P | Place - Click to place the selected asset, then return to Select (Shift+Click keeps placing, Ctrl+Click skips grid snap) |
-| B | Brush - Continuous placement while dragging |
-| D | Draw - Freehand annotation paths |
-| L | Line - Straight line annotations |
-| F | Fog - Reveal/hide fog of war areas |
-| C / Shift+C | Cycle layer (Place/Brush tools) |
+| Keys | Action |
+|------|--------|
+| Ctrl+N | New map |
+| Ctrl+O | Open a map file |
+| Ctrl+S | Save |
+| Ctrl+Shift+S | Save as |
+| F2 | Rename the selected asset |
+| F3 | Rename the map |
+| F4 | Rename the library |
 
-### Selection & Editing
+### Live session
 
-| Action | Control |
-|--------|---------|
-| Select item | Click |
-| Multi-select | Ctrl+Click or box select |
-| Move selected | Drag |
-| Resize selected | Drag handles |
-| Fit to grid | G |
-| Rotate 90° | R / Shift+R |
-| Restore aspect ratio | A |
-| Delete | Delete or Backspace |
-| Copy/Cut/Paste | Ctrl+C / Ctrl+X / Ctrl+V |
-| Undo/Redo | Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) |
-
-### File Operations
-
-| Action | Shortcut |
-|--------|----------|
-| Save | Ctrl+S |
-| Save as | Ctrl+Shift+S |
-| Open | Ctrl+O |
-| New | Ctrl+N |
-| Help | H |
+| Keys | Action |
+|------|--------|
+| Escape (player window) | End the session |
 
 ## Asset Library
 
