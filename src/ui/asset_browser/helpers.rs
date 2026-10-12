@@ -36,7 +36,7 @@ pub fn scan_maps_directory(maps_dir: &Path) -> Vec<(String, PathBuf)> {
 }
 
 /// Indentation added before a name for each folder level in the explorers.
-const INDENT: &str = " ";
+const INDENT: &str = "  ";
 
 /// `name` indented by `depth` folder levels.
 pub fn indented(name: &str, depth: usize) -> String {
@@ -269,9 +269,9 @@ mod tests {
     }
 
     #[test]
-    fn test_indented_adds_one_space_per_level() {
+    fn test_indented_adds_two_spaces_per_level() {
         assert_eq!(indented("tokens", 0), "tokens");
-        assert_eq!(indented("stone", 2), "  stone");
+        assert_eq!(indented("stone", 2), "    stone");
     }
 
     #[test]
