@@ -2,17 +2,22 @@
 
 use bevy_egui::egui;
 
+use bevy::math::Vec2;
+
 use crate::session::LiveSessionState;
 
 /// Renders the Live Session controls section when a session is active. Returns true if
 /// the user changed anything.
 ///
 /// `move_while_frozen` is the setting that lets viewport moves reach players
-/// while their view is frozen.
+/// while their view is frozen. `screen_width` is the player screen's physical width in
+/// inches, if known (the caller saves it); `grid_size` is the map's.
 pub fn render_session_controls(
     ui: &mut egui::Ui,
     session_state: &mut LiveSessionState,
     move_while_frozen: bool,
+    screen_width: &mut Option<f32>,
+    grid_size: f32,
 ) -> bool {
     if !session_state.is_active {
         return false;
@@ -120,6 +125,36 @@ pub fn render_session_controls(
         );
     });
 
+    // Table scale: one grid cell per inch on a screen laid flat, so miniatures fit
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Table scale").size(14.0).strong());
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Screen width:").size(13.0));
+        let mut inches = screen_width.unwrap_or(0.0);
+        if ui
+            .add(
+                egui::DragValue::new(&mut inches)
+                    .range(0.0..=200.0)
+                    .speed(0.1)
+                    .suffix(" in"),
+            )
+            .on_hover_text("The visible width of the player screen, measured with a ruler")
+            .changed()
+        {
+            *screen_width = (inches > 0.0).then_some(inches);
+        }
+    });
+    if ui
+        .add_enabled(screen_width.is_some(), egui::Button::new("1 cell = 1 inch"))
+        .on_hover_text("Size the player view so each grid cell is one inch on that screen")
+        .on_disabled_hover_text("Enter the screen's width first")
+        .clicked()
+        && let Some(inches) = *screen_width
+    {
+        session_state.viewport_size = table_scale_viewport(inches, grid_size, aspect);
+        changed = true;
+    }
+
     ui.add_space(8.0);
     ui.label(egui::RichText::new("Rotation").size(14.0).strong());
 
@@ -181,4 +216,24 @@ fn toggle_switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     }
 
     response
+}
+
+/// The viewport (in the player screen's own frame) that shows one grid cell per inch on a
+/// screen `inches` wide with `aspect` width/height
+pub fn table_scale_viewport(inches: f32, grid_size: f32, aspect: f32) -> Vec2 {
+    let width = inches * grid_size;
+    Vec2::new(width, width / aspect)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_table_scale_shows_one_cell_per_inch() {
+        // A 42-inch-wide 16:9 TV shows 42 cells across
+        let size = table_scale_viewport(42.0, 70.0, 16.0 / 9.0);
+        assert_eq!(size.x / 70.0, 42.0);
+        assert!((size.x / size.y - 16.0 / 9.0).abs() < 1e-4);
+    }
 }

@@ -27,6 +27,10 @@ pub struct AppConfigData {
     /// (the map itself stays frozen either way)
     #[serde(default)]
     pub move_player_view_while_frozen: bool,
+    /// Physical width of each player screen in inches, by monitor name, for showing the
+    /// map at table scale (one grid cell per inch)
+    #[serde(default)]
+    pub screen_widths_inches: std::collections::BTreeMap<String, f32>,
 }
 
 /// Runtime configuration resource
@@ -312,6 +316,7 @@ mod tests {
             recent_libraries: vec![PathBuf::from("/path/one"), PathBuf::from("/path/two")],
             last_map_path: Some(PathBuf::from("/path/to/map.json")),
             move_player_view_while_frozen: true,
+            screen_widths_inches: [("HDMI-1".to_string(), 42.5)].into(),
         };
 
         let json = serde_json::to_string(&data).unwrap();
@@ -321,6 +326,7 @@ mod tests {
         assert_eq!(parsed.recent_libraries, data.recent_libraries);
         assert_eq!(parsed.last_map_path, data.last_map_path);
         assert!(parsed.move_player_view_while_frozen);
+        assert_eq!(parsed.screen_widths_inches.get("HDMI-1"), Some(&42.5));
     }
 
     #[test]

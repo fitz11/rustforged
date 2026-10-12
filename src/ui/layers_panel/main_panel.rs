@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::assets::RetargetAssetRequest;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, SaveConfigRequest};
 use crate::editor::SelectionEdit;
 use crate::editor::fog::FogState;
 use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
@@ -33,7 +33,8 @@ pub fn layers_panel_ui(
     mut help_state: ResMut<HelpWindowState>,
     properties_context: PropertiesContext,
     mut retarget_events: MessageWriter<RetargetAssetRequest>,
-    config: Res<AppConfig>,
+    mut config: ResMut<AppConfig>,
+    mut save_config: MessageWriter<SaveConfigRequest>,
     mut edit_events: (
         MessageWriter<SelectionEdit>,
         MessageWriter<RecordEditorCommand>,
@@ -78,12 +79,29 @@ pub fn layers_panel_ui(
             properties = render_properties(ui, &mut selected_query, &properties_context, grid_size);
 
             // Live Session controls (when active)
+            // The player screen's width, remembered per monitor
+            let monitor = session_state
+                .selected_monitor
+                .as_ref()
+                .map(|m| m.name.clone())
+                .unwrap_or_default();
+            let mut screen_width = config.data.screen_widths_inches.get(&monitor).copied();
+            let before = screen_width;
             if render_session_controls(
                 ui,
                 session_state.bypass_change_detection(),
                 config.data.move_player_view_while_frozen,
+                &mut screen_width,
+                map_data.grid_size,
             ) {
                 session_state.set_changed();
+            }
+            if screen_width != before {
+                match screen_width {
+                    Some(inches) => config.data.screen_widths_inches.insert(monitor, inches),
+                    None => config.data.screen_widths_inches.remove(&monitor),
+                };
+                save_config.write(SaveConfigRequest);
             }
 
             // Help button and version (bottom center)
