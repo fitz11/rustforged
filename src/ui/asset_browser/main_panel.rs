@@ -531,9 +531,9 @@ fn render_maps_section(
                     dialogs.menu_state.show_save_name_dialog = true;
                 } else if let Some(ref existing_path) = active.path {
                     // Map has been saved before, save to same path
-                    map_res.save_events.write(crate::map::SaveMapRequest {
-                        path: existing_path.clone(),
-                    });
+                    map_res
+                        .save_events
+                        .write(crate::map::SaveMapRequest::new(existing_path.clone()));
                 } else {
                     // Map has a name but no path yet - save to maps directory
                     let maps_dir = library.library_path.join("maps");
@@ -541,7 +541,7 @@ fn render_maps_section(
                     let path = maps_dir.join(format!("{}.json", filename));
                     map_res
                         .save_events
-                        .write(crate::map::SaveMapRequest { path });
+                        .write(crate::map::SaveMapRequest::new(path));
                 }
             }
         }

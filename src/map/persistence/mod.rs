@@ -50,7 +50,7 @@ pub use messages::{LoadMapRequest, NewMapRequest, SaveMapRequest, SwitchMapReque
 // Re-exports - Resources
 pub use resources::{
     AsyncMapOperation, CurrentMapFile, MapAssetReport, MapDirtyState, MapLoadError, MapSaveError,
-    OpenMaps, UnsavedChangesDialog,
+    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, UnsavedChangesDialog,
 };
 
 // Re-exports - Systems

@@ -42,6 +42,11 @@ pub fn write_if_changed(path: &Path, contents: &[u8]) -> std::io::Result<bool> {
     Ok(true)
 }
 
+/// Short content hash (leading 128 bits of BLAKE3, hex) for telling file versions apart.
+pub fn content_hash(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex()[..32].to_string()
+}
+
 /// This machine's host name, used to say which machine last saved a map.
 pub fn machine_name() -> Option<String> {
     let name = gethostname::gethostname()

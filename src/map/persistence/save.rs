@@ -3,6 +3,7 @@
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -14,7 +15,8 @@ use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
 use super::map_state::capture_current_map_state;
 use super::messages::SaveMapRequest;
 use super::resources::{
-    AsyncMapOperation, CurrentMapFile, MapDirtyState, MapSaveError, OpenMaps, SaveMapTask,
+    AsyncMapOperation, CurrentMapFile, MapDirtyState, MapSaveError, OpenMaps, SaveConflict,
+    SaveConflictDialog, SaveConflictKind, SaveMapTask,
 };
 use super::results::SaveResult;
 
@@ -61,6 +63,11 @@ pub fn save_map_system(
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         saved_map.map_id = Some(map_id.clone());
         saved_map.saved_by = crate::fsutil::machine_name();
+        // The version of the file this map came from; None for a new file or a copy
+        let expected_hash = active
+            .filter(|_| same_file)
+            .and_then(|m| m.disk_hash.clone());
+        let overwrite = event.overwrite;
 
         let map_name = path
             .file_name()
@@ -78,11 +85,21 @@ pub fn save_map_system(
             let fingerprints = fingerprint_assets(used_assets, &mut index, &carried);
             saved_map.asset_fingerprints = fingerprints.clone();
 
-            let error = write_map(&path, &mut saved_map).err();
+            let conflict = if overwrite {
+                None
+            } else {
+                check_save_conflict(&path, expected_hash.as_deref())
+            };
+            let written = match conflict {
+                Some(_) => Err(None),
+                None => write_map(&path, &mut saved_map).map_err(Some),
+            };
             SaveResult {
                 path,
-                success: error.is_none(),
-                error,
+                success: written.is_ok(),
+                error: written.as_ref().err().cloned().flatten(),
+                conflict,
+                disk_hash: written.ok(),
                 map_id,
                 asset_fingerprints: fingerprints,
                 computed: index.into_computed(),
@@ -112,7 +129,54 @@ pub(super) fn fingerprint_assets(
         .collect()
 }
 
-pub(super) fn write_map(path: &Path, saved_map: &mut SavedMap) -> Result<(), String> {
+/// Compares the file on disk with the version this map was opened from (`expected_hash`,
+/// None for a new file). Returns a conflict when saving would overwrite changes made
+/// elsewhere, such as on another machine sharing a synced library.
+pub(super) fn check_save_conflict(
+    path: &Path,
+    expected_hash: Option<&str>,
+) -> Option<SaveConflict> {
+    /// Just the field we need from the version on disk
+    #[derive(Deserialize)]
+    struct SavedBy {
+        saved_by: Option<String>,
+    }
+
+    let kind = match (std::fs::read(path), expected_hash) {
+        (Ok(bytes), Some(expected)) if crate::fsutil::content_hash(&bytes) == expected => {
+            return None;
+        }
+        (Ok(bytes), expected) => {
+            let saved_by = serde_json::from_slice::<SavedBy>(&bytes)
+                .ok()
+                .and_then(|s| s.saved_by);
+            let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+            let kind = if expected.is_some() {
+                SaveConflictKind::Changed
+            } else {
+                SaveConflictKind::Exists
+            };
+            return Some(SaveConflict {
+                path: path.to_path_buf(),
+                kind,
+                saved_by,
+                modified,
+            });
+        }
+        (Err(e), Some(_)) if e.kind() == std::io::ErrorKind::NotFound => SaveConflictKind::Deleted,
+        // Nothing there yet, or unreadable: let the write report any error
+        (Err(_), _) => return None,
+    };
+    Some(SaveConflict {
+        path: path.to_path_buf(),
+        kind,
+        saved_by: None,
+        modified: None,
+    })
+}
+
+/// Writes the map file and returns the content hash of what's now on disk.
+pub(super) fn write_map(path: &Path, saved_map: &mut SavedMap) -> Result<String, String> {
     saved_map.sort_for_save();
     // Serialize (could be slow for large maps)
     let json = serde_json::to_string_pretty(saved_map)
@@ -127,7 +191,7 @@ pub(super) fn write_map(path: &Path, saved_map: &mut SavedMap) -> Result<(), Str
     if !wrote {
         info!("Map unchanged on disk, skipped writing {:?}", path);
     }
-    Ok(())
+    Ok(crate::fsutil::content_hash(json.as_bytes()))
 }
 
 /// Polls save tasks and handles completion
@@ -142,6 +206,7 @@ pub fn poll_save_tasks(
     mut open_maps: ResMut<OpenMaps>,
     mut save_error: ResMut<MapSaveError>,
     mut asset_library: ResMut<AssetLibrary>,
+    mut conflict_dialog: ResMut<SaveConflictDialog>,
     placed_items: Query<Entity, With<PlacedItem>>,
     annotations: Query<Entity, With<AnnotationMarker>>,
 ) {
@@ -177,6 +242,7 @@ pub fn poll_save_tasks(
                     active_map.is_dirty = false;
                     active_map.asset_fingerprints = result.asset_fingerprints;
                     active_map.map_id = Some(result.map_id);
+                    active_map.disk_hash = result.disk_hash;
                     active_map.path = Some(result.path.clone());
                     active_map.name = result
                         .path
@@ -185,6 +251,12 @@ pub fn poll_save_tasks(
                         .unwrap_or("Unknown")
                         .to_string();
                 }
+            } else if let Some(conflict) = result.conflict {
+                warn!(
+                    "Not saving {:?}: {:?} on disk since it was opened",
+                    conflict.path, conflict.kind
+                );
+                conflict_dialog.conflict = Some(conflict);
             } else if let Some(error) = result.error {
                 error!("{}", error);
                 // Store error for display to user

@@ -55,8 +55,12 @@ pub fn load_map_system(
 }
 
 pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
-    let parsed = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))
+    let json = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e));
+    let disk_hash = json
+        .as_ref()
+        .ok()
+        .map(|json| crate::fsutil::content_hash(json.as_bytes()));
+    let parsed = json
         .and_then(|json| {
             serde_json::from_str::<SavedMap>(&json)
                 .map_err(|e| format!("Failed to parse map file: {}", e))
@@ -79,6 +83,7 @@ pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
                 path,
                 saved_map: None,
                 error: Some(error),
+                disk_hash,
                 relinked: Vec::new(),
                 missing: Vec::new(),
                 computed: index.into_computed(),
@@ -103,6 +108,7 @@ pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
         path,
         saved_map: Some(saved_map),
         error: None,
+        disk_hash,
         relinked,
         missing,
         computed: index.into_computed(),
@@ -285,6 +291,7 @@ pub fn poll_load_tasks(
                 if let Some(map) = open_maps.maps.get_mut(&id) {
                     map.is_dirty = relinked_any;
                     map.map_id = map_id;
+                    map.disk_hash = result.disk_hash;
                     map.asset_fingerprints = asset_fingerprints;
                 }
                 open_maps.active_map_id = Some(id);
@@ -306,6 +313,7 @@ pub fn poll_load_tasks(
                         is_dirty: relinked_any,
                         saved_state: None,
                         map_id,
+                        disk_hash: result.disk_hash,
                         asset_fingerprints,
                     },
                 );

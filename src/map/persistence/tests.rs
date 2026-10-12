@@ -7,7 +7,8 @@ use std::path::Path;
 use super::helpers::{array_to_color, color_to_array};
 use super::load::read_map;
 use super::resources::MapLoadError;
-use super::save::{fingerprint_assets, write_map};
+use super::resources::SaveConflictKind;
+use super::save::{check_save_conflict, fingerprint_assets, write_map};
 use crate::assets::fingerprint_test_support::stamp_of;
 use crate::assets::{AssetFingerprint, FingerprintCache, LibraryIndex};
 use crate::map::{
@@ -357,4 +358,67 @@ fn test_read_map_rejects_newer_format() {
     let result = read_map(path, library_index(dir.path(), &[]));
 
     assert!(result.error.unwrap().contains("newer version"));
+}
+
+// Save conflict detection
+
+#[test]
+fn test_save_conflict_none_when_disk_matches_loaded_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cave.json");
+    let hash = write_map(&path, &mut map_with(vec![item("a.png")], &[])).unwrap();
+
+    assert!(check_save_conflict(&path, Some(&hash)).is_none());
+}
+
+#[test]
+fn test_save_conflict_when_another_machine_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cave.json");
+    let loaded_hash = write_map(&path, &mut map_with(vec![item("a.png")], &[])).unwrap();
+    let mut theirs = map_with(vec![item("b.png")], &[]);
+    theirs.saved_by = Some("DESKTOP".into());
+    write_map(&path, &mut theirs).unwrap();
+
+    let conflict = check_save_conflict(&path, Some(&loaded_hash)).unwrap();
+
+    assert_eq!(conflict.kind, SaveConflictKind::Changed);
+    assert_eq!(conflict.saved_by.as_deref(), Some("DESKTOP"));
+    assert!(conflict.modified.is_some());
+}
+
+#[test]
+fn test_save_conflict_new_map_onto_existing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cave.json");
+    write_map(&path, &mut map_with(vec![], &[])).unwrap();
+
+    let conflict = check_save_conflict(&path, None).unwrap();
+
+    assert_eq!(conflict.kind, SaveConflictKind::Exists);
+}
+
+#[test]
+fn test_save_conflict_when_file_removed_elsewhere() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cave.json");
+    let hash = write_map(&path, &mut map_with(vec![], &[])).unwrap();
+    std::fs::remove_file(&path).unwrap();
+
+    let conflict = check_save_conflict(&path, Some(&hash)).unwrap();
+
+    assert_eq!(conflict.kind, SaveConflictKind::Deleted);
+    // A brand-new map saving to a free name is not a conflict
+    assert!(check_save_conflict(&path, None).is_none());
+}
+
+#[test]
+fn test_read_map_hash_matches_written_hash() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cave.json");
+    let written = write_map(&path, &mut map_with(vec![item("a.png")], &[])).unwrap();
+
+    let result = read_map(path, library_index(dir.path(), &[]));
+
+    assert_eq!(result.disk_hash, Some(written));
 }

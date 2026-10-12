@@ -73,6 +73,7 @@ pub fn new_map_system(
                 is_dirty: false,
                 saved_state: None,
                 map_id: None,
+                disk_hash: None,
                 asset_fingerprints: Default::default(),
             },
         );

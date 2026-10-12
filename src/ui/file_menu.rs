@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowCloseRequested};
 use bevy_egui::{EguiContexts, egui};
+use std::path::{Path, PathBuf};
 
 use crate::assets::AssetLibrary;
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
 use crate::map::{
-    AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, NewMapRequest, OpenMaps,
-    SaveMapRequest, UnsavedChangesDialog,
+    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapLoadError, MapSaveError, NewMapRequest,
+    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest,
+    UnsavedChangesDialog,
 };
 
 #[derive(Resource, Default)]
@@ -32,6 +34,7 @@ pub fn file_menu_ui(
     mut load_error: ResMut<MapLoadError>,
     async_op: Res<AsyncMapOperation>,
     save_error: Res<MapSaveError>,
+    save_conflict: Res<SaveConflictDialog>,
     library: Res<AssetLibrary>,
 ) -> Result {
     // New map confirmation dialog
@@ -89,7 +92,7 @@ pub fn file_menu_ui(
                     if ui.button("Save").clicked() {
                         let filename = sanitize_filename(&menu_state.save_filename);
                         let path = maps_dir.join(format!("{}.json", filename));
-                        save_events.write(SaveMapRequest { path });
+                        save_events.write(SaveMapRequest::new(path));
                         menu_state.show_save_name_dialog = false;
                     }
                     if ui.button("Cancel").clicked() {
@@ -110,7 +113,8 @@ pub fn file_menu_ui(
         } else if menu_state.saw_save_start {
             menu_state.pending_new_after_save = false;
             menu_state.saw_save_start = false;
-            if save_error.message.is_none() {
+            // A save stopped by a conflict didn't save anything either
+            if save_error.message.is_none() && save_conflict.conflict.is_none() {
                 new_events.write(NewMapRequest);
             }
         }
@@ -436,6 +440,140 @@ pub fn config_reset_notification_ui(
     Ok(())
 }
 
+/// A free file name next to `path` for saving a copy, e.g. "cave (LAPTOP copy).json".
+fn copy_path(path: &Path, machine: Option<&str>) -> PathBuf {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("map");
+    let label = machine.map_or("copy".to_string(), |m| format!("{} copy", m));
+    (1..)
+        .map(|n| {
+            let suffix = if n == 1 {
+                label.clone()
+            } else {
+                format!("{} {}", label, n)
+            };
+            path.with_file_name(format!("{} ({}).json", stem, suffix))
+        })
+        .find(|candidate| !candidate.exists())
+        .expect("unbounded range always finds a free name")
+}
+
+/// " (saved by DESKTOP, 2026-10-12 14:02)", from whatever the conflict knows.
+fn describe_disk_version(conflict: &SaveConflict) -> String {
+    let when = conflict.modified.map(|t| {
+        chrono::DateTime::<chrono::Local>::from(t)
+            .format("%Y-%m-%d %H:%M")
+            .to_string()
+    });
+    match (&conflict.saved_by, when) {
+        (Some(who), Some(when)) => format!(" (saved by {}, {})", who, when),
+        (Some(who), None) => format!(" (saved by {})", who),
+        (None, Some(when)) => format!(" (saved {})", when),
+        (None, None) => String::new(),
+    }
+}
+
+/// Renders the dialog for a save that stopped because the file on disk isn't the version
+/// the map was opened from, e.g. it was saved on another machine and synced here.
+pub fn save_conflict_dialog_ui(
+    mut contexts: EguiContexts,
+    mut dialog: ResMut<SaveConflictDialog>,
+    mut save_events: MessageWriter<SaveMapRequest>,
+    mut load_events: MessageWriter<LoadMapRequest>,
+) -> Result {
+    let Some(conflict) = dialog.conflict.clone() else {
+        return Ok(());
+    };
+
+    let name = conflict
+        .path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("map");
+    let version = describe_disk_version(&conflict);
+    let copy = copy_path(&conflict.path, crate::fsutil::machine_name().as_deref());
+    let copy_name = copy
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("copy")
+        .to_string();
+    let mut close = false;
+
+    egui::Window::new("Map Changed on Disk")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            match conflict.kind {
+                SaveConflictKind::Changed => {
+                    ui.label(format!(
+                        "\"{}\" was changed on disk after you opened it{}.",
+                        name, version
+                    ));
+                    ui.label("Saving now would overwrite those changes.");
+                }
+                SaveConflictKind::Exists => {
+                    ui.label(format!(
+                        "A map named \"{}\" already exists{}.",
+                        name, version
+                    ));
+                }
+                SaveConflictKind::Deleted => {
+                    ui.label(format!(
+                        "\"{}\" was moved or deleted on disk after you opened it.",
+                        name
+                    ));
+                }
+            }
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if conflict.kind == SaveConflictKind::Changed
+                    && ui
+                        .button("Reload from Disk")
+                        .on_hover_text("Discard your unsaved changes and open the version on disk")
+                        .clicked()
+                {
+                    load_events.write(LoadMapRequest {
+                        path: conflict.path.clone(),
+                    });
+                    close = true;
+                }
+
+                let overwrite_label = if conflict.kind == SaveConflictKind::Deleted {
+                    "Save Anyway"
+                } else {
+                    "Overwrite"
+                };
+                if ui.button(overwrite_label).clicked() {
+                    save_events.write(SaveMapRequest {
+                        path: conflict.path.clone(),
+                        overwrite: true,
+                    });
+                    close = true;
+                }
+
+                if ui
+                    .button("Save as Copy")
+                    .on_hover_text(format!("Save your version as \"{}\"", copy_name))
+                    .clicked()
+                {
+                    save_events.write(SaveMapRequest::new(copy.clone()));
+                    close = true;
+                }
+
+                if ui.button("Cancel").clicked() {
+                    close = true;
+                }
+            });
+        });
+
+    if close {
+        dialog.conflict = None;
+    }
+
+    Ok(())
+}
+
 /// Renders the report shown after opening a map whose asset references needed attention
 pub fn map_asset_report_ui(
     mut contexts: EguiContexts,
@@ -523,4 +661,26 @@ pub fn map_asset_report_ui(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_copy_path_names_machine_and_avoids_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let map = dir.path().join("cave.json");
+
+        assert_eq!(
+            copy_path(&map, Some("LAPTOP")),
+            dir.path().join("cave (LAPTOP copy).json")
+        );
+        std::fs::write(dir.path().join("cave (LAPTOP copy).json"), "{}").unwrap();
+        assert_eq!(
+            copy_path(&map, Some("LAPTOP")),
+            dir.path().join("cave (LAPTOP copy 2).json")
+        );
+        assert_eq!(copy_path(&map, None), dir.path().join("cave (copy).json"));
+    }
 }

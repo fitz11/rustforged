@@ -6,6 +6,19 @@ use std::path::PathBuf;
 #[derive(Message)]
 pub struct SaveMapRequest {
     pub path: PathBuf,
+    /// Write even if the file changed on disk since it was opened (the user chose to
+    /// overwrite after a save conflict)
+    pub overwrite: bool,
+}
+
+impl SaveMapRequest {
+    /// A save that stops and asks if the file changed on disk.
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            overwrite: false,
+        }
+    }
 }
 
 #[derive(Message)]

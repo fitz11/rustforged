@@ -12,7 +12,8 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use crate::config::{ConfigResetNotification, MissingMapWarning};
 use crate::map::{
-    AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, UnsavedChangesDialog,
+    AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, SaveConflictDialog,
+    UnsavedChangesDialog,
 };
 use crate::session::MonitorSelectionDialog;
 
@@ -44,6 +45,7 @@ fn update_dialog_state(
     config_reset: Res<ConfigResetNotification>,
     unsaved_changes: Res<UnsavedChangesDialog>,
     asset_report: Res<MapAssetReport>,
+    save_conflict: Res<SaveConflictDialog>,
     save_error: Res<MapSaveError>,
     load_error: Res<MapLoadError>,
     async_op: Res<AsyncMapOperation>,
@@ -64,6 +66,7 @@ fn update_dialog_state(
         || config_reset.show
         || unsaved_changes.show_close_confirmation
         || asset_report.show
+        || save_conflict.conflict.is_some()
         || save_error.message.is_some()
         || load_error.message.is_some()
         || async_op.is_busy()
@@ -118,6 +121,7 @@ impl Plugin for UiPlugin {
                     file_menu::async_operation_modal_ui,
                     file_menu::save_error_dialog_ui,
                     file_menu::map_asset_report_ui,
+                    file_menu::save_conflict_dialog_ui,
                     file_menu::config_reset_notification_ui,
                     asset_import::asset_import_ui,
                     layers_panel::help_popup_ui,

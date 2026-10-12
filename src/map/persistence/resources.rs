@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::tasks::Task;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use crate::assets::AssetFingerprint;
 
@@ -32,6 +33,34 @@ pub struct MapAssetReport {
     pub relinked: Vec<(String, String)>,
     /// References with no matching file in the library; shown as placeholders
     pub missing: Vec<String>,
+}
+
+/// Why a save stopped before writing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveConflictKind {
+    /// The file changed on disk since this map was opened or last saved here
+    Changed,
+    /// A new map (or a copy) would overwrite a file that already exists
+    Exists,
+    /// The file this map was opened from is gone (moved, renamed or deleted elsewhere)
+    Deleted,
+}
+
+/// A save that was stopped because the file on disk isn't the version this map came from.
+#[derive(Debug, Clone)]
+pub struct SaveConflict {
+    pub path: PathBuf,
+    pub kind: SaveConflictKind,
+    /// Machine that saved the version on disk, if the file says
+    pub saved_by: Option<String>,
+    /// When the version on disk was written
+    pub modified: Option<SystemTime>,
+}
+
+/// Resource holding a save conflict for the user to resolve.
+#[derive(Resource, Default)]
+pub struct SaveConflictDialog {
+    pub conflict: Option<SaveConflict>,
 }
 
 /// Resource tracking async map I/O operations for modal dialog
@@ -98,6 +127,9 @@ pub struct OpenMap {
     pub saved_state: Option<crate::map::SavedMap>,
     /// The map file's stable id, once it has been saved or loaded
     pub map_id: Option<String>,
+    /// Content hash of the file as this app last read or wrote it. A save compares it with
+    /// the file on disk to notice changes made elsewhere (e.g. synced from another machine).
+    pub disk_hash: Option<String>,
     /// Asset fingerprints carried from the map file. Kept so references to files that are
     /// missing right now (e.g. still syncing) are saved with their fingerprint intact.
     pub asset_fingerprints: BTreeMap<String, AssetFingerprint>,
@@ -124,6 +156,7 @@ impl Default for OpenMaps {
                 is_dirty: false,
                 saved_state: None,
                 map_id: None,
+                disk_hash: None,
                 asset_fingerprints: BTreeMap::new(),
             },
         );
