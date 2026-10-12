@@ -13,6 +13,7 @@ use crate::assets::{
 use crate::config::{AppConfig, SetDefaultLibraryRequest};
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::SwitchMapRequest;
+use crate::ui::panel_layout::DockedPanel;
 
 use super::dialogs::{
     handle_rename_shortcuts, render_import_error_dialog, render_move_asset_dialog,
@@ -57,9 +58,9 @@ pub fn asset_browser_ui(
         &library,
     );
 
-    egui::SidePanel::left("asset_browser")
-        .default_width(220.0)
-        .show(contexts.ctx_mut()?, |ui| {
+    egui::Panel::left("asset_browser")
+        .default_size(220.0)
+        .show_docked(contexts.ctx_mut()?, |ui| {
             render_library_section(
                 ui,
                 &mut library,

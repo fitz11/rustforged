@@ -5,6 +5,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::map::{FogOfWarData, MapData, MapDirtyState};
 use crate::session::LiveSessionState;
+use crate::ui::panel_layout::DockedPanel;
 
 use super::fog::render_fog_controls;
 use super::layers::render_layers;
@@ -24,9 +25,9 @@ pub fn layers_panel_ui(
     mut session_state: ResMut<LiveSessionState>,
     mut help_state: ResMut<HelpWindowState>,
 ) -> Result {
-    egui::SidePanel::right("layers_panel")
-        .default_width(200.0)
-        .show(contexts.ctx_mut()?, |ui| {
+    egui::Panel::right("layers_panel")
+        .default_size(200.0)
+        .show_docked(contexts.ctx_mut()?, |ui| {
             // Layers section
             render_layers(ui, &mut map_data, &mut dirty_state);
 

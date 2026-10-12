@@ -2,6 +2,7 @@ mod asset_browser;
 pub mod asset_import;
 pub mod file_menu;
 mod layers_panel;
+pub mod panel_layout;
 mod session_controls;
 mod settings_dialog;
 mod toolbar;
@@ -25,6 +26,11 @@ pub struct DialogState {
     /// True when any modal dialog is open that should block editor input
     pub any_modal_open: bool,
 }
+
+/// Docked panels of the main editor layout. Each panel takes space from what the panels
+/// before it left over, so systems adding more panels should run after this set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EditorPanels;
 
 /// System to aggregate all dialog open states into a single resource.
 /// Runs in First schedule before input handlers.
@@ -91,7 +97,8 @@ impl Plugin for UiPlugin {
                     asset_browser::asset_browser_ui,
                     layers_panel::layers_panel_ui,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(EditorPanels),
             )
             .add_systems(
                 EguiPrimaryContextPass,
@@ -102,7 +109,8 @@ impl Plugin for UiPlugin {
                 )
                     .chain()
                     .after(asset_browser::asset_browser_ui)
-                    .after(layers_panel::layers_panel_ui),
+                    .after(layers_panel::layers_panel_ui)
+                    .in_set(EditorPanels),
             )
             .add_systems(
                 EguiPrimaryContextPass,

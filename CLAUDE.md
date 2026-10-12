@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Rustforged is a D&D 5E Virtual Tabletop (VTT) map editor built with Rust, Bevy 0.18, and bevy_egui. It features layer-based map editing, live session display on secondary monitors, and portable asset libraries.
+Rustforged is a D&D 5E Virtual Tabletop (VTT) map editor built with Rust, Bevy 0.20, and bevy_egui. It features layer-based map editing, live session display on secondary monitors, and portable asset libraries.
 
 ## Build Commands
 
@@ -46,7 +46,7 @@ The application uses Bevy's Entity Component System (ECS) with a plugin-based ar
 - Each layer supports up to 25 z-index slots (0-24) within its z-base range
 - GM, Annotation, FogOfWar, and Play layers are hidden from the player view
 
-**Message-based communication (Bevy 0.18 `Message` trait):**
+**Message-based communication (Bevy 0.20 `Message` trait):**
 ```rust
 // Define: #[derive(Message)] pub struct SaveMapRequest { pub path: PathBuf }
 // Register: app.add_message::<SaveMapRequest>()
@@ -55,7 +55,9 @@ The application uses Bevy's Entity Component System (ECS) with a plugin-based ar
 // Run condition: .run_if(on_message::<SaveMapRequest>)
 ```
 
-**Conditional system execution** (`src/editor/conditions.rs`): Systems use `run_if` conditions like `tool_is(EditorTool::Select).and(no_dialog_open)`.
+**Conditional system execution** (`src/editor/conditions.rs`): Systems use `run_if` conditions like `tool_is(EditorTool::Select).and_then(no_dialog_open)`.
+
+**Docked egui panels** (`src/ui/panel_layout.rs`): Show side/top panels with `egui::Panel::...show_docked(ctx, ...)` inside the `EditorPanels` set so each docks against the ones before it. Gate editor mouse input with `is_cursor_over_ui` (`src/editor/params.rs`), not egui's `is_pointer_over_egui`, which doesn't see these panels.
 
 **Dialog state aggregation:** `DialogState` resource aggregates all open dialogs in the `First` schedule to block editor input when any modal is open.
 

@@ -4,6 +4,8 @@ use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy_egui::{egui, EguiContexts};
 
+use crate::ui::panel_layout::DockedPanel;
+
 use super::operations::{download_installer, install_and_restart};
 use super::state::{DownloadTask, UpdateState};
 use super::CURRENT_VERSION;
@@ -20,10 +22,10 @@ pub fn update_indicator_ui(
         return Ok(());
     }
 
-    egui::TopBottomPanel::top("update_indicator")
+    egui::Panel::top("update_indicator")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
-        .show(ctx, |ui| {
+        .show_docked(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(ui.available_width() - 150.0);
 

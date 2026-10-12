@@ -6,6 +6,7 @@ use bevy_egui::EguiContexts;
 
 use crate::editor::EditorCamera;
 use crate::theme;
+use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::state::{LiveSessionState, ViewportDragMode, ViewportDragState};
 
@@ -220,7 +221,7 @@ pub fn handle_viewport_interaction(
 
     // Don't interact if over UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
+        && is_pointer_over_ui(ctx)
     {
         return;
     }

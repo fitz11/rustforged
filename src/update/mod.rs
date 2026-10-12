@@ -58,7 +58,11 @@ impl Plugin for UpdateCheckerPlugin {
             .add_systems(Update, (poll_update_check, poll_download_task))
             .add_systems(
                 EguiPrimaryContextPass,
-                (update_indicator_ui, update_dialog_ui),
+                (
+                    // Docked below the editor toolbars
+                    update_indicator_ui.after(crate::ui::EditorPanels),
+                    update_dialog_ui,
+                ),
             );
     }
 }

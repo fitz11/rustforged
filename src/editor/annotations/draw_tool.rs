@@ -5,6 +5,7 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::map::Layer;
+use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::super::camera::EditorCamera;
 use super::super::history::{EditorCommand, PathData, RecordEditorCommand};
@@ -37,7 +38,7 @@ pub fn handle_draw(
     }
 
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
+        && is_pointer_over_ui(ctx)
     {
         return;
     }

@@ -30,7 +30,7 @@ pub fn handle_copy(
 
     // Don't copy if UI has keyboard focus (user typing)
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }

@@ -21,7 +21,7 @@ pub fn handle_fit_to_grid(
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -63,7 +63,7 @@ pub fn handle_center_to_grid(
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -106,7 +106,7 @@ pub fn handle_restore_aspect_ratio(
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -141,7 +141,7 @@ pub fn handle_rotate_90(
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -201,7 +201,7 @@ pub fn handle_deletion(
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -277,7 +277,7 @@ pub fn handle_escape_clear_selection(
 ) {
     // Don't trigger if typing in UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }

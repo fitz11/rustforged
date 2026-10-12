@@ -26,7 +26,7 @@ pub fn handle_cut(
 
     // Don't cut if UI has keyboard focus
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }

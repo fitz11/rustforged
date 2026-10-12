@@ -7,6 +7,7 @@ use bevy_egui::EguiContexts;
 use crate::editor::camera::EditorCamera;
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::map::Selected;
+use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::hit_detection::{check_rotation_handle_hit, get_selection_handle_at_position};
 use super::{DragState, SelectionDragMode};
@@ -34,7 +35,7 @@ pub fn update_selection_cursor(
 
     // Use default cursor over UI
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
+        && is_pointer_over_ui(ctx)
     {
         commands
             .entity(window_entity)

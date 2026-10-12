@@ -4,7 +4,7 @@
   <img src="packaging/icons/Rustforged.png" alt="Rustforged" width="128">
 </p>
 
-A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.18 and bevy_egui 0.39.
+A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.20 and bevy_egui 0.43.
 
 ## Features
 
@@ -129,8 +129,8 @@ The player window shows a fullscreen view without annotations or viewport indica
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| bevy | 0.18 | Game engine (rendering, ECS, windowing) |
-| bevy_egui | 0.39 | Immediate-mode UI integration |
+| bevy | 0.20 | Game engine (rendering, ECS, windowing) |
+| bevy_egui | 0.43 | Immediate-mode UI integration |
 | image | 0.25 | Image metadata reading |
 | serde / serde_json | 1.x | JSON serialization |
 | rfd | 0.15 | Native file dialogs |

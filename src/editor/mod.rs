@@ -93,8 +93,9 @@ impl Plugin for EditorPlugin {
                     tools::handle_tool_shortcuts.run_if(no_dialog_open),
                     tools::update_cursor_icon,
                     placement::handle_placement
-                        .run_if(tool_is(EditorTool::Place).and(no_dialog_open)),
-                    brush::handle_brush.run_if(tool_is(EditorTool::Brush).and(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Place).and_then(no_dialog_open)),
+                    brush::handle_brush
+                        .run_if(tool_is(EditorTool::Brush).and_then(no_dialog_open)),
                     update_layer_visibility.run_if(resource_changed::<MapData>),
                 ),
             )
@@ -102,40 +103,40 @@ impl Plugin for EditorPlugin {
                 Update,
                 (
                     selection::handle_selection
-                        .run_if(tool_is(EditorTool::Select).and(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
                     selection::handle_box_select
-                        .run_if(tool_is(EditorTool::Select).and(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
                     selection::handle_drag
-                        .run_if(tool_is(EditorTool::Select).and(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
                     selection::draw_selection_indicators,
                     selection::draw_box_select_rect,
                     selection::handle_fit_to_grid.run_if(
                         input_just_pressed(KeyCode::KeyG)
-                            .and(tool_is(EditorTool::Select))
-                            .and(no_dialog_open),
+                            .and_then(tool_is(EditorTool::Select))
+                            .and_then(no_dialog_open),
                     ),
                     selection::handle_center_to_grid.run_if(
                         input_just_pressed(KeyCode::KeyG)
-                            .and(tool_is(EditorTool::Select))
-                            .and(no_dialog_open),
+                            .and_then(tool_is(EditorTool::Select))
+                            .and_then(no_dialog_open),
                     ),
                     selection::handle_restore_aspect_ratio.run_if(
                         input_just_pressed(KeyCode::KeyA)
-                            .and(tool_is(EditorTool::Select))
-                            .and(no_dialog_open),
+                            .and_then(tool_is(EditorTool::Select))
+                            .and_then(no_dialog_open),
                     ),
                     selection::handle_rotate_90.run_if(
                         input_just_pressed(KeyCode::KeyR)
-                            .and(tool_is(EditorTool::Select))
-                            .and(no_dialog_open),
+                            .and_then(tool_is(EditorTool::Select))
+                            .and_then(no_dialog_open),
                     ),
                     selection::handle_deletion.run_if(
                         input_just_pressed(KeyCode::Delete)
-                            .or(input_just_pressed(KeyCode::Backspace))
-                            .and(no_dialog_open),
+                            .or_else(input_just_pressed(KeyCode::Backspace))
+                            .and_then(no_dialog_open),
                     ),
                     selection::handle_escape_clear_selection
-                        .run_if(input_just_pressed(KeyCode::Escape).and(no_dialog_open)),
+                        .run_if(input_just_pressed(KeyCode::Escape).and_then(no_dialog_open)),
                     selection::update_selection_cursor.run_if(tool_is(EditorTool::Select)),
                     clipboard::handle_copy.run_if(no_dialog_open),
                     clipboard::handle_cut.run_if(no_dialog_open),
@@ -149,12 +150,12 @@ impl Plugin for EditorPlugin {
                 Update,
                 (
                     annotations::handle_draw
-                        .run_if(tool_is(EditorTool::Draw).and(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Draw).and_then(no_dialog_open)),
                     annotations::handle_line
-                        .run_if(tool_is(EditorTool::Line).and(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Line).and_then(no_dialog_open)),
                     // Text tool disabled - see TODO in tools.rs
                     // annotations::handle_text
-                    //     .run_if(tool_is(EditorTool::Text).and(no_dialog_open)),
+                    //     .run_if(tool_is(EditorTool::Text).and_then(no_dialog_open)),
                     annotations::render_drawn_paths,
                     annotations::render_drawn_lines,
                     annotations::render_line_preview.run_if(tool_is(EditorTool::Line)),
@@ -164,7 +165,7 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    fog::handle_fog.run_if(tool_is(EditorTool::Fog).and(no_dialog_open)),
+                    fog::handle_fog.run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open)),
                     fog::render_fog_editor,
                     fog::render_fog_player,
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),

@@ -284,7 +284,7 @@ pub fn handle_help_shortcut(
 ) {
     // Don't toggle if typing in a text field
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }

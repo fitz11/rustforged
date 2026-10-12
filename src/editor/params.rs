@@ -22,6 +22,7 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::map::Selected;
+use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use super::EditorCamera;
@@ -99,10 +100,7 @@ pub struct SelectedAnnotationQueries<'w, 's> {
     >,
 }
 
-/// Check if the cursor is over egui UI
+/// Check if the cursor is over egui UI (docked panels, windows, or areas)
 pub fn is_cursor_over_ui(contexts: &mut EguiContexts) -> bool {
-    contexts
-        .ctx_mut()
-        .map(|ctx| ctx.is_pointer_over_area())
-        .unwrap_or(false)
+    contexts.ctx_mut().is_ok_and(|ctx| is_pointer_over_ui(ctx))
 }

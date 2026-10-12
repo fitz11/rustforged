@@ -14,7 +14,7 @@ default = []
 dev = ["bevy/dynamic_linking"]
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { version = "0.20", default-features = false, features = [
   "2d",
   "jpeg",
   "webp",
@@ -22,7 +22,7 @@ bevy = { version = "0.18", default-features = false, features = [
   "tiff",
   "gif",
 ] }
-bevy_egui = "0.39"
+bevy_egui = "0.43"
 image = { version = "0.25", default-features = false, features = [
   "png",
   "jpeg",

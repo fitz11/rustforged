@@ -3,6 +3,7 @@ use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::EguiContexts;
 
 use crate::map::{Layer, Selected};
+use crate::ui::panel_layout::is_pointer_over_ui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EditorTool {
@@ -89,7 +90,7 @@ pub fn handle_tool_shortcuts(
 ) {
     // Don't change tools if typing in a text field
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -157,7 +158,7 @@ pub fn update_cursor_icon(
 
     // Use default cursor over UI, tool cursor in editor space
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.is_pointer_over_area()
+        && is_pointer_over_ui(ctx)
     {
         commands
             .entity(entity)

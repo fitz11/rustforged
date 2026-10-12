@@ -6,6 +6,8 @@ use crate::editor::{AnnotationSettings, CurrentTool, EditorTool, SelectedLayer};
 use crate::map::{Layer, MapData, MapDirtyState};
 use crate::session::{LiveSessionState, MonitorSelectionDialog};
 
+use super::panel_layout::DockedPanel;
+
 /// Main toolbar showing tools and session controls
 pub fn toolbar_ui(
     mut contexts: EguiContexts,
@@ -15,12 +17,12 @@ pub fn toolbar_ui(
     session_state: Res<LiveSessionState>,
     mut dialog: ResMut<MonitorSelectionDialog>,
 ) -> Result {
-    egui::TopBottomPanel::top("main_toolbar")
+    egui::Panel::top("main_toolbar")
         .frame(
-            egui::Frame::side_top_panel(&contexts.ctx_mut()?.style())
+            egui::Frame::side_top_panel(&contexts.ctx_mut()?.global_style())
                 .inner_margin(egui::Margin::symmetric(12, 8)),
         )
-        .show(contexts.ctx_mut()?, |ui| {
+        .show_docked(contexts.ctx_mut()?, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
 
@@ -87,13 +89,13 @@ pub fn tool_settings_ui(
         return Ok(());
     }
 
-    egui::TopBottomPanel::top("tool_settings")
+    egui::Panel::top("tool_settings")
         .frame(
-            egui::Frame::side_top_panel(&contexts.ctx_mut()?.style())
+            egui::Frame::side_top_panel(&contexts.ctx_mut()?.global_style())
                 .inner_margin(egui::Margin::symmetric(12, 6))
                 .fill(egui::Color32::from_rgb(45, 45, 48)),
         )
-        .show(contexts.ctx_mut()?, |ui| {
+        .show_docked(contexts.ctx_mut()?, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
 
