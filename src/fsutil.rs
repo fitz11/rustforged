@@ -1,7 +1,24 @@
-//! File writes that behave well in synced folders.
+//! File writes that behave well in synced folders, and safe folder walking.
 
+use std::collections::HashSet;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Folders already visited in a walk. Symlinked folders are followed (a linked asset pack
+/// works), but a link back up the tree would otherwise make the walk loop forever.
+#[derive(Default)]
+pub struct VisitedDirs(HashSet<PathBuf>);
+
+impl VisitedDirs {
+    /// True the first time `dir` (or another path to the same folder) is seen.
+    pub fn first_visit(&mut self, dir: &Path) -> bool {
+        match std::fs::canonicalize(dir) {
+            Ok(real) => self.0.insert(real),
+            // Can't tell where it leads; reading it will fail or show what it can
+            Err(_) => true,
+        }
+    }
+}
 
 /// Writes `contents` to `path` atomically: the data goes to a hidden temp file in the same
 /// folder, is flushed to disk, then renamed over the target. Readers and sync clients see
@@ -58,6 +75,21 @@ pub fn machine_name() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(unix)]
+    #[test]
+    fn test_visited_dirs_stops_symlink_loops() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = dir.path().join("inner");
+        std::fs::create_dir(&inner).unwrap();
+        std::os::unix::fs::symlink(dir.path(), inner.join("back-up")).unwrap();
+
+        let mut visited = super::VisitedDirs::default();
+        assert!(visited.first_visit(dir.path()));
+        assert!(visited.first_visit(&inner));
+        assert!(!visited.first_visit(&inner.join("back-up")));
+    }
+
     use super::*;
 
     #[test]

@@ -1,12 +1,13 @@
 //! Library export and import operations.
 
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
 use crate::assets::{LIBRARY_MANIFEST_FILE, is_root_manifest};
+use crate::fsutil::VisitedDirs;
 
 /// Export an entire library directory to a zip file.
 pub fn export_library_to_zip(library_path: &Path, dest_path: &Path) -> Result<(), String> {
@@ -19,41 +20,56 @@ pub fn export_library_to_zip(library_path: &Path, dest_path: &Path) -> Result<()
         zip: &mut ZipWriter<File>,
         base_path: &Path,
         current_path: &Path,
+        dest_path: &Path,
         options: SimpleFileOptions,
+        visited: &mut VisitedDirs,
     ) -> Result<(), String> {
+        if !visited.first_visit(current_path) {
+            return Ok(());
+        }
         let entries = std::fs::read_dir(current_path)
             .map_err(|e| format!("Failed to read directory: {}", e))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
+            // Skip hidden files (sync clients' temp files) and the zip being written, if
+            // it's inside the library
+            if entry.file_name().to_string_lossy().starts_with('.') || path == dest_path {
+                continue;
+            }
             let relative_path = path
                 .strip_prefix(base_path)
                 .map_err(|e| format!("Failed to get relative path: {}", e))?;
-            let relative_str = relative_path.to_string_lossy();
+            // Forward slashes, so the zip opens the same on every platform
+            let relative_str = relative_path.to_string_lossy().replace('\\', "/");
 
             if path.is_dir() {
                 // Add directory entry
                 zip.add_directory(format!("{}/", relative_str), options)
                     .map_err(|e| format!("Failed to add directory to zip: {}", e))?;
                 // Recurse into subdirectory
-                add_directory_to_zip(zip, base_path, &path, options)?;
+                add_directory_to_zip(zip, base_path, &path, dest_path, options, visited)?;
             } else {
                 // Add file
-                zip.start_file(relative_str.to_string(), options)
+                zip.start_file(relative_str, options)
                     .map_err(|e| format!("Failed to start file in zip: {}", e))?;
                 let mut file =
                     File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)
-                    .map_err(|e| format!("Failed to read file: {}", e))?;
-                zip.write_all(&buffer)
+                std::io::copy(&mut file, zip)
                     .map_err(|e| format!("Failed to write file to zip: {}", e))?;
             }
         }
         Ok(())
     }
 
-    add_directory_to_zip(&mut zip, library_path, library_path, options)?;
+    add_directory_to_zip(
+        &mut zip,
+        library_path,
+        library_path,
+        dest_path,
+        options,
+        &mut VisitedDirs::default(),
+    )?;
     zip.finish()
         .map_err(|e| format!("Failed to finalize zip: {}", e))?;
     Ok(())
@@ -192,6 +208,39 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_export_then_import_round_trips_with_forward_slashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = dir.path().join("library");
+        std::fs::create_dir_all(library.join("tokens")).unwrap();
+        std::fs::write(library.join(LIBRARY_MANIFEST_FILE), "{}").unwrap();
+        std::fs::write(library.join("tokens").join("orc.png"), "orc").unwrap();
+        std::fs::write(library.join(".sync-temp"), "partial").unwrap();
+        // Exporting into the library itself mustn't add the zip to itself
+        let zip_path = library.join("export.zip");
+
+        export_library_to_zip(&library, &zip_path).unwrap();
+
+        let mut archive = ZipArchive::new(File::open(&zip_path).unwrap()).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(names.contains(&"tokens/orc.png".to_string()), "{names:?}");
+        assert!(
+            !names
+                .iter()
+                .any(|n| n.contains("export.zip") || n.contains(".sync-temp"))
+        );
+
+        let imported = dir.path().join("imported");
+        import_library_from_zip(&zip_path, &imported).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(imported.join("tokens/orc.png")).unwrap(),
+            "orc"
+        );
+    }
 
     /// Writes a zip with a library manifest plus `entries` (name, contents).
     fn library_zip(dir: &Path, entries: &[(&str, &str)]) -> PathBuf {

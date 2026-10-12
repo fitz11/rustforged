@@ -5,12 +5,21 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::assets::{AssetLibrary, relative_to_library};
+use crate::fsutil::VisitedDirs;
 
 /// Scan the maps directory, including subfolders, and return a sorted list of
 /// (display name, path). The display name is the path below maps/ without the extension,
 /// e.g. "campaign/goblin cave". Hidden files and folders (sync client temp files) are skipped.
 pub fn scan_maps_directory(maps_dir: &Path) -> Vec<(String, PathBuf)> {
-    fn scan(maps_dir: &Path, dir: &Path, maps: &mut Vec<(String, PathBuf)>) {
+    fn scan(
+        maps_dir: &Path,
+        dir: &Path,
+        maps: &mut Vec<(String, PathBuf)>,
+        visited: &mut VisitedDirs,
+    ) {
+        if !visited.first_visit(dir) {
+            return;
+        }
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
@@ -20,7 +29,7 @@ pub fn scan_maps_directory(maps_dir: &Path) -> Vec<(String, PathBuf)> {
                 continue;
             }
             if path.is_dir() {
-                scan(maps_dir, &path, maps);
+                scan(maps_dir, &path, maps, visited);
             } else if path.extension().and_then(|ext| ext.to_str()) == Some("json")
                 && let Some(name) = relative_to_library(maps_dir, &path.with_extension(""))
             {
@@ -30,7 +39,7 @@ pub fn scan_maps_directory(maps_dir: &Path) -> Vec<(String, PathBuf)> {
     }
 
     let mut maps = Vec::new();
-    scan(maps_dir, maps_dir, &mut maps);
+    scan(maps_dir, maps_dir, &mut maps, &mut VisitedDirs::default());
     maps.sort_by_cached_key(|(name, _)| tree_sort_key(name));
     maps
 }

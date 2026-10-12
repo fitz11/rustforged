@@ -193,11 +193,24 @@ fn scan_library_at_path(library: &mut AssetLibrary, library_path: &Path) {
     library.error = None;
     library.generation += 1;
 
-    scan_directory_recursive(library, library_path, library_path);
+    scan_directory_recursive(
+        library,
+        library_path,
+        library_path,
+        &mut crate::fsutil::VisitedDirs::default(),
+    );
 }
 
 /// Recursively scans a directory for image assets
-fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, current_path: &Path) {
+fn scan_directory_recursive(
+    library: &mut AssetLibrary,
+    base_path: &Path,
+    current_path: &Path,
+    visited: &mut crate::fsutil::VisitedDirs,
+) {
+    if !visited.first_visit(current_path) {
+        return;
+    }
     let entries = match std::fs::read_dir(current_path) {
         Ok(e) => e,
         Err(e) => {
@@ -230,7 +243,7 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
                 continue;
             }
             // Recurse into subdirectories
-            scan_directory_recursive(library, base_path, &path);
+            scan_directory_recursive(library, base_path, &path, visited);
             continue;
         }
 
