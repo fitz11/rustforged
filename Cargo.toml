@@ -46,6 +46,7 @@ dirs = "6"
 keepawake = "0.6"
 blake3 = "1"
 unicode-normalization = "0.1"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"

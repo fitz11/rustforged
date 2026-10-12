@@ -555,13 +555,8 @@ fn render_maps_section(
         }
     });
 
-    // Scan and show available maps
+    // Scan and show available maps (the folder is created by the first save)
     let maps_dir = library.library_path.join("maps");
-    if !maps_dir.exists()
-        && let Err(e) = std::fs::create_dir_all(&maps_dir)
-    {
-        warn!("Failed to create maps directory: {}", e);
-    }
 
     if browser_state.last_maps_scan_path.as_ref() != Some(&maps_dir) {
         browser_state.cached_maps = scan_maps_directory(&maps_dir);

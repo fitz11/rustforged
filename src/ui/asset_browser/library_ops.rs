@@ -6,8 +6,7 @@ use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
-/// Name of the library metadata file.
-pub(crate) const LIBRARY_METADATA_FILE: &str = ".library.json";
+use crate::assets::{LIBRARY_MANIFEST_FILE, is_root_manifest};
 
 /// Export an entire library directory to a zip file.
 pub fn export_library_to_zip(library_path: &Path, dest_path: &Path) -> Result<(), String> {
@@ -103,8 +102,8 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
             ));
         }
 
-        // Check if .library.json is at the root level
-        if name == LIBRARY_METADATA_FILE || name == format!("{}/", LIBRARY_METADATA_FILE) {
+        // Check for a library manifest at the root level
+        if is_root_manifest(name) {
             has_library_metadata = true;
         }
 
@@ -113,9 +112,11 @@ pub fn import_library_from_zip(zip_path: &Path, dest_path: &Path) -> Result<(), 
     }
 
     if !has_library_metadata {
-        return Err("Invalid library archive: missing .library.json file.\n\n\
-             This zip file does not contain a valid asset library."
-            .to_string());
+        return Err(format!(
+            "Invalid library archive: missing {} file.\n\n\
+             This zip file does not contain a valid asset library.",
+            LIBRARY_MANIFEST_FILE
+        ));
     }
 
     // Security: check for zip bombs

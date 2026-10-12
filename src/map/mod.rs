@@ -35,7 +35,6 @@ impl Plugin for MapPlugin {
             .add_message::<LoadMapRequest>()
             .add_message::<NewMapRequest>()
             .add_message::<SwitchMapRequest>()
-            .add_systems(Startup, persistence::ensure_maps_directory)
             .add_systems(
                 Update,
                 (

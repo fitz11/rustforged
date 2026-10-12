@@ -1,5 +1,6 @@
 mod fingerprint;
 mod library;
+mod manifest;
 mod placeholder;
 mod source;
 mod validation;
@@ -9,8 +10,9 @@ pub use fingerprint::{AssetFingerprint, FingerprintCache, LibraryIndex};
 pub use library::relative_to_library;
 pub use library::{
     AssetLibrary, LibraryAsset, THUMBNAIL_SIZE, ThumbnailCache, create_and_open_library,
-    get_image_dimensions, load_thumbnail, open_library_directory, save_library_metadata,
+    get_image_dimensions, load_thumbnail, open_library_directory,
 };
+pub use manifest::{LIBRARY_MANIFEST_FILE, is_root_manifest, save_library_metadata};
 pub use source::{LibraryRoot, library_asset_path, register_library_source};
 
 use bevy::prelude::*;
@@ -93,8 +95,9 @@ fn update_library_metadata_system(
     mut library: ResMut<AssetLibrary>,
 ) {
     for event in events.read() {
+        let library = &mut *library;
         library.metadata.name = event.name.clone();
-        if let Err(e) = save_library_metadata(&library.library_path, &library.metadata) {
+        if let Err(e) = save_library_metadata(&library.library_path, &mut library.metadata) {
             warn!("Failed to save library metadata: {}", e);
         }
     }

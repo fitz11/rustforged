@@ -121,22 +121,6 @@ pub fn ensure_directories() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Create the default library structure on first run.
-///
-/// Creates empty terrain/, doodads/, tokens/, and maps/ subdirectories.
-pub fn setup_default_library() -> std::io::Result<()> {
-    let dest = default_library_dir();
-    if dest.exists() {
-        return Ok(());
-    }
-
-    std::fs::create_dir_all(dest.join("terrain"))?;
-    std::fs::create_dir_all(dest.join("doodads"))?;
-    std::fs::create_dir_all(dest.join("tokens"))?;
-    std::fs::create_dir_all(dest.join("maps"))?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

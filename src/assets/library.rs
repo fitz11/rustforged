@@ -1,34 +1,18 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::RefreshAssetLibrary;
 use super::fingerprint::{FileStamp, FingerprintCache, LibraryIndex};
+use super::manifest::{
+    LibraryMetadata, load_library_metadata, new_library_metadata, save_library_metadata,
+};
 use super::source::{LibraryRoot, library_asset_path};
 use crate::config::AddRecentLibraryRequest;
 
 /// Size of thumbnail previews in pixels
 pub const THUMBNAIL_SIZE: u32 = 24;
-
-/// Filename for library metadata (hidden file)
-pub const LIBRARY_METADATA_FILE: &str = ".library.json";
-
-/// Metadata for an asset library, stored in .library.json
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LibraryMetadata {
-    /// User-defined name for the library
-    pub name: String,
-}
-
-impl Default for LibraryMetadata {
-    fn default() -> Self {
-        Self {
-            name: "Unnamed Library".to_string(),
-        }
-    }
-}
 
 #[derive(Resource)]
 pub struct AssetLibrary {
@@ -150,47 +134,6 @@ pub fn create_library_directory(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Load library metadata from .library.json file
-pub fn load_library_metadata(library_path: &Path) -> LibraryMetadata {
-    let metadata_path = library_path.join(LIBRARY_METADATA_FILE);
-
-    if metadata_path.exists() {
-        match std::fs::read_to_string(&metadata_path) {
-            Ok(json) => match serde_json::from_str(&json) {
-                Ok(metadata) => return metadata,
-                Err(e) => warn!("Failed to parse library metadata: {}", e),
-            },
-            Err(e) => warn!("Failed to read library metadata: {}", e),
-        }
-    }
-
-    // Return default with name derived from directory
-    let name = library_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Unnamed Library")
-        .to_string();
-
-    LibraryMetadata { name }
-}
-
-/// Save library metadata to .library.json file
-pub fn save_library_metadata(
-    library_path: &Path,
-    metadata: &LibraryMetadata,
-) -> Result<(), String> {
-    let metadata_path = library_path.join(LIBRARY_METADATA_FILE);
-
-    let json = serde_json::to_string_pretty(metadata)
-        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
-
-    std::fs::write(&metadata_path, json)
-        .map_err(|e| format!("Failed to write metadata file: {}", e))?;
-
-    info!("Saved library metadata to {:?}", metadata_path);
-    Ok(())
-}
-
 #[derive(Debug, Clone)]
 pub struct LibraryAsset {
     pub name: String,
@@ -257,8 +200,10 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
         }
 
         if path.is_dir() {
-            // Skip the "maps" directory
-            if path.file_name().and_then(|n| n.to_str()) == Some("maps") {
+            // Skip the library's "maps" directory
+            if current_path == base_path
+                && path.file_name().and_then(|n| n.to_str()) == Some("maps")
+            {
                 continue;
             }
             // Recurse into subdirectories
@@ -308,29 +253,20 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
 pub fn scan_asset_library(mut library: ResMut<AssetLibrary>) {
     let library_path = library.library_path.clone();
 
-    // Create default library structure if it doesn't exist
-    if !library_path.exists()
-        && let Err(e) = crate::paths::setup_default_library()
-    {
-        warn!("Failed to create default library: {}", e);
-    }
-
-    // Load library metadata
-    library.metadata = load_library_metadata(&library_path);
-
-    // Ensure metadata file exists (create if missing for migration)
-    if !library_path.join(LIBRARY_METADATA_FILE).exists()
-        && let Err(e) = save_library_metadata(&library_path, &library.metadata)
-    {
-        warn!("Failed to create metadata file: {}", e);
-    }
-
-    // Ensure maps folder exists
-    let maps_folder = library_path.join("maps");
-    if !maps_folder.exists()
-        && let Err(e) = std::fs::create_dir_all(&maps_folder)
-    {
-        warn!("Failed to create maps folder: {}", e);
+    if library_path.exists() {
+        library.metadata = load_library_metadata(&library_path);
+    } else {
+        // First run: create the default library (the only time startup writes to one)
+        match create_library_directory(&library_path) {
+            Ok(()) => {
+                let mut metadata = new_library_metadata(&library_path);
+                if let Err(e) = save_library_metadata(&library_path, &mut metadata) {
+                    warn!("Failed to write default library manifest: {}", e);
+                }
+                library.metadata = metadata;
+            }
+            Err(e) => warn!("Failed to create default library: {}", e),
+        }
     }
 
     scan_library_at_path(&mut library, &library_path);
@@ -446,24 +382,9 @@ pub fn refresh_asset_library(
 pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Result<(), String> {
     match validate_library_directory(&path) {
         LibraryValidation::Valid => {
+            // Read only: opening a synced library must not write to it
             library.set_library_path(path.clone());
             library.metadata = load_library_metadata(&path);
-
-            // Ensure metadata file exists (create if missing for migration)
-            if !path.join(LIBRARY_METADATA_FILE).exists()
-                && let Err(e) = save_library_metadata(&path, &library.metadata)
-            {
-                warn!("Failed to create metadata file: {}", e);
-            }
-
-            // Ensure maps folder exists
-            let maps_folder = path.join("maps");
-            if !maps_folder.exists()
-                && let Err(e) = std::fs::create_dir_all(&maps_folder)
-            {
-                warn!("Failed to create maps folder: {}", e);
-            }
-
             scan_library_at_path(library, &path);
             library.error = None;
             info!(
@@ -490,15 +411,13 @@ pub fn open_library_directory(library: &mut AssetLibrary, path: PathBuf) -> Resu
 pub fn create_and_open_library(library: &mut AssetLibrary, path: PathBuf) -> Result<(), String> {
     create_library_directory(&path)?;
 
-    // Create metadata with name from folder
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Unnamed Library")
-        .to_string();
-
-    library.metadata = LibraryMetadata { name };
-    save_library_metadata(&path, &library.metadata)?;
+    // A library that already has a manifest keeps its name and id
+    let mut metadata = load_library_metadata(&path);
+    if metadata.id.is_none() {
+        metadata = new_library_metadata(&path);
+        save_library_metadata(&path, &mut metadata)?;
+    }
+    library.metadata = metadata;
 
     library.set_library_path(path.clone());
     scan_library_at_path(library, &path);

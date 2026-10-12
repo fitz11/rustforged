@@ -5402,6 +5402,7 @@ dependencies = [
  "tracing-subscriber",
  "unicode-normalization",
  "ureq",
+ "uuid",
  "zip",
 ]
 

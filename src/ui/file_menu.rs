@@ -87,13 +87,6 @@ pub fn file_menu_ui(
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
-                        // Ensure maps directory exists
-                        if !maps_dir.exists()
-                            && let Err(e) = std::fs::create_dir_all(&maps_dir)
-                        {
-                            warn!("Failed to create maps directory: {}", e);
-                        }
-
                         let filename = sanitize_filename(&menu_state.save_filename);
                         let path = maps_dir.join(format!("{}.json", filename));
                         save_events.write(SaveMapRequest { path });

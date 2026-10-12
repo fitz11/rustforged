@@ -11,7 +11,7 @@
 //! - [`messages`] - Message types for map operations
 //! - [`resources`] - Resource types for state tracking
 //! - [`results`] - Result types for async operations
-//! - [`helpers`] - Utility functions (color conversion, directory creation)
+//! - [`helpers`] - Utility functions (color conversion)
 //! - [`save`] - Save system and task polling
 //! - [`load`] - Load system and task polling
 //! - [`map_state`] - New map and switch map systems
@@ -52,9 +52,6 @@ pub use resources::{
     AsyncMapOperation, CurrentMapFile, MapAssetReport, MapDirtyState, MapLoadError, MapSaveError,
     OpenMaps, UnsavedChangesDialog,
 };
-
-// Re-exports - Helpers
-pub use helpers::ensure_maps_directory;
 
 // Re-exports - Systems
 pub use dirty::{
