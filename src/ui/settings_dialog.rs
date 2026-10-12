@@ -20,6 +20,8 @@ pub struct SettingsDialogState {
     pub library_name: String,
     /// Whether library name has been changed
     pub library_name_changed: bool,
+    /// Edited "move the player view while frozen" setting
+    pub move_player_view_while_frozen: bool,
     /// Pending async file dialog for browsing folders
     pub pending_browse: Option<Task<Option<PathBuf>>>,
 }
@@ -33,6 +35,7 @@ impl SettingsDialogState {
             .as_ref()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
+        self.move_player_view_while_frozen = config.data.move_player_view_while_frozen;
         self.has_changes = false;
         self.library_name_changed = false;
     }
@@ -152,6 +155,34 @@ pub fn settings_dialog_ui(
 
             ui.add_space(12.0);
 
+            // Live Session section
+            ui.group(|ui| {
+                ui.label(egui::RichText::new("Live Session").strong());
+                ui.add_space(8.0);
+
+                if ui
+                    .checkbox(
+                        &mut dialog_state.move_player_view_while_frozen,
+                        "Move the player view while it's frozen",
+                    )
+                    .changed()
+                {
+                    dialog_state.has_changes = true;
+                }
+
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "A frozen player view always hides map edits. With this on, moving, \
+                         resizing, or rotating the viewport still reaches the players.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            });
+
+            ui.add_space(12.0);
+
             // Recent Libraries section (read-only display)
             ui.group(|ui| {
                 ui.label(egui::RichText::new("Recent Libraries").strong());
@@ -235,6 +266,7 @@ pub fn settings_dialog_ui(
 
         // Update config directly
         config.data.default_library_path = new_path.clone();
+        config.data.move_player_view_while_frozen = dialog_state.move_player_view_while_frozen;
         config.dirty = true;
         save_events.write(SaveConfigRequest);
 

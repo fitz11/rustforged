@@ -39,6 +39,8 @@ pub struct LiveSessionState {
     pub viewport_size: Vec2,
     /// Rotation in 90-degree increments (0, 90, 180, 270)
     pub rotation_degrees: i32,
+    /// Players keep seeing the map as it was when this was turned on
+    pub frozen: bool,
 }
 
 impl LiveSessionState {
@@ -63,6 +65,49 @@ impl LiveSessionState {
     /// Rotate viewport by 90 degrees counter-clockwise
     pub fn rotate_ccw(&mut self) {
         self.rotation_degrees = (self.rotation_degrees - 90 + 360) % 360;
+    }
+}
+
+/// The part of the map the player window shows. Follows the session viewport,
+/// except while the player view is frozen in place.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq)]
+pub struct PlayerViewport {
+    pub center: Vec2,
+    pub size: Vec2,
+    /// Rotation in 90-degree increments (0, 90, 180, 270)
+    pub rotation_degrees: i32,
+}
+
+impl PlayerViewport {
+    /// The session's current viewport
+    pub fn of(session_state: &LiveSessionState) -> Self {
+        Self {
+            center: session_state.viewport_center,
+            size: session_state.viewport_size,
+            rotation_degrees: session_state.rotation_degrees,
+        }
+    }
+
+    pub fn rotation_radians(&self) -> f32 {
+        (self.rotation_degrees as f32).to_radians()
+    }
+
+    /// Axis-aligned world bounds (min, max) of the viewport rectangle after
+    /// rotation about its center
+    pub fn world_bounds(&self) -> (Vec2, Vec2) {
+        let half = self.size / 2.0;
+        let rotation = Rot2::radians(self.rotation_radians());
+        let corners = [
+            Vec2::new(-half.x, -half.y),
+            Vec2::new(half.x, -half.y),
+            Vec2::new(half.x, half.y),
+            Vec2::new(-half.x, half.y),
+        ]
+        .map(|corner| self.center + rotation * corner);
+
+        let min = corners.into_iter().reduce(Vec2::min).unwrap_or(self.center);
+        let max = corners.into_iter().reduce(Vec2::max).unwrap_or(self.center);
+        (min, max)
     }
 }
 
@@ -129,6 +174,7 @@ mod tests {
         assert_eq!(state.viewport_center, Vec2::ZERO);
         assert_eq!(state.viewport_size, Vec2::ZERO);
         assert_eq!(state.rotation_degrees, 0);
+        assert!(!state.frozen);
     }
 
     #[test]
@@ -239,6 +285,52 @@ mod tests {
         assert_eq!(state.rotation_degrees, 90);
         state.rotate_ccw();
         assert_eq!(state.rotation_degrees, 0);
+    }
+
+    // PlayerViewport tests
+    #[test]
+    fn test_player_viewport_of_session() {
+        let state = LiveSessionState {
+            viewport_center: Vec2::new(10.0, 20.0),
+            viewport_size: Vec2::new(400.0, 300.0),
+            rotation_degrees: 90,
+            ..Default::default()
+        };
+        let viewport = PlayerViewport::of(&state);
+        assert_eq!(viewport.center, Vec2::new(10.0, 20.0));
+        assert_eq!(viewport.size, Vec2::new(400.0, 300.0));
+        assert_eq!(viewport.rotation_degrees, 90);
+    }
+
+    fn assert_near(actual: Vec2, expected: Vec2) {
+        assert!(
+            (actual - expected).length() < 0.001,
+            "{actual:?} != {expected:?}"
+        );
+    }
+
+    #[test]
+    fn test_player_viewport_world_bounds_unrotated() {
+        let viewport = PlayerViewport {
+            center: Vec2::new(100.0, 50.0),
+            size: Vec2::new(400.0, 300.0),
+            rotation_degrees: 0,
+        };
+        let (min, max) = viewport.world_bounds();
+        assert_near(min, Vec2::new(-100.0, -100.0));
+        assert_near(max, Vec2::new(300.0, 200.0));
+    }
+
+    #[test]
+    fn test_player_viewport_world_bounds_quarter_turn_swaps_extents() {
+        let viewport = PlayerViewport {
+            center: Vec2::ZERO,
+            size: Vec2::new(400.0, 300.0),
+            rotation_degrees: 90,
+        };
+        let (min, max) = viewport.world_bounds();
+        assert_near(min, Vec2::new(-150.0, -200.0));
+        assert_near(max, Vec2::new(150.0, 200.0));
     }
 
     // ViewportDragMode tests

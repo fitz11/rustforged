@@ -23,7 +23,7 @@ use bevy_egui::EguiContexts;
 use super::camera::EditorCamera;
 use super::params::{CameraParams, is_cursor_over_ui};
 use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius};
-use crate::session::LiveSessionState;
+use crate::session::{LiveSessionState, PlayerMapView, PlayerViewport};
 use crate::theme;
 
 // ============================================================================
@@ -281,8 +281,7 @@ pub fn render_fog_brush_preview(
 /// complete coverage.
 pub fn render_fog_player(
     mut gizmos: Gizmos<FogPlayerGizmoGroup>,
-    fog_data: Res<FogOfWarData>,
-    map_data: Res<MapData>,
+    player_view: PlayerMapView,
     session_state: Res<LiveSessionState>,
 ) {
     // Only render player fog when session is active and fog layer is visible
@@ -290,18 +289,19 @@ pub fn render_fog_player(
         return;
     }
 
+    // The fog players see: frozen along with the rest of the map while frozen
+    let map_data = player_view.map_data();
+    let fog_data = player_view.fog();
+
     // Check if fog layer is enabled
-    if !is_fog_layer_visible(&map_data) {
+    if !is_fog_layer_visible(map_data) {
         return;
     }
 
     let grid_size = map_data.grid_size;
     let fog_color = theme::FOG_PLAYER;
 
-    // Calculate rotation-aware viewport bounds
-    // When viewport is rotated, we need the axis-aligned bounding box that
-    // contains all four corners of the rotated rectangle
-    let (min_cell, max_cell) = get_rotated_viewport_cell_bounds(&session_state, grid_size);
+    let (min_cell, max_cell) = get_player_viewport_cell_bounds(&player_view.viewport, grid_size);
 
     // Dense line spacing for player view - want complete black coverage
     // Spacing of 0.5 with line_width of 8.0 ensures overlap even at max zoom (10x)
@@ -334,53 +334,18 @@ pub fn render_fog_player(
 
 /// Get the cell bounds for the player viewport, accounting for rotation.
 ///
-/// When the viewport is rotated, we need to calculate the axis-aligned bounding
-/// box (AABB) that contains all four corners of the rotated rectangle.
-fn get_rotated_viewport_cell_bounds(
-    session_state: &LiveSessionState,
+/// When the viewport is rotated, this covers the axis-aligned bounding box
+/// (AABB) that contains all four corners of the rotated rectangle.
+fn get_player_viewport_cell_bounds(
+    viewport: &PlayerViewport,
     grid_size: f32,
 ) -> ((i32, i32), (i32, i32)) {
-    let center = session_state.viewport_center;
-    let size = session_state.viewport_size; // Use raw size, not effective
-    let half_w = size.x / 2.0;
-    let half_h = size.y / 2.0;
-    let rotation = session_state.rotation_radians();
-
-    // Calculate the four corners relative to center (before rotation)
-    let corners_local = [
-        Vec2::new(-half_w, -half_h), // bottom-left
-        Vec2::new(half_w, -half_h),  // bottom-right
-        Vec2::new(half_w, half_h),   // top-right
-        Vec2::new(-half_w, half_h),  // top-left
-    ];
-
-    // Rotate each corner and find the AABB
-    let cos_r = rotation.cos();
-    let sin_r = rotation.sin();
-
-    let mut min_x = f32::MAX;
-    let mut max_x = f32::MIN;
-    let mut min_y = f32::MAX;
-    let mut max_y = f32::MIN;
-
-    for corner in corners_local {
-        // Apply rotation: x' = x*cos - y*sin, y' = x*sin + y*cos
-        let rotated = Vec2::new(
-            corner.x * cos_r - corner.y * sin_r,
-            corner.x * sin_r + corner.y * cos_r,
-        );
-        let world_pos = center + rotated;
-
-        min_x = min_x.min(world_pos.x);
-        max_x = max_x.max(world_pos.x);
-        min_y = min_y.min(world_pos.y);
-        max_y = max_y.max(world_pos.y);
-    }
+    let (min, max) = viewport.world_bounds();
 
     // Add padding for cells partially visible at edges
     let padding = grid_size * 2.0;
-    let min_world = Vec2::new(min_x - padding, min_y - padding);
-    let max_world = Vec2::new(max_x + padding, max_y + padding);
+    let min_world = min - Vec2::splat(padding);
+    let max_world = max + Vec2::splat(padding);
 
     let min_cell = crate::map::world_to_cell(min_world, grid_size);
     let max_cell = crate::map::world_to_cell(max_world, grid_size);

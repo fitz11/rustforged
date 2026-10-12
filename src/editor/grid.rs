@@ -1,7 +1,10 @@
+use bevy::camera::visibility::RenderLayers;
+use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 
 use crate::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
 use crate::map::MapData;
+use crate::session::PlayerMapView;
 use crate::theme;
 
 use super::EditorCamera;
@@ -31,31 +34,33 @@ pub fn snap_to_grid(position: Vec2, grid_size: f32, snap_enabled: bool) -> Vec2 
     )
 }
 
-pub fn draw_grid(
-    mut gizmos: Gizmos,
-    map_data: Res<MapData>,
-    camera_query: Query<(&Transform, &CameraZoom), With<EditorCamera>>,
+/// Gizmo group for the grid in the player view (player-only render layer 2)
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct PlayerGridGizmoGroup;
+
+/// Keep default gizmos (the editor grid, missing-asset markers) out of the
+/// player view; players get their own grid, drawn over what they can see
+pub fn configure_grid_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
+    let (default_config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
+    default_config.render_layers = RenderLayers::layer(1);
+
+    let (player_config, _) = config_store.config_mut::<PlayerGridGizmoGroup>();
+    player_config.render_layers = RenderLayers::layer(2);
+}
+
+/// Draw grid lines covering the world-space rectangle from `min` to `max`
+fn draw_grid_lines<Config: GizmoConfigGroup>(
+    gizmos: &mut Gizmos<Config>,
+    min: Vec2,
+    max: Vec2,
+    grid_size: f32,
 ) {
-    if !map_data.grid_visible {
-        return;
-    }
-
-    let Ok((camera_transform, zoom)) = camera_query.single() else {
-        return;
-    };
-
-    let grid_size = map_data.grid_size;
     let grid_color = theme::GRID_COLOR;
 
-    let view_width = DEFAULT_WINDOW_WIDTH * zoom.scale;
-    let view_height = DEFAULT_WINDOW_HEIGHT * zoom.scale;
-
-    let camera_pos = camera_transform.translation.truncate();
-
-    let start_x = ((camera_pos.x - view_width / 2.0) / grid_size).floor() as i32;
-    let end_x = ((camera_pos.x + view_width / 2.0) / grid_size).ceil() as i32;
-    let start_y = ((camera_pos.y - view_height / 2.0) / grid_size).floor() as i32;
-    let end_y = ((camera_pos.y + view_height / 2.0) / grid_size).ceil() as i32;
+    let start_x = (min.x / grid_size).floor() as i32;
+    let end_x = (max.x / grid_size).ceil() as i32;
+    let start_y = (min.y / grid_size).floor() as i32;
+    let end_y = (max.y / grid_size).ceil() as i32;
 
     for x in start_x..=end_x {
         let x_pos = x as f32 * grid_size;
@@ -74,6 +79,41 @@ pub fn draw_grid(
             grid_color,
         );
     }
+}
+
+pub fn draw_grid(
+    mut gizmos: Gizmos,
+    map_data: Res<MapData>,
+    camera_query: Query<(&Transform, &CameraZoom), With<EditorCamera>>,
+) {
+    if !map_data.grid_visible {
+        return;
+    }
+
+    let Ok((camera_transform, zoom)) = camera_query.single() else {
+        return;
+    };
+
+    let view_size = Vec2::new(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) * zoom.scale;
+    let camera_pos = camera_transform.translation.truncate();
+
+    draw_grid_lines(
+        &mut gizmos,
+        camera_pos - view_size / 2.0,
+        camera_pos + view_size / 2.0,
+        map_data.grid_size,
+    );
+}
+
+/// Draw the grid in the player view, over the area the players can see
+pub fn draw_player_grid(mut gizmos: Gizmos<PlayerGridGizmoGroup>, player_view: PlayerMapView) {
+    let map_data = player_view.map_data();
+    if !map_data.grid_visible {
+        return;
+    }
+
+    let (min, max) = player_view.viewport.world_bounds();
+    draw_grid_lines(&mut gizmos, min, max, map_data.grid_size);
 }
 
 #[cfg(test)]

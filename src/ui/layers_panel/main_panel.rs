@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::assets::{RetargetAssetRequest, SelectedAsset};
+use crate::config::AppConfig;
 use crate::map::{FogOfWarData, MapData, MapDirtyState, MissingAsset, Selected};
 use crate::session::LiveSessionState;
 use crate::ui::panel_layout::DockedPanel;
@@ -28,6 +29,7 @@ pub fn layers_panel_ui(
     missing_query: Query<Entity, (With<Selected>, With<MissingAsset>)>,
     selected_asset: Res<SelectedAsset>,
     mut retarget_events: MessageWriter<RetargetAssetRequest>,
+    config: Res<AppConfig>,
 ) -> Result {
     let missing: Vec<Entity> = missing_query.iter().collect();
     let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
@@ -53,7 +55,11 @@ pub fn layers_panel_ui(
             );
 
             // Live Session controls (when active)
-            render_session_controls(ui, &mut session_state);
+            render_session_controls(
+                ui,
+                &mut session_state,
+                config.data.move_player_view_while_frozen,
+            );
 
             // Help button and version (bottom center)
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {

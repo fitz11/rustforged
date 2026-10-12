@@ -22,6 +22,11 @@ pub struct AppConfigData {
     /// Last opened map file path (not auto-loaded, just remembered for quick access)
     #[serde(default)]
     pub last_map_path: Option<PathBuf>,
+
+    /// While the player view is frozen, keep moving it with the session viewport
+    /// (the map itself stays frozen either way)
+    #[serde(default)]
+    pub move_player_view_while_frozen: bool,
 }
 
 /// Runtime configuration resource
@@ -278,6 +283,7 @@ mod tests {
         assert!(data.default_library_path.is_none());
         assert!(data.recent_libraries.is_empty());
         assert!(data.last_map_path.is_none());
+        assert!(!data.move_player_view_while_frozen);
     }
 
     #[test]
@@ -286,6 +292,7 @@ mod tests {
             default_library_path: Some(PathBuf::from("/path/to/library")),
             recent_libraries: vec![PathBuf::from("/path/one"), PathBuf::from("/path/two")],
             last_map_path: Some(PathBuf::from("/path/to/map.json")),
+            move_player_view_while_frozen: true,
         };
 
         let json = serde_json::to_string(&data).unwrap();
@@ -294,6 +301,16 @@ mod tests {
         assert_eq!(parsed.default_library_path, data.default_library_path);
         assert_eq!(parsed.recent_libraries, data.recent_libraries);
         assert_eq!(parsed.last_map_path, data.last_map_path);
+        assert!(parsed.move_player_view_while_frozen);
+    }
+
+    #[test]
+    fn test_app_config_data_missing_fields_use_defaults() {
+        // Configs written before a setting existed must still load
+        let parsed: AppConfigData =
+            serde_json::from_str(r#"{"recent_libraries": ["/path/one"]}"#).unwrap();
+        assert_eq!(parsed.recent_libraries, vec![PathBuf::from("/path/one")]);
+        assert!(!parsed.move_player_view_while_frozen);
     }
 
     #[test]

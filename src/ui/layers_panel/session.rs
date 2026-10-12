@@ -5,7 +5,14 @@ use bevy_egui::egui;
 use crate::session::LiveSessionState;
 
 /// Renders the Live Session controls section when a session is active.
-pub fn render_session_controls(ui: &mut egui::Ui, session_state: &mut LiveSessionState) {
+///
+/// `move_while_frozen` is the setting that lets viewport moves reach players
+/// while their view is frozen.
+pub fn render_session_controls(
+    ui: &mut egui::Ui,
+    session_state: &mut LiveSessionState,
+    move_while_frozen: bool,
+) {
     if !session_state.is_active {
         return;
     }
@@ -28,6 +35,21 @@ pub fn render_session_controls(ui: &mut egui::Ui, session_state: &mut LiveSessio
             .size(13.0)
             .weak(),
         );
+    }
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        toggle_switch(ui, &mut session_state.frozen)
+            .on_hover_text("Hold the player view while you edit the map");
+        ui.label(egui::RichText::new("Freeze player view").size(14.0));
+    });
+    if session_state.frozen {
+        let hint = if move_while_frozen {
+            "Players see the map as it was when frozen. Viewport moves still reach them."
+        } else {
+            "Players see the map and view as they were when frozen."
+        };
+        ui.label(egui::RichText::new(hint).size(12.0).weak());
     }
 
     ui.add_space(8.0);
@@ -104,4 +126,40 @@ pub fn render_session_controls(ui: &mut egui::Ui, session_state: &mut LiveSessio
     {
         session_state.is_active = false;
     }
+}
+
+/// An on/off switch, like a checkbox without a label
+fn toggle_switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
+    let size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
+    let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed();
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, "")
+    });
+
+    if ui.is_rect_visible(rect) {
+        let how_on = ui.ctx().animate_bool_responsive(response.id, *on);
+        let visuals = ui.style().interact_selectable(&response, *on);
+        let rect = rect.expand(visuals.expansion);
+        let radius = 0.5 * rect.height();
+        ui.painter().rect(
+            rect,
+            radius,
+            visuals.bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+        let knob_x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), how_on);
+        ui.painter().circle(
+            egui::pos2(knob_x, rect.center().y),
+            0.75 * radius,
+            visuals.bg_fill,
+            visuals.fg_stroke,
+        );
+    }
+
+    response
 }

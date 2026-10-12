@@ -8,15 +8,12 @@ use crate::editor::EditorCamera;
 use crate::theme;
 use crate::ui::panel_layout::is_pointer_over_ui;
 
-use super::state::{LiveSessionState, ViewportDragMode, ViewportDragState};
+use super::state::{LiveSessionState, PlayerViewport, ViewportDragMode, ViewportDragState};
 
 const HANDLE_SIZE: f32 = 8.0;
 const MOVE_HANDLE_WIDTH: f32 = 60.0;
 const MOVE_HANDLE_HEIGHT: f32 = 16.0;
 const MOVE_HANDLE_OFFSET: f32 = 12.0; // Distance above top edge
-const VIEWPORT_COLOR: Color = theme::VIEWPORT_OUTLINE;
-const VIEWPORT_FILL_COLOR: Color = theme::VIEWPORT_FILL;
-const MOVE_HANDLE_COLOR: Color = theme::VIEWPORT_HANDLE;
 
 /// Custom gizmo group for viewport indicator (editor-only rendering)
 #[derive(Default, Reflect, GizmoConfigGroup)]
@@ -35,9 +32,35 @@ pub fn configure_viewport_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
 pub fn draw_viewport_indicator(
     mut gizmos: Gizmos<ViewportGizmoGroup>,
     session_state: Res<LiveSessionState>,
+    player_viewport: Res<PlayerViewport>,
 ) {
     if !session_state.is_active {
         return;
+    }
+
+    // Ice blue while frozen, as a reminder that players aren't seeing edits
+    let (outline_color, fill_color, handle_color) = if session_state.frozen {
+        (
+            theme::VIEWPORT_FROZEN_OUTLINE,
+            theme::VIEWPORT_FROZEN_FILL,
+            theme::VIEWPORT_FROZEN_HANDLE,
+        )
+    } else {
+        (
+            theme::VIEWPORT_OUTLINE,
+            theme::VIEWPORT_FILL,
+            theme::VIEWPORT_HANDLE,
+        )
+    };
+
+    // Where the players are looking, once a frozen view stops following the
+    // viewport (see AppConfigData::move_player_view_while_frozen)
+    if session_state.frozen && *player_viewport != PlayerViewport::of(&session_state) {
+        gizmos.rect_2d(
+            Isometry2d::from_translation(player_viewport.center),
+            player_viewport.size,
+            outline_color.with_alpha(0.35),
+        );
     }
 
     let center = session_state.viewport_center;
@@ -45,13 +68,13 @@ pub fn draw_viewport_indicator(
     let rotation = session_state.rotation_radians();
 
     // Draw main rectangle outline (unrotated - shows actual world bounds)
-    gizmos.rect_2d(Isometry2d::from_translation(center), size, VIEWPORT_COLOR);
+    gizmos.rect_2d(Isometry2d::from_translation(center), size, outline_color);
 
     // Draw a second slightly offset rectangle for visibility
     gizmos.rect_2d(
         Isometry2d::from_translation(center),
         size + Vec2::splat(2.0),
-        VIEWPORT_COLOR.with_alpha(0.5),
+        outline_color.with_alpha(0.5),
     );
 
     let half = size / 2.0;
@@ -68,7 +91,7 @@ pub fn draw_viewport_indicator(
         gizmos.rect_2d(
             Isometry2d::from_translation(corner),
             Vec2::splat(HANDLE_SIZE),
-            VIEWPORT_COLOR,
+            outline_color,
         );
     }
 
@@ -84,7 +107,7 @@ pub fn draw_viewport_indicator(
         gizmos.rect_2d(
             Isometry2d::from_translation(edge),
             Vec2::splat(HANDLE_SIZE * 0.75),
-            VIEWPORT_COLOR,
+            outline_color,
         );
     }
 
@@ -95,7 +118,7 @@ pub fn draw_viewport_indicator(
     gizmos.rect_2d(
         Isometry2d::from_translation(move_handle_center),
         Vec2::new(MOVE_HANDLE_WIDTH, MOVE_HANDLE_HEIGHT),
-        MOVE_HANDLE_COLOR,
+        handle_color,
     );
 
     // Draw filled appearance with horizontal lines in move handle
@@ -104,13 +127,13 @@ pub fn draw_viewport_indicator(
     for i in [-4.0, 0.0, 4.0] {
         let line_start = center + Vec2::new(-handle_half_w + 8.0, half.y + MOVE_HANDLE_OFFSET + i);
         let line_end = center + Vec2::new(handle_half_w - 8.0, half.y + MOVE_HANDLE_OFFSET + i);
-        gizmos.line_2d(line_start, line_end, MOVE_HANDLE_COLOR);
+        gizmos.line_2d(line_start, line_end, handle_color);
     }
 
     // Draw connector line from viewport to move handle
     let connector_top = center + Vec2::new(0.0, half.y + MOVE_HANDLE_OFFSET - handle_half_h);
     let connector_bottom = center + Vec2::new(0.0, half.y);
-    gizmos.line_2d(connector_bottom, connector_top, VIEWPORT_COLOR);
+    gizmos.line_2d(connector_bottom, connector_top, outline_color);
 
     // Draw fill lines for visibility (unrotated)
     let step = 40.0;
@@ -118,7 +141,7 @@ pub fn draw_viewport_indicator(
     while y < half.y {
         let line_start = center + Vec2::new(-half.x, y);
         let line_end = center + Vec2::new(half.x, y);
-        gizmos.line_2d(line_start, line_end, VIEWPORT_FILL_COLOR);
+        gizmos.line_2d(line_start, line_end, fill_color);
         y += step;
     }
 
@@ -136,7 +159,7 @@ pub fn draw_viewport_indicator(
     let arrow_end = center + up_dir * arrow_length;
 
     // Draw arrow shaft
-    gizmos.line_2d(arrow_start, arrow_end, VIEWPORT_COLOR);
+    gizmos.line_2d(arrow_start, arrow_end, outline_color);
 
     // Draw arrow head
     let perp = Vec2::new(-up_dir.y, up_dir.x);
@@ -144,12 +167,12 @@ pub fn draw_viewport_indicator(
     gizmos.line_2d(
         arrow_end,
         head_base + perp * arrow_head_size * 0.5,
-        VIEWPORT_COLOR,
+        outline_color,
     );
     gizmos.line_2d(
         arrow_end,
         head_base - perp * arrow_head_size * 0.5,
-        VIEWPORT_COLOR,
+        outline_color,
     );
 }
 

@@ -39,6 +39,15 @@ pub const VIEWPORT_FILL: Color = Color::srgba(1.0, 0.7, 0.2, 0.1);
 /// Opaque orange for the viewport move handle
 pub const VIEWPORT_HANDLE: Color = Color::srgba(1.0, 0.7, 0.2, 1.0);
 
+/// Ice blue outline for the viewport indicator while the player view is frozen
+pub const VIEWPORT_FROZEN_OUTLINE: Color = Color::srgba(0.45, 0.8, 1.0, 0.9);
+
+/// Light ice blue fill for the viewport indicator while frozen
+pub const VIEWPORT_FROZEN_FILL: Color = Color::srgba(0.45, 0.8, 1.0, 0.1);
+
+/// Opaque ice blue for the viewport move handle while frozen
+pub const VIEWPORT_FROZEN_HANDLE: Color = Color::srgba(0.45, 0.8, 1.0, 1.0);
+
 // ============================================================================
 // Annotation Colors
 // ============================================================================

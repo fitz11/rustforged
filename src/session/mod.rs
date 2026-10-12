@@ -1,10 +1,13 @@
+pub mod freeze;
 mod keep_awake;
 mod player_window;
 pub mod state;
 mod viewport;
 
+pub use freeze::PlayerMapView;
 pub use state::{
-    LiveSessionState, MonitorInfo, MonitorSelectionDialog, ViewportDragMode, ViewportDragState,
+    LiveSessionState, MonitorInfo, MonitorSelectionDialog, PlayerViewport, ViewportDragMode,
+    ViewportDragState,
 };
 pub use viewport::get_handle_at_position;
 
@@ -19,6 +22,8 @@ impl Plugin for LiveSessionPlugin {
         app.init_resource::<LiveSessionState>()
             .init_resource::<ViewportDragState>()
             .init_resource::<MonitorSelectionDialog>()
+            .init_resource::<PlayerViewport>()
+            .init_resource::<freeze::FrozenPlayerView>()
             .init_resource::<keep_awake::KeepAwakeGuard>()
             .init_gizmo_group::<viewport::ViewportGizmoGroup>()
             .add_systems(Startup, viewport::configure_viewport_gizmos)
@@ -31,6 +36,8 @@ impl Plugin for LiveSessionPlugin {
                     player_window::create_player_window
                         .run_if(resource_changed::<LiveSessionState>),
                     player_window::setup_player_camera,
+                    // No run_if here - needs to run to unfreeze after session ends
+                    freeze::sync_freeze.before(player_window::sync_player_camera),
                     player_window::sync_player_camera.run_if(session_is_active),
                     // No run_if here - needs to run to clean up after session ends
                     player_window::handle_player_window_close,

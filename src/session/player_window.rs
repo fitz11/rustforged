@@ -1,11 +1,13 @@
-use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{RenderTarget, ScalingMode};
 use bevy::prelude::*;
 #[cfg(target_os = "macos")]
 use bevy::window::WindowResolution;
 use bevy::window::{WindowCloseRequested, WindowMode, WindowRef};
 
-use super::state::LiveSessionState;
+use crate::config::AppConfig;
+
+use super::freeze::{FrozenPlayerView, player_camera_layers};
+use super::state::{LiveSessionState, PlayerViewport};
 
 /// Marker component for the player view window
 #[derive(Component)]
@@ -145,9 +147,10 @@ pub fn setup_player_camera(
                 ..OrthographicProjection::default_2d()
             }),
             Transform::from_translation(session_state.viewport_center.extend(1000.0)),
-            // Render layer 0 (main content) and layer 2 (player-only fog)
-            // Does not see layer 1 (editor-only: annotations, viewport indicator)
-            RenderLayers::from_layers(&[0, 2]),
+            // Render layer 0 (main content) and layer 2 (player-only fog and grid)
+            // Does not see layer 1 (editor-only: annotations, viewport indicator).
+            // sync_freeze swaps layer 0 for the frozen copies while frozen.
+            player_camera_layers(false),
         ));
 
         info!("Created player camera targeting window {:?}", window_entity);
@@ -157,19 +160,27 @@ pub fn setup_player_camera(
 /// Sync the player camera position, rotation, and projection with the viewport
 pub fn sync_player_camera(
     session_state: Res<LiveSessionState>,
+    config: Res<AppConfig>,
+    frozen_view: Res<FrozenPlayerView>,
+    mut player_viewport: ResMut<PlayerViewport>,
     mut camera_query: Query<(&mut Transform, &mut Projection), With<PlayerCamera>>,
 ) {
     if !session_state.is_active {
         return;
     }
 
+    // A frozen view holds still unless settings let viewport moves through
+    if !frozen_view.is_frozen() || config.data.move_player_view_while_frozen {
+        player_viewport.set_if_neq(PlayerViewport::of(&session_state));
+    }
+
     for (mut transform, mut projection) in camera_query.iter_mut() {
         // Update camera position to viewport center
-        transform.translation.x = session_state.viewport_center.x;
-        transform.translation.y = session_state.viewport_center.y;
+        transform.translation.x = player_viewport.center.x;
+        transform.translation.y = player_viewport.center.y;
 
         // Apply rotation (negative because camera rotation is inverse of content rotation)
-        transform.rotation = Quat::from_rotation_z(-session_state.rotation_radians());
+        transform.rotation = Quat::from_rotation_z(-player_viewport.rotation_radians());
 
         // Keep the projection aspect-preserving so grid cells render square in
         // every orientation. AutoMax bounds the visible region to the viewport
@@ -179,7 +190,7 @@ pub fn sync_player_camera(
         // monitor's reported aspect and the actual window framebuffer; the earlier
         // ScalingMode::Fixed relied on those aspects matching exactly and skewed
         // cells (and stretched by ~aspect^2 when fed rotation-swapped dimensions).
-        let size = session_state.viewport_size;
+        let size = player_viewport.size;
         if let Projection::Orthographic(ref mut ortho) = *projection {
             ortho.scaling_mode = ScalingMode::AutoMax {
                 max_width: size.x,

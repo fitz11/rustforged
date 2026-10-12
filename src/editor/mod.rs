@@ -73,6 +73,7 @@ impl Plugin for EditorPlugin {
             .init_gizmo_group::<fog::FogEditorGizmoGroup>()
             .init_gizmo_group::<fog::FogPlayerGizmoGroup>()
             .init_gizmo_group::<selection::SelectionGizmoGroup>()
+            .init_gizmo_group::<grid::PlayerGridGizmoGroup>()
             .add_systems(
                 Startup,
                 (
@@ -81,6 +82,7 @@ impl Plugin for EditorPlugin {
                     fog::configure_fog_gizmos,
                     selection::configure_selection_gizmos,
                     placement::spawn_placement_ghost,
+                    grid::configure_grid_gizmos,
                 ),
             )
             .add_systems(
@@ -90,6 +92,7 @@ impl Plugin for EditorPlugin {
                     camera::camera_zoom.run_if(on_message::<MouseWheel>),
                     camera::apply_camera_zoom,
                     grid::draw_grid,
+                    grid::draw_player_grid.run_if(session_is_active),
                     tools::handle_tool_shortcuts.run_if(no_dialog_open),
                     tools::update_cursor_icon,
                     // After handle_selection: a placement can switch to Select,

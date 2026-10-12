@@ -35,7 +35,7 @@ The application uses Bevy's Entity Component System (ECS) with a plugin-based ar
 | EditorPlugin | `src/editor/` | Tools, camera, selection, clipboard, history | `CurrentTool`, `SelectedLayer`, `GridSettings`, `Clipboard`, `CommandHistory` |
 | AssetLibraryPlugin | `src/assets/` | Asset discovery, thumbnail caching | `AssetLibrary`, `ThumbnailCache`, `SelectedAsset` |
 | MapPlugin | `src/map/` | Map data, layers, persistence, fog of war | `MapData`, `FogOfWarData`, `CurrentMapFile`, `MapDirtyState` |
-| LiveSessionPlugin | `src/session/` | Player window, viewport controls | `LiveSessionState`, `ViewportDragState` |
+| LiveSessionPlugin | `src/session/` | Player window, viewport controls, freezing the player view | `LiveSessionState`, `ViewportDragState`, `PlayerViewport`, `FrozenPlayerView` |
 | UiPlugin | `src/ui/` | egui panels, toolbars, dialogs | `DialogState`, `AssetBrowserState` |
 | UpdateCheckerPlugin | `src/update/` | Version checking, downloads | `UpdateState` |
 
@@ -75,6 +75,7 @@ The application uses Bevy's Entity Component System (ECS) with a plugin-based ar
 - `src/ui/asset_browser/` - Left panel asset management
 - `src/ui/layers_panel/` - Right panel layer controls
 - `src/session/player_window.rs` - Secondary monitor player view
+- `src/session/freeze.rs` - Frozen player view: copies player-visible items to render layer 3; draw anything players see from `PlayerMapView`, not the live `MapData`/`FogOfWarData`
 
 ## Linter Configuration
 

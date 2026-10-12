@@ -125,6 +125,12 @@ You can open or create custom asset libraries via the left panel. Maps are saved
 
 The player window shows a fullscreen view without annotations or viewport indicator.
 
+### Freezing the player view
+
+Turn on **Freeze player view** in the Live Session panel to edit the map without players seeing it. Players keep seeing the map, fog, and grid as they were at that moment; turn it off to show them everything at once. While frozen, the toolbar shows **LIVE · FROZEN** and the viewport indicator turns blue.
+
+By default the player view also holds still while frozen, so you can frame the next reveal with the viewport; a faint outline marks what players currently see. To keep moving the player view with the viewport instead, enable **Move the player view while it's frozen** in Settings.
+
 ## Dependencies
 
 | Crate | Version | Purpose |

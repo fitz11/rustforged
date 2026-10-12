@@ -54,7 +54,13 @@ pub fn toolbar_ui(
 
                 // Right-aligned session controls
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if session_state.is_active {
+                    if session_state.is_active && session_state.frozen {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(115, 205, 255),
+                            egui::RichText::new("● LIVE · FROZEN").strong(),
+                        )
+                        .on_hover_text("Players don't see map edits until you unfreeze");
+                    } else if session_state.is_active {
                         ui.colored_label(
                             egui::Color32::from_rgb(100, 200, 100),
                             egui::RichText::new("● LIVE").strong(),
