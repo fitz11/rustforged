@@ -12,6 +12,7 @@ mod drag;
 mod gizmos;
 mod handle;
 mod hit_detection;
+mod resize;
 mod shortcuts;
 
 use bevy::prelude::*;
@@ -60,25 +61,27 @@ pub enum AnnotationDragData {
     },
 }
 
+/// A placed item as it was when a drag started
+#[derive(Clone, Copy, Debug)]
+pub struct ItemDragStart {
+    pub entity: Entity,
+    pub transform: Transform,
+    /// Half its size in its own frame: sprite size times scale, always positive
+    pub half_size: Vec2,
+}
+
 #[derive(Resource, Default)]
 pub struct DragState {
     pub is_dragging: bool,
     pub drag_start_world: Vec2,
     /// The current drag mode (move, resize, or rotate)
     pub mode: SelectionDragMode,
-    /// Original selection bounds when resize started (min, max)
+    /// Original selection bounds when the drag started (min, max)
     pub original_bounds: Option<(Vec2, Vec2)>,
-    /// Maps entity to its starting position when drag began (for PlacedItems)
-    pub entity_start_positions: Vec<(Entity, Vec2)>,
-    /// Full starting transform for each placed item when drag began, used to
-    /// record a MoveItems undo command on release.
-    pub entity_start_transforms: Vec<(Entity, Transform)>,
-    /// Maps entity to its original scale when drag began (for resizing)
-    pub entity_start_scales: Vec<(Entity, Vec3)>,
-    /// Maps entity to its original rotation when drag began (for rotating)
-    pub entity_start_rotations: Vec<(Entity, Quat)>,
-    /// Maps entity to its original half-size (sprite size * scale) for rotation-aware resizing
-    pub entity_start_half_sizes: Vec<(Entity, Vec2)>,
+    /// Placed items being dragged, as they were when the drag started
+    pub items: Vec<ItemDragStart>,
+    /// For a resize, the item whose handle was grabbed; the others scale like it
+    pub resize_reference: Option<Entity>,
     /// The starting angle (radians) from selection center to cursor when rotation began
     pub rotation_start_angle: Option<f32>,
     /// Maps entity to its annotation drag data when drag began

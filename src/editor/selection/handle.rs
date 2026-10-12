@@ -14,9 +14,10 @@ use crate::map::{MapData, PlacedItem, Selected};
 
 use super::hit_detection::{
     check_rotation_handle_hit, compute_selection_bounds, find_clicked_annotation,
-    get_selection_handle_at_position, get_sprite_half_size, point_in_item,
+    get_selection_handle_at_position, get_sprite_half_size, point_in_item, rotate_point,
 };
-use super::{AnnotationDragData, BoxSelectState, DragState, SelectionDragMode};
+use super::resize::{handle_edges, handle_position};
+use super::{AnnotationDragData, BoxSelectState, DragState, ItemDragStart, SelectionDragMode};
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_selection(
@@ -74,12 +75,12 @@ pub fn handle_selection(
             // Get bounds for resize operations (still needed for resize logic)
             let bounds = compute_selection_bounds(&selected_sprites_query, &images);
             // Start resize, move, or rotate operation
-            start_selection_drag(
+            start_drag(
                 &mut drag_state,
                 world_pos,
                 handle_mode,
                 bounds,
-                &selected_query,
+                selected_query.iter(),
                 &items_query,
                 &images,
                 &annotations.paths,
@@ -130,12 +131,12 @@ pub fn handle_selection(
                 }
             } else if is_selected {
                 // Clicked on already selected annotation: start dragging all selected
-                start_selection_drag(
+                start_drag(
                     &mut drag_state,
                     world_pos,
                     SelectionDragMode::Move,
                     None,
-                    &selected_query,
+                    selected_query.iter(),
                     &items_query,
                     &images,
                     &annotations.paths,
@@ -150,17 +151,20 @@ pub fn handle_selection(
                 commands.entity(entity).insert(Selected);
 
                 // Start dragging this annotation
-                start_drag_for_entity(
+                start_drag(
                     &mut drag_state,
                     world_pos,
-                    entity,
+                    SelectionDragMode::Move,
+                    None,
+                    [entity],
                     &items_query,
+                    &images,
                     &annotations.paths,
                     &annotations.lines,
                     &annotations.texts,
                 );
             }
-        } else if let Some(&(entity, transform, _, _)) = clicked_item {
+        } else if let Some(&(entity, _, _, _)) = clicked_item {
             let is_selected = selected_query.contains(entity);
 
             if ctrl_held {
@@ -172,12 +176,12 @@ pub fn handle_selection(
                 }
             } else if is_selected {
                 // Clicked on already selected item: start dragging all selected items
-                start_selection_drag(
+                start_drag(
                     &mut drag_state,
                     world_pos,
                     SelectionDragMode::Move,
                     None,
-                    &selected_query,
+                    selected_query.iter(),
                     &items_query,
                     &images,
                     &annotations.paths,
@@ -192,16 +196,18 @@ pub fn handle_selection(
                 commands.entity(entity).insert(Selected);
 
                 // Start dragging this item
-                drag_state.is_dragging = true;
-                drag_state.mode = SelectionDragMode::Move;
-                drag_state.drag_start_world = world_pos;
-                drag_state.entity_start_positions =
-                    vec![(entity, transform.translation.truncate())];
-                drag_state.entity_start_transforms = vec![(entity, *transform)];
-                drag_state.entity_start_scales = vec![(entity, transform.scale)];
-                drag_state.entity_start_rotations.clear();
-                drag_state.entity_start_half_sizes.clear();
-                drag_state.annotation_drag_data.clear();
+                start_drag(
+                    &mut drag_state,
+                    world_pos,
+                    SelectionDragMode::Move,
+                    None,
+                    [entity],
+                    &items_query,
+                    &images,
+                    &annotations.paths,
+                    &annotations.lines,
+                    &annotations.texts,
+                );
             }
         } else {
             // Clicked on empty space - start box selection
@@ -218,14 +224,15 @@ pub fn handle_selection(
     }
 }
 
-/// Start dragging/resizing/rotating all selected entities
+/// Start dragging, resizing or rotating `entities`: remembers how each was when the drag
+/// started.
 #[allow(clippy::too_many_arguments)]
-fn start_selection_drag(
-    drag_state: &mut ResMut<DragState>,
+fn start_drag(
+    drag_state: &mut DragState,
     world_pos: Vec2,
     mode: SelectionDragMode,
     bounds: Option<(Vec2, Vec2)>,
-    selected_query: &Query<Entity, With<Selected>>,
+    entities: impl IntoIterator<Item = Entity>,
     items_query: &Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
     images: &Assets<Image>,
     paths_query: &Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
@@ -236,11 +243,8 @@ fn start_selection_drag(
     drag_state.mode = mode;
     drag_state.drag_start_world = world_pos;
     drag_state.original_bounds = bounds;
-    drag_state.entity_start_positions.clear();
-    drag_state.entity_start_transforms.clear();
-    drag_state.entity_start_scales.clear();
-    drag_state.entity_start_rotations.clear();
-    drag_state.entity_start_half_sizes.clear();
+    drag_state.items.clear();
+    drag_state.resize_reference = None;
     drag_state.rotation_start_angle = None;
     drag_state.annotation_drag_data.clear();
 
@@ -253,30 +257,23 @@ fn start_selection_drag(
         drag_state.rotation_start_angle = Some(angle);
     }
 
-    for entity in selected_query.iter() {
-        // Check if it's a placed item
-        if let Ok((_, t, sprite, _)) = items_query.get(entity) {
-            drag_state
-                .entity_start_positions
-                .push((entity, t.translation.truncate()));
-            drag_state.entity_start_transforms.push((entity, *t));
-            drag_state.entity_start_scales.push((entity, t.scale));
-            drag_state.entity_start_rotations.push((entity, t.rotation));
-            // Store original half-size (sprite size * scale) for rotation-aware resizing
-            let half_size = get_sprite_half_size(sprite, images) * t.scale.truncate();
-            drag_state.entity_start_half_sizes.push((entity, half_size));
-        }
-        // Check if it's a path
-        else if let Ok((_, path)) = paths_query.get(entity) {
+    for entity in entities {
+        if let Ok((_, transform, sprite, _)) = items_query.get(entity) {
+            let half_size =
+                (get_sprite_half_size(sprite, images) * transform.scale.truncate()).abs();
+            drag_state.items.push(ItemDragStart {
+                entity,
+                transform: *transform,
+                half_size,
+            });
+        } else if let Ok((_, path)) = paths_query.get(entity) {
             drag_state.annotation_drag_data.push((
                 entity,
                 AnnotationDragData::Path {
                     original_points: path.points.clone(),
                 },
             ));
-        }
-        // Check if it's a line
-        else if let Ok((_, line)) = lines_query.get(entity) {
+        } else if let Ok((_, line)) = lines_query.get(entity) {
             drag_state.annotation_drag_data.push((
                 entity,
                 AnnotationDragData::Line {
@@ -284,71 +281,33 @@ fn start_selection_drag(
                     original_end: line.end,
                 },
             ));
-        }
-        // Check if it's a text annotation
-        else if let Ok((_, t, _)) = texts_query.get(entity) {
+        } else if let Ok((_, transform, _)) = texts_query.get(entity) {
             drag_state.annotation_drag_data.push((
                 entity,
                 AnnotationDragData::Text {
-                    original_position: t.translation.truncate(),
+                    original_position: transform.translation.truncate(),
                 },
             ));
         }
     }
-}
 
-/// Start dragging a single entity
-fn start_drag_for_entity(
-    drag_state: &mut ResMut<DragState>,
-    world_pos: Vec2,
-    entity: Entity,
-    items_query: &Query<(Entity, &Transform, &Sprite, &PlacedItem)>,
-    paths_query: &Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
-    lines_query: &Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
-    texts_query: &Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
-) {
-    drag_state.is_dragging = true;
-    drag_state.mode = SelectionDragMode::Move;
-    drag_state.drag_start_world = world_pos;
-    drag_state.entity_start_positions.clear();
-    drag_state.entity_start_transforms.clear();
-    drag_state.entity_start_scales.clear();
-    drag_state.annotation_drag_data.clear();
-
-    // Check if it's a placed item
-    if let Ok((_, t, _, _)) = items_query.get(entity) {
-        drag_state
-            .entity_start_positions
-            .push((entity, t.translation.truncate()));
-        drag_state.entity_start_transforms.push((entity, *t));
-        drag_state.entity_start_scales.push((entity, t.scale));
-    }
-    // Check if it's a path
-    else if let Ok((_, path)) = paths_query.get(entity) {
-        drag_state.annotation_drag_data.push((
-            entity,
-            AnnotationDragData::Path {
-                original_points: path.points.clone(),
-            },
-        ));
-    }
-    // Check if it's a line
-    else if let Ok((_, line)) = lines_query.get(entity) {
-        drag_state.annotation_drag_data.push((
-            entity,
-            AnnotationDragData::Line {
-                original_start: line.start,
-                original_end: line.end,
-            },
-        ));
-    }
-    // Check if it's a text annotation
-    else if let Ok((_, t, _)) = texts_query.get(entity) {
-        drag_state.annotation_drag_data.push((
-            entity,
-            AnnotationDragData::Text {
-                original_position: t.translation.truncate(),
-            },
-        ));
+    // A resize follows the item whose handle was grabbed: the one with that handle
+    // nearest the click
+    if handle_edges(mode) != Vec2::ZERO {
+        drag_state.resize_reference = drag_state
+            .items
+            .iter()
+            .map(|start| {
+                let (angle, _, _) = start.transform.rotation.to_euler(EulerRot::ZYX);
+                let center = start.transform.translation.truncate();
+                let handle = rotate_point(
+                    center + handle_position(mode, start.half_size),
+                    center,
+                    angle,
+                );
+                (start.entity, handle.distance(world_pos))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(entity, _)| entity);
     }
 }

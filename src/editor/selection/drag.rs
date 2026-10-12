@@ -9,6 +9,8 @@ use crate::editor::params::{CameraParams, is_cursor_over_ui};
 use crate::input::shift_held;
 use crate::map::{ItemId, MapData, PlacedItem};
 
+use super::hit_detection::rotate_point;
+use super::resize::{resize_center_offset, resize_factors};
 use super::{AnnotationDragData, DragState, ROTATION_SNAP_INCREMENT, SelectionDragMode};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -33,16 +35,13 @@ pub fn handle_drag(
     // Stop dragging on mouse release, recording the net change to the placed items and
     // annotations as one undo step (covers move/resize/rotate)
     if mouse_button.just_released(MouseButton::Left) {
-        let items = drag_state
-            .entity_start_transforms
-            .iter()
-            .filter_map(|(entity, start)| {
-                let (id, item, current) = items_query.get(*entity).ok()?;
-                Some((
-                    MapObject::item(*id, item.clone(), *start),
-                    MapObject::item(*id, item.clone(), *current),
-                ))
-            });
+        let items = drag_state.items.iter().filter_map(|start| {
+            let (id, item, current) = items_query.get(start.entity).ok()?;
+            Some((
+                MapObject::item(*id, item.clone(), start.transform),
+                MapObject::item(*id, item.clone(), *current),
+            ))
+        });
         let annotations = drag_state
             .annotation_drag_data
             .iter()
@@ -105,7 +104,7 @@ pub fn handle_drag(
         drag_state.is_dragging = false;
         drag_state.mode = SelectionDragMode::None;
         drag_state.original_bounds = None;
-        drag_state.entity_start_transforms.clear();
+        drag_state.items.clear();
         return;
     }
 
@@ -135,9 +134,9 @@ pub fn handle_drag(
     match drag_state.mode {
         SelectionDragMode::Move => {
             // Apply offset to each placed item, maintaining relative positions
-            for (entity, start_pos) in &drag_state.entity_start_positions {
-                if let Ok((_, _, mut transform)) = items_query.get_mut(*entity) {
-                    let new_pos = *start_pos + drag_offset;
+            for start in &drag_state.items {
+                if let Ok((_, _, mut transform)) = items_query.get_mut(start.entity) {
+                    let new_pos = start.transform.translation.truncate() + drag_offset;
                     transform.translation.x = new_pos.x;
                     transform.translation.y = new_pos.y;
                 }
@@ -179,153 +178,35 @@ pub fn handle_drag(
         | SelectionDragMode::ResizeNW
         | SelectionDragMode::ResizeSE
         | SelectionDragMode::ResizeSW => {
-            // Rotation-aware resize: transform mouse to each item's local space
-            // and calculate scale/position based on local coordinates
+            // The grabbed item's handle follows the mouse (in the item's own frame, so
+            // rotation is accounted for); every selected item scales by the same factors,
+            // each with its own opposite edges held still
+            let Some(reference) = drag_state
+                .resize_reference
+                .and_then(|entity| drag_state.items.iter().find(|s| s.entity == entity))
+            else {
+                return;
+            };
+            let center = reference.transform.translation.truncate();
+            let (angle, _, _) = reference.transform.rotation.to_euler(EulerRot::ZYX);
+            let local_mouse = rotate_point(world_pos, center, -angle) - center;
+            let factors = resize_factors(
+                drag_state.mode,
+                reference.half_size,
+                local_mouse,
+                shift_held,
+            );
 
-            // Iterate through all selected placed items
-            for (((entity, orig_pos), (_, orig_scale)), (_, orig_half_size)) in drag_state
-                .entity_start_positions
-                .iter()
-                .zip(drag_state.entity_start_scales.iter())
-                .zip(drag_state.entity_start_half_sizes.iter())
-            {
-                // Get the original rotation for this entity
-                let orig_rotation = drag_state
-                    .entity_start_rotations
-                    .iter()
-                    .find(|(e, _)| *e == *entity)
-                    .map(|(_, r)| *r)
-                    .unwrap_or(Quat::IDENTITY);
-
-                let (angle, _, _) = orig_rotation.to_euler(EulerRot::ZYX);
-
-                // Transform mouse position to item's local coordinate space
-                // (undo the rotation around the item's original center)
-                let world_diff = world_pos - *orig_pos;
-                let cos_a = (-angle).cos();
-                let sin_a = (-angle).sin();
-                let local_mouse = Vec2::new(
-                    world_diff.x * cos_a - world_diff.y * sin_a,
-                    world_diff.x * sin_a + world_diff.y * cos_a,
-                );
-
-                // h = original half size in local space
-                let h = *orig_half_size;
-
-                // Calculate new bounds in local space based on resize mode
-                // For each mode, one or more edges move to the mouse position,
-                // while the opposite edge(s) stay fixed
-                let (new_min_local, new_max_local) = match drag_state.mode {
-                    SelectionDragMode::ResizeE => {
-                        // E edge moves to mouse, W edge fixed at -h.x
-                        (Vec2::new(-h.x, -h.y), Vec2::new(local_mouse.x, h.y))
-                    }
-                    SelectionDragMode::ResizeW => {
-                        // W edge moves to mouse, E edge fixed at h.x
-                        (Vec2::new(local_mouse.x, -h.y), Vec2::new(h.x, h.y))
-                    }
-                    SelectionDragMode::ResizeN => {
-                        // N edge moves to mouse, S edge fixed at -h.y
-                        (Vec2::new(-h.x, -h.y), Vec2::new(h.x, local_mouse.y))
-                    }
-                    SelectionDragMode::ResizeS => {
-                        // S edge moves to mouse, N edge fixed at h.y
-                        (Vec2::new(-h.x, local_mouse.y), Vec2::new(h.x, h.y))
-                    }
-                    SelectionDragMode::ResizeNE => {
-                        // NE corner moves to mouse, SW corner fixed
-                        (Vec2::new(-h.x, -h.y), local_mouse)
-                    }
-                    SelectionDragMode::ResizeSW => {
-                        // SW corner moves to mouse, NE corner fixed
-                        (local_mouse, Vec2::new(h.x, h.y))
-                    }
-                    SelectionDragMode::ResizeNW => {
-                        // NW corner moves to mouse, SE corner fixed
-                        (
-                            Vec2::new(local_mouse.x, -h.y),
-                            Vec2::new(h.x, local_mouse.y),
-                        )
-                    }
-                    SelectionDragMode::ResizeSE => {
-                        // SE corner moves to mouse, NW corner fixed
-                        (
-                            Vec2::new(-h.x, local_mouse.y),
-                            Vec2::new(local_mouse.x, h.y),
-                        )
-                    }
-                    _ => (Vec2::new(-h.x, -h.y), Vec2::new(h.x, h.y)),
-                };
-
-                // Calculate new size and center in local space
-                let new_size_local = new_max_local - new_min_local;
-                let mut new_center_local = (new_min_local + new_max_local) / 2.0;
-
-                // Calculate scale factors (avoid division by zero, ensure positive)
-                let orig_size_local = h * 2.0;
-                let mut scale_x = if orig_size_local.x.abs() > 0.001 {
-                    (new_size_local.x / orig_size_local.x).abs().max(0.01)
-                } else {
-                    1.0
-                };
-                let mut scale_y = if orig_size_local.y.abs() > 0.001 {
-                    (new_size_local.y / orig_size_local.y).abs().max(0.01)
-                } else {
-                    1.0
-                };
-
-                // Hold shift to maintain current aspect ratio during resize
-                if shift_held {
-                    // Determine which scale to use based on resize direction
-                    let uniform = match drag_state.mode {
-                        // Horizontal handles: use horizontal scale
-                        SelectionDragMode::ResizeE | SelectionDragMode::ResizeW => scale_x,
-                        // Vertical handles: use vertical scale
-                        SelectionDragMode::ResizeN | SelectionDragMode::ResizeS => scale_y,
-                        // Corner handles: use the larger scale to preserve largest dimension
-                        _ => scale_x.max(scale_y),
-                    };
-                    scale_x = uniform;
-                    scale_y = uniform;
-
-                    // For corner handles, recalculate center to keep opposite corner fixed
-                    // The opposite corner should stay at its original position
-                    new_center_local = match drag_state.mode {
-                        SelectionDragMode::ResizeNE => {
-                            // SW corner fixed at (-h.x, -h.y)
-                            Vec2::new(h.x * (uniform - 1.0), h.y * (uniform - 1.0))
-                        }
-                        SelectionDragMode::ResizeSW => {
-                            // NE corner fixed at (h.x, h.y)
-                            Vec2::new(-h.x * (uniform - 1.0), -h.y * (uniform - 1.0))
-                        }
-                        SelectionDragMode::ResizeNW => {
-                            // SE corner fixed at (h.x, -h.y)
-                            Vec2::new(-h.x * (uniform - 1.0), h.y * (uniform - 1.0))
-                        }
-                        SelectionDragMode::ResizeSE => {
-                            // NW corner fixed at (-h.x, h.y)
-                            Vec2::new(h.x * (uniform - 1.0), -h.y * (uniform - 1.0))
-                        }
-                        _ => new_center_local,
-                    };
-                }
-
-                // Transform the new center offset back to world space
-                let cos_a = angle.cos();
-                let sin_a = angle.sin();
-                let world_center_offset = Vec2::new(
-                    new_center_local.x * cos_a - new_center_local.y * sin_a,
-                    new_center_local.x * sin_a + new_center_local.y * cos_a,
-                );
-
-                if let Ok((_, _, mut transform)) = items_query.get_mut(*entity) {
-                    // Apply new position (original position + rotated center offset)
-                    let new_pos = *orig_pos + world_center_offset;
+            for start in &drag_state.items {
+                let (angle, _, _) = start.transform.rotation.to_euler(EulerRot::ZYX);
+                let local_offset = resize_center_offset(drag_state.mode, start.half_size, factors);
+                let offset = rotate_point(local_offset, Vec2::ZERO, angle);
+                if let Ok((_, _, mut transform)) = items_query.get_mut(start.entity) {
+                    let new_pos = start.transform.translation.truncate() + offset;
                     transform.translation.x = new_pos.x;
                     transform.translation.y = new_pos.y;
-                    transform.scale.x = orig_scale.x * scale_x;
-                    transform.scale.y = orig_scale.y * scale_y;
+                    transform.scale.x = start.transform.scale.x * factors.x;
+                    transform.scale.y = start.transform.scale.y * factors.y;
                 }
             }
         }
@@ -349,9 +230,10 @@ pub fn handle_drag(
             }
 
             // Apply rotation to each entity around its own center
-            for (entity, original_rotation) in &drag_state.entity_start_rotations {
-                if let Ok((_, _, mut transform)) = items_query.get_mut(*entity) {
-                    transform.rotation = *original_rotation * Quat::from_rotation_z(angle_delta);
+            for start in &drag_state.items {
+                if let Ok((_, _, mut transform)) = items_query.get_mut(start.entity) {
+                    transform.rotation =
+                        start.transform.rotation * Quat::from_rotation_z(angle_delta);
                 }
             }
         }
