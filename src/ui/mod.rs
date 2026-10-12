@@ -1,8 +1,8 @@
 mod asset_browser;
 pub mod asset_import;
-pub mod file_menu;
 mod layers_panel;
 pub mod map_actions;
+pub mod map_dialogs;
 pub mod panel_layout;
 mod session_controls;
 mod settings_dialog;
@@ -72,7 +72,7 @@ impl Plugin for UiPlugin {
         app.init_resource::<DialogState>()
             .init_resource::<asset_browser::AssetBrowserState>()
             .init_resource::<asset_import::AssetImportDialog>()
-            .init_resource::<file_menu::FileMenuState>()
+            .init_resource::<map_dialogs::SaveAsDialogState>()
             .init_resource::<map_actions::UnsavedChangesPrompt>()
             .init_resource::<map_actions::OpenMapPicker>()
             .add_message::<map_actions::MapFileAction>()
@@ -108,14 +108,14 @@ impl Plugin for UiPlugin {
                 EguiPrimaryContextPass,
                 (
                     // Last: dialogs/overlays
-                    file_menu::file_menu_ui,
-                    file_menu::missing_map_warning_ui,
+                    map_dialogs::map_dialogs_ui,
+                    map_dialogs::missing_map_warning_ui,
                     map_actions::unsaved_changes_dialog_ui,
-                    file_menu::async_operation_modal_ui,
-                    file_menu::save_error_dialog_ui,
-                    file_menu::map_asset_report_ui,
-                    file_menu::save_conflict_dialog_ui,
-                    file_menu::config_reset_notification_ui,
+                    map_dialogs::async_operation_modal_ui,
+                    map_dialogs::save_error_dialog_ui,
+                    map_dialogs::map_asset_report_ui,
+                    map_dialogs::save_conflict_dialog_ui,
+                    map_dialogs::config_reset_notification_ui,
                     asset_import::asset_import_ui,
                     layers_panel::help_popup_ui,
                     settings_dialog::settings_dialog_ui,

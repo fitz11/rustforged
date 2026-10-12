@@ -1,3 +1,7 @@
+//! Dialogs about the map file: Save As, load and save errors, save conflicts, the map
+//! assets report, a missing last map, a reset configuration, and the wait while a map is
+//! saved or loaded.
+
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use std::path::{Path, PathBuf};
@@ -11,23 +15,24 @@ use crate::map::{
 
 use super::map_actions::{UnsavedChangesPrompt, sanitize_map_name};
 
+/// The Save As dialog, which names a map's file
 #[derive(Resource, Default)]
-pub struct FileMenuState {
+pub struct SaveAsDialogState {
     pub show_save_name_dialog: bool,
     pub save_filename: String,
 }
 
-/// Renders the dialog windows for file operations (triggered from asset_browser menu)
-pub fn file_menu_ui(
+/// Renders the Save As and Load Error dialogs
+pub fn map_dialogs_ui(
     mut contexts: EguiContexts,
-    mut menu_state: ResMut<FileMenuState>,
+    mut save_as: ResMut<SaveAsDialogState>,
     mut prompt: ResMut<UnsavedChangesPrompt>,
     mut save_events: MessageWriter<SaveMapRequest>,
     mut load_error: ResMut<MapLoadError>,
     library: Res<AssetLibrary>,
 ) -> Result {
     // Save dialog for filename
-    if menu_state.show_save_name_dialog {
+    if save_as.show_save_name_dialog {
         // Use library's maps directory
         let maps_dir = library.library_path.join("maps");
 
@@ -46,10 +51,10 @@ pub fn file_menu_ui(
 
                 ui.horizontal(|ui| {
                     ui.label("Map name:");
-                    ui.text_edit_singleline(&mut menu_state.save_filename);
+                    ui.text_edit_singleline(&mut save_as.save_filename);
                 });
                 // A name of only spaces or symbols would make a hidden ".json" file
-                let filename = sanitize_map_name(&menu_state.save_filename);
+                let filename = sanitize_map_name(&save_as.save_filename);
                 let name_ok = filename.chars().any(char::is_alphanumeric);
                 if !name_ok {
                     ui.label(egui::RichText::new("Enter a name with letters or digits").weak());
@@ -60,10 +65,10 @@ pub fn file_menu_ui(
                         let request = SaveMapRequest::new(path);
                         prompt.wait_for(&request);
                         save_events.write(request);
-                        menu_state.show_save_name_dialog = false;
+                        save_as.show_save_name_dialog = false;
                     }
                     if ui.button("Cancel").clicked() {
-                        menu_state.show_save_name_dialog = false;
+                        save_as.show_save_name_dialog = false;
                         // Backed out of the save, so don't go on to replace or close the map
                         prompt.after_save = None;
                     }
@@ -199,7 +204,7 @@ pub fn async_operation_modal_ui(
 pub fn save_error_dialog_ui(
     mut contexts: EguiContexts,
     mut save_error: ResMut<MapSaveError>,
-    mut menu_state: ResMut<FileMenuState>,
+    mut save_as: ResMut<SaveAsDialogState>,
 ) -> Result {
     let Some(error_msg) = save_error.message.clone() else {
         return Ok(());
@@ -240,7 +245,7 @@ pub fn save_error_dialog_ui(
         save_error.message = None;
     }
     if should_show_save_as {
-        menu_state.show_save_name_dialog = true;
+        save_as.show_save_name_dialog = true;
     }
 
     Ok(())

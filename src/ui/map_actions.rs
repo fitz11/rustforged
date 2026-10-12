@@ -19,7 +19,7 @@ use crate::map::{
     SaveOutcome,
 };
 
-use super::file_menu::FileMenuState;
+use super::map_dialogs::SaveAsDialogState;
 use crate::common::poll_task;
 
 /// Name of a map that hasn't been named yet
@@ -200,7 +200,7 @@ pub fn sanitize_map_name(name: &str) -> String {
 fn request_save(
     open_maps: &OpenMaps,
     maps_dir: &Path,
-    menu_state: &mut FileMenuState,
+    save_as: &mut SaveAsDialogState,
     save_events: &mut MessageWriter<SaveMapRequest>,
 ) -> Option<u64> {
     let active = open_maps.active_map()?;
@@ -212,7 +212,7 @@ fn request_save(
         // there stops the save and asks
         maps_dir.join(format!("{}.json", filename))
     } else {
-        open_save_as(open_maps, menu_state);
+        open_save_as(open_maps, save_as);
         return None;
     };
     let request = SaveMapRequest::new(path);
@@ -221,12 +221,12 @@ fn request_save(
     Some(ticket)
 }
 
-fn open_save_as(open_maps: &OpenMaps, menu_state: &mut FileMenuState) {
-    menu_state.save_filename = open_maps
+fn open_save_as(open_maps: &OpenMaps, save_as: &mut SaveAsDialogState) {
+    save_as.save_filename = open_maps
         .active_map()
         .map(|m| m.name.clone())
         .unwrap_or_default();
-    menu_state.show_save_name_dialog = true;
+    save_as.show_save_name_dialog = true;
 }
 
 /// Handles [`MapFileAction`]s and the window's close button.
@@ -236,7 +236,7 @@ pub fn handle_map_file_actions(
     mut close_events: MessageReader<WindowCloseRequested>,
     primary_window: Query<Entity, With<PrimaryWindow>>,
     mut prompt: ResMut<UnsavedChangesPrompt>,
-    mut menu_state: ResMut<FileMenuState>,
+    mut save_as: ResMut<SaveAsDialogState>,
     open_maps: Res<OpenMaps>,
     dirty_state: Res<MapDirtyState>,
     library: Res<AssetLibrary>,
@@ -257,11 +257,11 @@ pub fn handle_map_file_actions(
             MapFileAction::Save => {
                 // A plain save: nothing waits for it
                 prompt.after_save = None;
-                request_save(&open_maps, &maps_dir, &mut menu_state, &mut save_events);
+                request_save(&open_maps, &maps_dir, &mut save_as, &mut save_events);
                 continue;
             }
             MapFileAction::SaveAs => {
-                open_save_as(&open_maps, &mut menu_state);
+                open_save_as(&open_maps, &mut save_as);
                 continue;
             }
             MapFileAction::New => ReplacingAction::New,
@@ -311,7 +311,7 @@ pub fn run_action_after_save(
 pub fn unsaved_changes_dialog_ui(
     mut contexts: EguiContexts,
     mut prompt: ResMut<UnsavedChangesPrompt>,
-    mut menu_state: ResMut<FileMenuState>,
+    mut save_as: ResMut<SaveAsDialogState>,
     open_maps: Res<OpenMaps>,
     dirty_state: Res<MapDirtyState>,
     library: Res<AssetLibrary>,
@@ -373,7 +373,7 @@ pub fn unsaved_changes_dialog_ui(
         Some(Choice::Save) => {
             prompt.pending = None;
             let maps_dir = library.library_path.join("maps");
-            let ticket = request_save(&open_maps, &maps_dir, &mut menu_state, &mut save_events);
+            let ticket = request_save(&open_maps, &maps_dir, &mut save_as, &mut save_events);
             prompt.after_save = Some(AfterSave { action, ticket });
         }
         Some(Choice::Discard) => {
