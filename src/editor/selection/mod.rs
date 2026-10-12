@@ -37,14 +37,48 @@ pub use shortcuts::{
     handle_escape_clear_selection, selection_edit_shortcuts,
 };
 
-/// Distance above selection bounds for the rotation handle (in world units)
-pub(crate) const ROTATION_HANDLE_OFFSET: f32 = 25.0;
-/// Radius of the rotation handle circle (in world units)
-pub(crate) const ROTATION_HANDLE_RADIUS: f32 = 6.0;
 /// Snap increment for rotation when holding Shift (in degrees)
 pub(crate) const ROTATION_SNAP_INCREMENT: f32 = 15.0;
-/// Handle size for resize handles (in world units, will be scaled by camera)
-pub(crate) const HANDLE_SIZE: f32 = 8.0;
+
+/// Sizes of the selection handles, in world units at the current zoom, so they look and
+/// respond the same on screen at any zoom. Drawing and hit testing both use these.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HandleMetrics {
+    /// Half the side of a corner handle's square
+    pub corner: f32,
+    /// Half the side of an edge handle's square
+    pub edge: f32,
+    /// How far the rotation handle sits above the item's top edge
+    pub rotation_offset: f32,
+    /// Radius of the rotation handle's circle
+    pub rotation_radius: f32,
+    /// How close the cursor has to be to a handle to grab it
+    pub hit_radius: f32,
+}
+
+impl HandleMetrics {
+    /// Handle sizes for an editor camera at `camera_scale` (world units per screen pixel).
+    pub fn at_zoom(camera_scale: f32) -> Self {
+        Self {
+            corner: 4.0 * camera_scale,
+            edge: 3.0 * camera_scale,
+            rotation_offset: 25.0 * camera_scale,
+            rotation_radius: 6.0 * camera_scale,
+            hit_radius: 12.0 * camera_scale,
+        }
+    }
+
+    /// An item this small on screen gets no edge handles, so clicking it moves it
+    /// instead of grabbing a handle that covers its middle.
+    pub fn shows_edge_handles(&self, half_size: Vec2) -> bool {
+        half_size.min_element() > self.hit_radius * 2.0
+    }
+
+    /// An item this small on screen gets no corner handles either.
+    pub fn shows_corner_handles(&self, half_size: Vec2) -> bool {
+        half_size.min_element() > self.hit_radius
+    }
+}
 
 /// Information about an annotation's original state when dragging started
 #[derive(Clone)]

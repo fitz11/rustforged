@@ -14,7 +14,7 @@ use crate::map::{MapData, PlacedItem, Selected};
 
 use super::hit_detection::{
     check_rotation_handle_hit, compute_selection_bounds, find_clicked_annotation,
-    get_selection_handle_at_position, get_sprite_half_size, point_in_item, rotate_point,
+    get_selection_handle_at_position, item_half_size, point_in_item, rotate_point,
 };
 use super::resize::{handle_edges, handle_position};
 use super::{AnnotationDragData, BoxSelectState, DragState, ItemDragStart, SelectionDragMode};
@@ -259,8 +259,7 @@ fn start_drag(
 
     for entity in entities {
         if let Ok((_, transform, sprite, _)) = items_query.get(entity) {
-            let half_size =
-                (get_sprite_half_size(sprite, images) * transform.scale.truncate()).abs();
+            let half_size = item_half_size(transform, sprite, images);
             drag_state.items.push(ItemDragStart {
                 entity,
                 transform: *transform,

@@ -10,8 +10,12 @@ use crate::editor::annotations::{
 };
 use crate::map::{MapData, Selected};
 
-use super::hit_detection::{get_sprite_half_size, rotate_point};
-use super::{BoxSelectState, ROTATION_HANDLE_OFFSET, ROTATION_HANDLE_RADIUS};
+use super::hit_detection::{
+    item_half_size, resize_handles, rotate_point, rotation_handle_position,
+};
+use super::resize::handle_edges;
+use super::{BoxSelectState, HandleMetrics};
+use crate::editor::params::CameraWithProjection;
 use crate::map::render_layer;
 
 /// Custom gizmo group for selection indicators (editor-only rendering)
@@ -31,6 +35,7 @@ pub fn draw_selection_indicators(
     selected_sprites_query: Query<(&Transform, &Sprite), With<Selected>>,
     images: Res<Assets<Image>>,
     map_data: Res<MapData>,
+    camera: CameraWithProjection,
     // Annotation queries
     selected_paths_query: Query<&DrawnPath, (With<Selected>, With<AnnotationMarker>)>,
     selected_lines_query: Query<&DrawnLine, (With<Selected>, With<AnnotationMarker>)>,
@@ -42,12 +47,12 @@ pub fn draw_selection_indicators(
     let selection_color = Color::srgb(0.2, 0.6, 1.0);
     let annotation_visible = is_annotation_layer_visible(&map_data);
 
+    let metrics = HandleMetrics::at_zoom(camera.zoom_scale());
+
     // Draw selection for sprites (placed items)
     for (transform, sprite) in selected_sprites_query.iter() {
         let pos = transform.translation.truncate();
-        let scale = transform.scale.truncate();
-        let half_size = get_sprite_half_size(sprite, &images);
-        let scaled_half = half_size * scale;
+        let scaled_half = item_half_size(transform, sprite, &images);
 
         // Get the rotation angle from the transform
         // EulerRot::ZYX returns (z, y, x) - we want the Z rotation (first component)
@@ -60,47 +65,25 @@ pub fn draw_selection_indicators(
             selection_color,
         );
 
-        // Draw corner handles (larger) at rotated positions
-        let corner_handle_size = 4.0;
-        let local_corners = [
-            Vec2::new(-scaled_half.x, -scaled_half.y), // SW
-            Vec2::new(scaled_half.x, -scaled_half.y),  // SE
-            Vec2::new(scaled_half.x, scaled_half.y),   // NE
-            Vec2::new(-scaled_half.x, scaled_half.y),  // NW
-        ];
-
-        for local_corner in local_corners {
-            let world_corner = rotate_point(pos + local_corner, pos, angle);
+        // Resize handles: the same ones hit testing uses at this zoom, corners larger
+        for (mode, handle) in resize_handles(transform, scaled_half, &metrics) {
+            let edges = handle_edges(mode);
+            let half = if edges.x != 0.0 && edges.y != 0.0 {
+                metrics.corner
+            } else {
+                metrics.edge
+            };
             gizmos.rect_2d(
-                Isometry2d::from_translation(world_corner),
-                Vec2::splat(corner_handle_size * 2.0),
-                selection_color,
-            );
-        }
-
-        // Draw edge handles (smaller) at rotated positions
-        let edge_handle_size = 3.0;
-        let local_edges = [
-            Vec2::new(0.0, -scaled_half.y), // S
-            Vec2::new(0.0, scaled_half.y),  // N
-            Vec2::new(-scaled_half.x, 0.0), // W
-            Vec2::new(scaled_half.x, 0.0),  // E
-        ];
-
-        for local_edge in local_edges {
-            let world_edge = rotate_point(pos + local_edge, pos, angle);
-            gizmos.rect_2d(
-                Isometry2d::from_translation(world_edge),
-                Vec2::splat(edge_handle_size * 2.0),
+                Isometry2d::from_translation(handle),
+                Vec2::splat(half * 2.0),
                 selection_color,
             );
         }
 
         // Draw rotation handle above the item, rotated with the item
         let local_top = Vec2::new(0.0, scaled_half.y);
-        let local_handle = Vec2::new(0.0, scaled_half.y + ROTATION_HANDLE_OFFSET);
         let world_top = rotate_point(pos + local_top, pos, angle);
-        let world_handle = rotate_point(pos + local_handle, pos, angle);
+        let world_handle = rotation_handle_position(transform, scaled_half, &metrics);
 
         // Draw connecting line from top edge to rotation handle
         gizmos.line_2d(world_top, world_handle, selection_color);
@@ -108,7 +91,7 @@ pub fn draw_selection_indicators(
         // Draw circular rotation handle
         gizmos.circle_2d(
             Isometry2d::from_translation(world_handle),
-            ROTATION_HANDLE_RADIUS,
+            metrics.rotation_radius,
             selection_color,
         );
     }

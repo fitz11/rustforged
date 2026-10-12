@@ -8,7 +8,8 @@ use crate::editor::annotations::{
 };
 use crate::map::Selected;
 
-use super::{HANDLE_SIZE, ROTATION_HANDLE_OFFSET, ROTATION_HANDLE_RADIUS, SelectionDragMode};
+use super::resize::handle_position;
+use super::{HandleMetrics, SelectionDragMode};
 
 /// Rotate a point around a center by the given angle (in radians)
 pub(crate) fn rotate_point(point: Vec2, center: Vec2, angle: f32) -> Vec2 {
@@ -38,6 +39,26 @@ pub(crate) fn get_sprite_half_size(sprite: &Sprite, images: &Assets<Image>) -> V
     Vec2::splat(32.0)
 }
 
+/// Half an item's size in its own frame: sprite size times scale, positive even for a
+/// mirrored (negatively scaled) item
+pub(crate) fn item_half_size(
+    transform: &Transform,
+    sprite: &Sprite,
+    images: &Assets<Image>,
+) -> Vec2 {
+    (get_sprite_half_size(sprite, images) * transform.scale.truncate()).abs()
+}
+
+/// Half the size of the axis-aligned box around an item, accounting for its rotation
+fn rotated_half_extents(transform: &Transform, half_size: Vec2) -> Vec2 {
+    let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
+    let (sin, cos) = (angle.sin().abs(), angle.cos().abs());
+    Vec2::new(
+        cos * half_size.x + sin * half_size.y,
+        sin * half_size.x + cos * half_size.y,
+    )
+}
+
 /// Check if a point is inside an item's bounds, accounting for rotation
 pub(crate) fn point_in_item(
     world_pos: Vec2,
@@ -46,7 +67,7 @@ pub(crate) fn point_in_item(
     images: &Assets<Image>,
 ) -> bool {
     let item_pos = transform.translation.truncate();
-    let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
+    let half_size = item_half_size(transform, sprite, images);
 
     // Transform the world position into the item's local coordinate space
     // by applying the inverse rotation
@@ -72,10 +93,10 @@ pub(crate) fn item_overlaps_rect(
     images: &Assets<Image>,
 ) -> bool {
     let item_pos = transform.translation.truncate();
-    let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
+    let half_extents = rotated_half_extents(transform, item_half_size(transform, sprite, images));
 
-    let item_min = item_pos - half_size;
-    let item_max = item_pos + half_size;
+    let item_min = item_pos - half_extents;
+    let item_max = item_pos + half_extents;
 
     // Check for overlap (AABB intersection)
     rect_min.x < item_max.x
@@ -95,9 +116,10 @@ pub fn compute_selection_bounds(
 
     for (transform, sprite) in selected_query.iter() {
         let pos = transform.translation.truncate();
-        let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
-        let item_min = pos - half_size;
-        let item_max = pos + half_size;
+        let half_extents =
+            rotated_half_extents(transform, item_half_size(transform, sprite, images));
+        let item_min = pos - half_extents;
+        let item_max = pos + half_extents;
 
         min = min.min(item_min);
         max = max.max(item_max);
@@ -107,6 +129,55 @@ pub fn compute_selection_bounds(
     if found_any { Some((min, max)) } else { None }
 }
 
+/// Where an item's rotation handle is, in world space
+pub(crate) fn rotation_handle_position(
+    transform: &Transform,
+    half_size: Vec2,
+    metrics: &HandleMetrics,
+) -> Vec2 {
+    let pos = transform.translation.truncate();
+    let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
+    let local_handle = Vec2::new(0.0, half_size.y + metrics.rotation_offset);
+    rotate_point(pos + local_handle, pos, angle)
+}
+
+/// The resize handles an item shows at this zoom, with where each is in world space.
+/// Small items on screen show fewer (see [`HandleMetrics`]).
+pub(crate) fn resize_handles(
+    transform: &Transform,
+    half_size: Vec2,
+    metrics: &HandleMetrics,
+) -> Vec<(SelectionDragMode, Vec2)> {
+    const CORNERS: [SelectionDragMode; 4] = [
+        SelectionDragMode::ResizeSW,
+        SelectionDragMode::ResizeSE,
+        SelectionDragMode::ResizeNE,
+        SelectionDragMode::ResizeNW,
+    ];
+    const EDGES: [SelectionDragMode; 4] = [
+        SelectionDragMode::ResizeS,
+        SelectionDragMode::ResizeN,
+        SelectionDragMode::ResizeW,
+        SelectionDragMode::ResizeE,
+    ];
+    let pos = transform.translation.truncate();
+    let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
+    let mut modes = Vec::new();
+    if metrics.shows_corner_handles(half_size) {
+        modes.extend(CORNERS);
+    }
+    if metrics.shows_edge_handles(half_size) {
+        modes.extend(EDGES);
+    }
+    modes
+        .into_iter()
+        .map(|mode| {
+            let local = handle_position(mode, half_size);
+            (mode, rotate_point(pos + local, pos, angle))
+        })
+        .collect()
+}
+
 /// Check if the cursor is over any selected item's rotation handle (accounting for rotation)
 pub fn check_rotation_handle_hit(
     world_pos: Vec2,
@@ -114,23 +185,12 @@ pub fn check_rotation_handle_hit(
     selected_query: &Query<(&Transform, &Sprite), With<Selected>>,
     images: &Assets<Image>,
 ) -> bool {
-    let rotation_hit_size = ROTATION_HANDLE_RADIUS * camera_scale * 1.5;
-
-    for (transform, sprite) in selected_query.iter() {
-        let pos = transform.translation.truncate();
-        let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
-        let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
-
-        // Calculate the rotated rotation handle position
-        let local_handle = Vec2::new(0.0, half_size.y + ROTATION_HANDLE_OFFSET);
-        let world_handle = rotate_point(pos + local_handle, pos, angle);
-
-        if (world_pos - world_handle).length() < rotation_hit_size {
-            return true;
-        }
-    }
-
-    false
+    let metrics = HandleMetrics::at_zoom(camera_scale);
+    let hit_radius = metrics.rotation_radius * 1.5;
+    selected_query.iter().any(|(transform, sprite)| {
+        let half_size = item_half_size(transform, sprite, images);
+        rotation_handle_position(transform, half_size, &metrics).distance(world_pos) < hit_radius
+    })
 }
 
 /// Determine which handle (if any) is under the cursor for selected items
@@ -141,61 +201,19 @@ pub fn get_selection_handle_at_position(
     images: &Assets<Image>,
     camera_scale: f32,
 ) -> SelectionDragMode {
-    // Adjust handle hit area based on camera zoom
-    let hit_size = HANDLE_SIZE * camera_scale * 1.5;
+    let metrics = HandleMetrics::at_zoom(camera_scale);
 
-    // Check each selected item's rotated handles
+    // Check each selected item's rotated handles, corners first
     for (transform, sprite) in selected_query.iter() {
-        let pos = transform.translation.truncate();
-        let half_size = get_sprite_half_size(sprite, images) * transform.scale.truncate();
-        let (angle, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
-
-        // Local corner positions (before rotation)
-        let local_corners = [
-            (
-                Vec2::new(-half_size.x, -half_size.y),
-                SelectionDragMode::ResizeSW,
-            ),
-            (
-                Vec2::new(half_size.x, -half_size.y),
-                SelectionDragMode::ResizeSE,
-            ),
-            (
-                Vec2::new(half_size.x, half_size.y),
-                SelectionDragMode::ResizeNE,
-            ),
-            (
-                Vec2::new(-half_size.x, half_size.y),
-                SelectionDragMode::ResizeNW,
-            ),
-        ];
-
-        // Check corners (high priority)
-        for (local_corner, mode) in local_corners {
-            let world_corner = rotate_point(pos + local_corner, pos, angle);
-            if (world_pos - world_corner).length() < hit_size {
-                return mode;
-            }
+        let half_size = item_half_size(transform, sprite, images);
+        let grabbed = resize_handles(transform, half_size, &metrics)
+            .into_iter()
+            .find(|(_, handle)| handle.distance(world_pos) < metrics.hit_radius);
+        if let Some((mode, _)) = grabbed {
+            return mode;
         }
 
-        // Local edge positions (before rotation)
-        let local_edges = [
-            (Vec2::new(0.0, -half_size.y), SelectionDragMode::ResizeS),
-            (Vec2::new(0.0, half_size.y), SelectionDragMode::ResizeN),
-            (Vec2::new(-half_size.x, 0.0), SelectionDragMode::ResizeW),
-            (Vec2::new(half_size.x, 0.0), SelectionDragMode::ResizeE),
-        ];
-
-        // Check edge handles
-        for (local_edge, mode) in local_edges {
-            let world_edge = rotate_point(pos + local_edge, pos, angle);
-            if (world_pos - world_edge).length() < hit_size {
-                return mode;
-            }
-        }
-
-        // Check if inside the rotated selection rectangle (for move/grab)
-        // Transform cursor position to item's local space
+        // Inside the rotated item: move it
         if point_in_item(world_pos, transform, sprite, images) {
             return SelectionDragMode::Move;
         }
@@ -233,4 +251,71 @@ pub(crate) fn find_clicked_annotation(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sprite(size: f32) -> Sprite {
+        Sprite {
+            custom_size: Some(Vec2::splat(size)),
+            ..default()
+        }
+    }
+
+    #[test]
+    fn test_mirrored_item_can_be_clicked() {
+        let images = Assets::<Image>::default();
+        let transform = Transform::from_scale(Vec3::new(-1.0, 1.0, 1.0));
+        assert!(point_in_item(
+            Vec2::new(10.0, 10.0),
+            &transform,
+            &sprite(70.0),
+            &images
+        ));
+    }
+
+    #[test]
+    fn test_zoomed_out_small_item_has_no_handles_over_its_middle() {
+        let images = Assets::<Image>::default();
+        let token = sprite(70.0);
+        let transform = Transform::default();
+        let half = item_half_size(&transform, &token, &images);
+
+        // Zoomed out 3x: 70 world units are about 23 pixels on screen
+        let metrics = HandleMetrics::at_zoom(3.0);
+        assert!(resize_handles(&transform, half, &metrics).is_empty());
+
+        // At normal zoom it has all eight
+        assert_eq!(
+            resize_handles(&transform, half, &HandleMetrics::at_zoom(1.0)).len(),
+            8
+        );
+    }
+
+    #[test]
+    fn test_rotated_item_overlaps_by_its_rotated_box() {
+        let images = Assets::<Image>::default();
+        // A 100x10 bar turned 90 degrees reaches 50 up and down
+        let bar = Sprite {
+            custom_size: Some(Vec2::new(100.0, 10.0)),
+            ..default()
+        };
+        let transform = Transform::from_rotation(Quat::from_rotation_z(90f32.to_radians()));
+        assert!(item_overlaps_rect(
+            Vec2::new(-2.0, 40.0),
+            Vec2::new(2.0, 45.0),
+            &transform,
+            &bar,
+            &images
+        ));
+        assert!(!item_overlaps_rect(
+            Vec2::new(20.0, -2.0),
+            Vec2::new(30.0, 2.0),
+            &transform,
+            &bar,
+            &images
+        ));
+    }
 }
