@@ -240,15 +240,22 @@ fn render_single_selection(
         ui.add_space(8.0);
 
         // Position
+        // Edit copies so an untouched field doesn't mark the Transform changed every frame
+        let mut x = transform.translation.x;
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("X:").size(14.0));
-            ui.add(egui::DragValue::new(&mut transform.translation.x).speed(1.0));
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                transform.translation.x = x;
+            }
         });
         ui.add_space(2.0);
 
+        let mut y = transform.translation.y;
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Y:").size(14.0));
-            ui.add(egui::DragValue::new(&mut transform.translation.y).speed(1.0));
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                transform.translation.y = y;
+            }
         });
 
         ui.add_space(8.0);
@@ -274,15 +281,27 @@ fn render_single_selection(
         ui.add_space(8.0);
 
         // Scale
+        let mut scale_x = transform.scale.x;
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Scale X:").size(14.0));
-            ui.add(egui::DragValue::new(&mut transform.scale.x).speed(0.01));
+            if ui
+                .add(egui::DragValue::new(&mut scale_x).speed(0.01))
+                .changed()
+            {
+                transform.scale.x = scale_x;
+            }
         });
         ui.add_space(2.0);
 
+        let mut scale_y = transform.scale.y;
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Scale Y:").size(14.0));
-            ui.add(egui::DragValue::new(&mut transform.scale.y).speed(0.01));
+            if ui
+                .add(egui::DragValue::new(&mut scale_y).speed(0.01))
+                .changed()
+            {
+                transform.scale.y = scale_y;
+            }
         });
 
         ui.add_space(8.0);

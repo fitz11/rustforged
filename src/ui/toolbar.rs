@@ -48,7 +48,9 @@ pub fn toolbar_ui(
                 ui.add_space(8.0);
 
                 // Grid toggle
-                if ui.checkbox(&mut map_data.grid_visible, "Grid").changed() {
+                let mut grid_visible = map_data.grid_visible;
+                if ui.checkbox(&mut grid_visible, "Grid").changed() {
+                    map_data.grid_visible = grid_visible;
                     dirty_state.is_dirty = true;
                 }
 

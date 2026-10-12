@@ -38,11 +38,25 @@ pub fn layers_panel_ui(
     egui::Panel::right("layers_panel")
         .default_size(200.0)
         .show_docked(contexts.ctx_mut()?, |ui| {
+            // Edit through bypass_change_detection so these resources only count as changed
+            // (for change detection, e.g. layer visibility) when the user changed something.
             // Layers section
-            render_layers(ui, &mut map_data, &mut dirty_state);
+            let layers_changed = render_layers(ui, map_data.bypass_change_detection());
 
             // Fog of War controls
-            render_fog_controls(ui, &mut map_data, &mut fog_data, &mut dirty_state);
+            let fog_change = render_fog_controls(
+                ui,
+                map_data.bypass_change_detection(),
+                fog_data.bypass_change_detection(),
+            );
+            if layers_changed || fog_change.map {
+                map_data.set_changed();
+                dirty_state.is_dirty = true;
+            }
+            if fog_change.fog {
+                fog_data.set_changed();
+                dirty_state.is_dirty = true;
+            }
 
             // Properties section
             relink = render_properties(
@@ -55,11 +69,13 @@ pub fn layers_panel_ui(
             );
 
             // Live Session controls (when active)
-            render_session_controls(
+            if render_session_controls(
                 ui,
-                &mut session_state,
+                session_state.bypass_change_detection(),
                 config.data.move_player_view_while_frozen,
-            );
+            ) {
+                session_state.set_changed();
+            }
 
             // Help button and version (bottom center)
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {

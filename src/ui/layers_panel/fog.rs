@@ -2,15 +2,24 @@
 
 use bevy_egui::egui;
 
-use crate::map::{FogOfWarData, Layer, MapData, MapDirtyState};
+use crate::map::{FogOfWarData, Layer, MapData};
+
+/// What the fog controls changed this frame.
+#[derive(Default)]
+pub struct FogControlsChange {
+    /// The fog layer was turned on or off
+    pub map: bool,
+    /// The revealed cells changed
+    pub fog: bool,
+}
 
 /// Renders the Fog of War controls section.
 pub fn render_fog_controls(
     ui: &mut egui::Ui,
     map_data: &mut MapData,
     fog_data: &mut FogOfWarData,
-    dirty_state: &mut MapDirtyState,
-) {
+) -> FogControlsChange {
+    let mut change = FogControlsChange::default();
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Fog of War").size(14.0).strong());
@@ -44,7 +53,7 @@ pub fn render_fog_controls(
         {
             layer_data.visible = fog_enabled;
         }
-        dirty_state.is_dirty = true;
+        change.map = true;
     }
 
     ui.add_space(4.0);
@@ -60,9 +69,10 @@ pub fn render_fog_controls(
         .clicked()
     {
         fog_data.reset();
-        dirty_state.is_dirty = true;
+        change.fog = true;
     }
 
     ui.add_space(12.0);
     ui.separator();
+    change
 }

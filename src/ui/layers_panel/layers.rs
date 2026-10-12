@@ -2,10 +2,12 @@
 
 use bevy_egui::egui;
 
-use crate::map::{Layer, MapData, MapDirtyState};
+use crate::map::{Layer, MapData};
 
-/// Renders the layers section with visibility checkboxes and lock buttons.
-pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData, dirty_state: &mut MapDirtyState) {
+/// Renders the layers section with visibility checkboxes and lock buttons. Returns true if
+/// a layer's visibility or lock changed.
+pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData) -> bool {
+    let mut changed = false;
     ui.add_space(4.0);
     ui.label(egui::RichText::new("Layers").heading().size(18.0));
     ui.add_space(4.0);
@@ -22,7 +24,7 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData, dirty_state: &mu
                     ui.add_enabled_ui(is_available, |ui| {
                         ui.horizontal(|ui| {
                             if ui.checkbox(&mut layer_data.visible, "").changed() {
-                                dirty_state.is_dirty = true;
+                                changed = true;
                             }
                             ui.label(egui::RichText::new(layer.display_name()).size(14.0));
 
@@ -41,7 +43,7 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData, dirty_state: &mu
                                             .clicked()
                                         {
                                             layer_data.locked = !layer_data.locked;
-                                            dirty_state.is_dirty = true;
+                                            changed = true;
                                         }
                                     }
                                 },
@@ -51,4 +53,5 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData, dirty_state: &mu
                 });
         }
     }
+    changed
 }

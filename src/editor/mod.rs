@@ -25,12 +25,17 @@ use bevy::prelude::*;
 
 use crate::map::{MapData, PlacedItem};
 
-/// Update sprite visibility based on layer visibility settings
+/// Update sprite visibility based on layer visibility settings. Covers every item when the
+/// layer settings change, and otherwise items that were just spawned or moved to a layer.
 fn update_layer_visibility(
     map_data: Res<MapData>,
-    mut items_query: Query<(&PlacedItem, &mut Visibility)>,
+    mut items_query: Query<(Ref<PlacedItem>, &mut Visibility)>,
 ) {
+    let all = map_data.is_changed();
     for (item, mut visibility) in items_query.iter_mut() {
+        if !all && !item.is_changed() {
+            continue;
+        }
         let layer_visible = map_data
             .layers
             .iter()
@@ -103,7 +108,7 @@ impl Plugin for EditorPlugin {
                     placement::update_placement_ghost,
                     brush::handle_brush
                         .run_if(tool_is(EditorTool::Brush).and_then(no_dialog_open)),
-                    update_layer_visibility.run_if(resource_changed::<MapData>),
+                    update_layer_visibility,
                 ),
             )
             .add_systems(

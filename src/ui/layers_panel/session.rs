@@ -4,7 +4,8 @@ use bevy_egui::egui;
 
 use crate::session::LiveSessionState;
 
-/// Renders the Live Session controls section when a session is active.
+/// Renders the Live Session controls section when a session is active. Returns true if
+/// the user changed anything.
 ///
 /// `move_while_frozen` is the setting that lets viewport moves reach players
 /// while their view is frozen.
@@ -12,10 +13,11 @@ pub fn render_session_controls(
     ui: &mut egui::Ui,
     session_state: &mut LiveSessionState,
     move_while_frozen: bool,
-) {
+) -> bool {
     if !session_state.is_active {
-        return;
+        return false;
     }
+    let mut changed = false;
 
     ui.add_space(12.0);
     ui.separator();
@@ -39,8 +41,9 @@ pub fn render_session_controls(
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        toggle_switch(ui, &mut session_state.frozen)
-            .on_hover_text("Hold the player view while you edit the map");
+        changed |= toggle_switch(ui, &mut session_state.frozen)
+            .on_hover_text("Hold the player view while you edit the map")
+            .changed();
         ui.label(egui::RichText::new("Freeze player view").size(14.0));
     });
     if session_state.frozen {
@@ -57,21 +60,25 @@ pub fn render_session_controls(
 
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("X:").size(14.0));
-        ui.add(
-            egui::DragValue::new(&mut session_state.viewport_center.x)
-                .speed(5.0)
-                .suffix(" px"),
-        );
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut session_state.viewport_center.x)
+                    .speed(5.0)
+                    .suffix(" px"),
+            )
+            .changed();
     });
     ui.add_space(2.0);
 
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Y:").size(14.0));
-        ui.add(
-            egui::DragValue::new(&mut session_state.viewport_center.y)
-                .speed(5.0)
-                .suffix(" px"),
-        );
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut session_state.viewport_center.y)
+                    .speed(5.0)
+                    .suffix(" px"),
+            )
+            .changed();
     });
 
     ui.add_space(8.0);
@@ -94,6 +101,7 @@ pub fn render_session_controls(
         {
             session_state.viewport_size.x = width;
             session_state.viewport_size.y = width / aspect;
+            changed = true;
         }
     });
     ui.add_space(2.0);
@@ -111,10 +119,12 @@ pub fn render_session_controls(
     ui.horizontal(|ui| {
         if ui.add_sized([28.0, 26.0], egui::Button::new("↺")).clicked() {
             session_state.rotate_ccw();
+            changed = true;
         }
         ui.label(egui::RichText::new(format!("{}°", session_state.rotation_degrees)).size(14.0));
         if ui.add_sized([28.0, 26.0], egui::Button::new("↻")).clicked() {
             session_state.rotate_cw();
+            changed = true;
         }
     });
 
@@ -125,7 +135,9 @@ pub fn render_session_controls(
         .clicked()
     {
         session_state.is_active = false;
+        changed = true;
     }
+    changed
 }
 
 /// An on/off switch, like a checkbox without a label
