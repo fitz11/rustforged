@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy_egui::{EguiContexts, egui};
 use futures_lite::future;
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::assets::{
@@ -23,7 +22,7 @@ use super::dialogs::{
     render_set_default_dialog, render_success_dialog,
 };
 use super::helpers::{
-    conflict_copy_original, discover_folders, extension_color, sanitize_map_name,
+    MapTreeRow, discover_folders, extension_color, indented, map_tree, sanitize_map_name,
     scan_maps_directory,
 };
 use super::library_ops::{export_library_to_zip, import_library_from_zip};
@@ -381,7 +380,7 @@ fn render_export_import_buttons(
 ) {
     ui.horizontal(|ui| {
         if ui
-            .add_sized([70.0, 24.0], egui::Button::new("Export..."))
+            .add_sized([70.0, 24.0], egui::Button::new("Export"))
             .clicked()
             && browser_state.pending_export.is_none()
         {
@@ -399,7 +398,7 @@ fn render_export_import_buttons(
         }
 
         if ui
-            .add_sized([70.0, 24.0], egui::Button::new("Import..."))
+            .add_sized([70.0, 24.0], egui::Button::new("Import"))
             .clicked()
             && browser_state.pending_import_zip.is_none()
             && browser_state.pending_import_dest.is_none()
@@ -593,32 +592,9 @@ fn render_maps_section(
             }
         });
 
-        // Sync clients' conflict copies are listed under the map they conflict with
-        let names: HashSet<&str> = browser_state
-            .cached_maps
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect();
-        let copies_of = |original: &str| -> Vec<(String, PathBuf)> {
-            browser_state
-                .cached_maps
-                .iter()
-                .filter(|(name, _)| conflict_copy_original(name) == Some(original))
-                .cloned()
-                .collect()
-        };
-        let mut rows: Vec<MapListRow> = Vec::new();
-        for (name, path) in &browser_state.cached_maps {
-            let is_attached_copy =
-                conflict_copy_original(name).is_some_and(|original| names.contains(original));
-            if !is_attached_copy {
-                rows.push(MapListRow {
-                    name: name.clone(),
-                    path: path.clone(),
-                    conflict_copies: copies_of(name),
-                });
-            }
-        }
+        // Maps in subfolders are indented under a header per folder; sync clients'
+        // conflict copies are listed under the map they conflict with
+        let rows = map_tree(&browser_state.cached_maps);
 
         let mut rescan = false;
         egui::ScrollArea::vertical()
@@ -626,12 +602,43 @@ fn render_maps_section(
             .max_height(120.0)
             .show(ui, |ui| {
                 for row in &rows {
-                    let orphan_copy = conflict_copy_original(&row.name).is_some();
-                    render_map_row(ui, &row.name, &row.path, orphan_copy, 0.0, map_res);
-                    for (copy_name, copy_path) in &row.conflict_copies {
-                        let label = copy_name.rsplit('/').next().unwrap_or(copy_name);
-                        render_map_row(ui, label, copy_path, true, 12.0, map_res);
-                        rescan |= discard_conflict_copy(ui, copy_path, browser_state);
+                    match row {
+                        MapTreeRow::Folder { name, depth } => {
+                            ui.horizontal(|ui| {
+                                // Line up with map names, after the current-map marker
+                                ui.add_space(12.0);
+                                ui.label(
+                                    egui::RichText::new(indented(name, *depth))
+                                        .size(12.0)
+                                        .weak(),
+                                );
+                            });
+                        }
+                        MapTreeRow::Map {
+                            name,
+                            depth,
+                            path,
+                            conflict_copy,
+                            conflict_copies,
+                        } => {
+                            render_map_row(
+                                ui,
+                                &indented(name, *depth),
+                                path,
+                                *conflict_copy,
+                                map_res,
+                            );
+                            for (copy_name, copy_path) in conflict_copies {
+                                render_map_row(
+                                    ui,
+                                    &indented(copy_name, depth + 1),
+                                    copy_path,
+                                    true,
+                                    map_res,
+                                );
+                                rescan |= discard_conflict_copy(ui, copy_path, browser_state);
+                            }
+                        }
                     }
                 }
             });
@@ -641,13 +648,6 @@ fn render_maps_section(
     }
 }
 
-/// A map in the available-maps list, with any sync conflict copies of it.
-struct MapListRow {
-    name: String,
-    path: PathBuf,
-    conflict_copies: Vec<(String, PathBuf)>,
-}
-
 /// One entry in the available-maps list; clicking it opens the map. Conflict copies get a
 /// warning marker.
 fn render_map_row(
@@ -655,13 +655,11 @@ fn render_map_row(
     label: &str,
     path: &PathBuf,
     conflict_copy: bool,
-    indent: f32,
     map_res: &mut MapResources,
 ) {
     let is_current = map_res.current_map_file.path.as_ref() == Some(path);
 
     ui.horizontal(|ui| {
-        ui.add_space(indent);
         if is_current {
             ui.label(egui::RichText::new(">").size(10.0));
         } else {
@@ -674,11 +672,15 @@ fn render_map_row(
         }
         if conflict_copy {
             text = text.color(egui::Color32::from_rgb(230, 170, 60));
-            ui.label(egui::RichText::new("\u{26a0}").size(11.0).color(egui::Color32::from_rgb(230, 170, 60)))
-                .on_hover_text(
-                    "Conflict copy: a sync client saved this when the map was changed on two \
-                     machines at once. Open it to compare, then discard the version you don't need.",
-                );
+            ui.label(
+                egui::RichText::new("\u{26a0}")
+                    .size(11.0)
+                    .color(egui::Color32::from_rgb(230, 170, 60)),
+            )
+            .on_hover_text(
+                "Conflict copy: a sync client saved this when the map was changed on two \
+                 machines at once. Open it to compare, then discard the version you don't need.",
+            );
         }
 
         if ui
@@ -687,7 +689,9 @@ fn render_map_row(
             .clicked()
             && !is_current
         {
-            map_res.load_events.write(crate::map::LoadMapRequest { path: path.clone() });
+            map_res
+                .load_events
+                .write(crate::map::LoadMapRequest { path: path.clone() });
         }
     });
 }
@@ -794,7 +798,7 @@ fn render_assets_buttons(ui: &mut egui::Ui, library: &AssetLibrary, dialogs: &mu
 
     ui.horizontal(|ui| {
         if ui
-            .add_sized([80.0, 24.0], egui::Button::new("Import..."))
+            .add_sized([80.0, 24.0], egui::Button::new("Import"))
             .clicked()
         {
             dialogs.import_dialog.is_open = true;
@@ -821,35 +825,36 @@ fn render_assets_buttons(ui: &mut egui::Ui, library: &AssetLibrary, dialogs: &mu
     });
 }
 
-/// Render the folder tree view.
+/// Render the folder tree view. Each folder level is indented one step. With no folder
+/// selected, the asset list shows the library's top-level assets; clicking the selected
+/// folder again goes back to them.
 fn render_folder_tree(ui: &mut egui::Ui, browser_state: &mut AssetBrowserState) {
     ui.label(egui::RichText::new("Folders").size(12.0).weak());
     egui::ScrollArea::vertical()
         .id_salt("folder_tree")
         .max_height(120.0)
         .show(ui, |ui| {
-            let root_selected = browser_state.selected_folder.is_empty();
-            if ui
-                .selectable_label(root_selected, egui::RichText::new("(root)").size(12.0))
-                .clicked()
-            {
-                browser_state.selected_folder = String::new();
-            }
-
             for folder in &browser_state.discovered_folders.clone() {
                 let is_selected = browser_state.selected_folder == *folder;
                 let depth = folder.matches('/').count();
                 let display_name = folder.split('/').next_back().unwrap_or(folder);
 
-                ui.horizontal(|ui| {
-                    ui.add_space(depth as f32 * 12.0);
-                    if ui
-                        .selectable_label(is_selected, egui::RichText::new(display_name).size(12.0))
-                        .clicked()
-                    {
-                        browser_state.selected_folder = folder.clone();
-                    }
-                });
+                let response = ui.selectable_label(
+                    is_selected,
+                    egui::RichText::new(indented(display_name, depth)).size(12.0),
+                );
+                let response = if is_selected {
+                    response.on_hover_text("Click again to show the library's top-level assets")
+                } else {
+                    response
+                };
+                if response.clicked() {
+                    browser_state.selected_folder = if is_selected {
+                        String::new()
+                    } else {
+                        folder.clone()
+                    };
+                }
             }
         });
 }
