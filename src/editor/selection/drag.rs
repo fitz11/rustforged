@@ -27,13 +27,10 @@ pub fn handle_drag(
     mut paths_query: Query<&mut DrawnPath, With<AnnotationMarker>>,
     mut lines_query: Query<&mut DrawnLine, With<AnnotationMarker>>,
     mut text_transforms_query: Query<
-        &mut Transform,
-        (
-            With<TextAnnotation>,
-            With<AnnotationMarker>,
-            Without<PlacedItem>,
-        ),
+        (&mut Transform, &TextAnnotation),
+        (With<AnnotationMarker>, Without<PlacedItem>),
     >,
+    annotation_ids: Query<&ItemId, With<AnnotationMarker>>,
 ) {
     if current_tool.tool != EditorTool::Select {
         drag_state.is_dragging = false;
@@ -42,10 +39,10 @@ pub fn handle_drag(
         return;
     }
 
-    // Stop dragging on mouse release, recording the net change to the placed items as one
-    // undo step (covers move/resize/rotate)
+    // Stop dragging on mouse release, recording the net change to the placed items and
+    // annotations as one undo step (covers move/resize/rotate)
     if mouse_button.just_released(MouseButton::Left) {
-        let pairs = drag_state
+        let items = drag_state
             .entity_start_transforms
             .iter()
             .filter_map(|(entity, start)| {
@@ -55,7 +52,62 @@ pub fn handle_drag(
                     MapObject::item(*id, item.clone(), *current),
                 ))
             });
-        if let Some(command) = EditorCommand::change(pairs) {
+        let annotations = drag_state
+            .annotation_drag_data
+            .iter()
+            .filter_map(|(entity, start)| {
+                let id = *annotation_ids.get(*entity).ok()?;
+                match start {
+                    AnnotationDragData::Path { original_points } => {
+                        let path = paths_query.get(*entity).ok()?;
+                        let before = DrawnPath {
+                            points: original_points.clone(),
+                            ..path.clone()
+                        };
+                        Some((
+                            MapObject::Path { id, path: before },
+                            MapObject::Path {
+                                id,
+                                path: path.clone(),
+                            },
+                        ))
+                    }
+                    AnnotationDragData::Line {
+                        original_start,
+                        original_end,
+                    } => {
+                        let line = lines_query.get(*entity).ok()?;
+                        let before = DrawnLine {
+                            start: *original_start,
+                            end: *original_end,
+                            ..line.clone()
+                        };
+                        Some((
+                            MapObject::Line { id, line: before },
+                            MapObject::Line {
+                                id,
+                                line: line.clone(),
+                            },
+                        ))
+                    }
+                    AnnotationDragData::Text { original_position } => {
+                        let (transform, text) = text_transforms_query.get(*entity).ok()?;
+                        Some((
+                            MapObject::Text {
+                                id,
+                                text: text.clone(),
+                                position: *original_position,
+                            },
+                            MapObject::Text {
+                                id,
+                                text: text.clone(),
+                                position: transform.translation.truncate(),
+                            },
+                        ))
+                    }
+                }
+            });
+        if let Some(command) = EditorCommand::change(items.chain(annotations)) {
             history_writer.write(RecordEditorCommand { command });
         }
 
@@ -119,7 +171,7 @@ pub fn handle_drag(
                         }
                     }
                     AnnotationDragData::Text { original_position } => {
-                        if let Ok(mut transform) = text_transforms_query.get_mut(*entity) {
+                        if let Ok((mut transform, _)) = text_transforms_query.get_mut(*entity) {
                             let new_pos = *original_position + drag_offset;
                             transform.translation.x = new_pos.x;
                             transform.translation.y = new_pos.y;

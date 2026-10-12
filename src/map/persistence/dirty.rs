@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::editor::AnnotationMarker;
+use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::PlacedItem;
 
 use super::resources::MapDirtyState;
@@ -49,10 +49,24 @@ pub fn detect_item_removals(
     dirty_state.is_dirty = true;
 }
 
-/// System that detects when items are transformed (moved, rotated, scaled)
+/// System that detects when items or annotations change in place: moved, rotated, scaled,
+/// redrawn, or moved to another layer
+#[allow(clippy::type_complexity)]
 pub fn detect_item_transforms(
     mut dirty_state: ResMut<MapDirtyState>,
-    changed_items: Query<Entity, (Changed<Transform>, With<PlacedItem>)>,
+    changed: Query<
+        (),
+        (
+            Or<(With<PlacedItem>, With<AnnotationMarker>)>,
+            Or<(
+                Changed<Transform>,
+                Changed<PlacedItem>,
+                Changed<DrawnPath>,
+                Changed<DrawnLine>,
+                Changed<TextAnnotation>,
+            )>,
+        ),
+    >,
 ) {
     // Ignore the transform "changes" from newly spawned items after a
     // load/new/switch (a freshly added Transform also counts as Changed).
@@ -60,12 +74,9 @@ pub fn detect_item_transforms(
         return;
     }
 
-    // Only run if transforms changed
-    if changed_items.is_empty() {
-        return;
+    if !changed.is_empty() {
+        dirty_state.is_dirty = true;
     }
-
-    dirty_state.is_dirty = true;
 }
 
 /// System that ticks down the change-detection suppression window. Runs after
