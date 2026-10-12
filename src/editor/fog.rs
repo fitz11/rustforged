@@ -20,8 +20,7 @@ use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
-use super::camera::EditorCamera;
-use super::params::{CameraParams, is_cursor_over_ui};
+use super::params::{CameraParams, CameraWithProjection, is_cursor_over_ui};
 use crate::input::shift_held;
 use crate::map::{
     FogOfWarData, Layer, MapData, MapDirtyState, cell_to_world, cells_in_radius, render_layer,
@@ -179,7 +178,7 @@ pub fn render_fog_editor(
     fog_data: Res<FogOfWarData>,
     fog_state: Res<FogState>,
     map_data: Res<MapData>,
-    camera_query: Query<(&Camera, &GlobalTransform, &Projection), With<EditorCamera>>,
+    camera: CameraWithProjection,
 ) {
     if !is_fog_layer_visible(&map_data) {
         return;
@@ -190,13 +189,11 @@ pub fn render_fog_editor(
     let base = theme::FOG_EDITOR_BASE.to_srgba();
     let fog_color = Color::srgba(base.red, base.green, base.blue, fog_state.editor_opacity);
 
-    // Get camera viewport bounds
-    let (min_cell, max_cell) = if let Ok((camera, transform, projection)) = camera_query.single() {
-        get_viewport_cell_bounds(camera, transform, projection, grid_size)
-    } else {
-        // Fallback bounds
-        ((-50, -50), (50, 50))
+    // The cells the editor camera shows
+    let Some((min, max)) = camera.visible_world_rect() else {
+        return;
     };
+    let (min_cell, max_cell) = padded_cell_bounds(min, max, grid_size);
 
     // Line spacing for fill effect - denser lines = more solid appearance
     let line_spacing = 4.0;
@@ -335,43 +332,17 @@ fn get_player_viewport_cell_bounds(
     grid_size: f32,
 ) -> ((i32, i32), (i32, i32)) {
     let (min, max) = viewport.world_bounds();
-
-    // Add padding for cells partially visible at edges
-    let padding = grid_size * 2.0;
-    let min_world = min - Vec2::splat(padding);
-    let max_world = max + Vec2::splat(padding);
-
-    let min_cell = crate::map::world_to_cell(min_world, grid_size);
-    let max_cell = crate::map::world_to_cell(max_world, grid_size);
-
-    (min_cell, max_cell)
+    padded_cell_bounds(min, max, grid_size)
 }
 
-/// Get the cell bounds visible in the camera viewport
-fn get_viewport_cell_bounds(
-    _camera: &Camera,
-    transform: &GlobalTransform,
-    projection: &Projection,
-    grid_size: f32,
-) -> ((i32, i32), (i32, i32)) {
-    // Get viewport size from projection
-    let viewport_size = match projection {
-        Projection::Orthographic(ortho) => Vec2::new(ortho.area.width(), ortho.area.height()),
-        _ => Vec2::new(1920.0, 1080.0), // Fallback
-    };
-
-    let camera_pos = transform.translation().truncate();
-    let half_size = viewport_size / 2.0;
-
-    // Add some padding for cells partially visible at edges
-    let padding = grid_size * 2.0;
-    let min_world = camera_pos - half_size - Vec2::splat(padding);
-    let max_world = camera_pos + half_size + Vec2::splat(padding);
-
-    let min_cell = crate::map::world_to_cell(min_world, grid_size);
-    let max_cell = crate::map::world_to_cell(max_world, grid_size);
-
-    (min_cell, max_cell)
+/// Cells covering the world rectangle from `min` to `max`, plus two cells of padding for
+/// cells partly in view at the edges
+fn padded_cell_bounds(min: Vec2, max: Vec2, grid_size: f32) -> ((i32, i32), (i32, i32)) {
+    let padding = Vec2::splat(grid_size * 2.0);
+    (
+        crate::map::world_to_cell(min - padding, grid_size),
+        crate::map::world_to_cell(max + padding, grid_size),
+    )
 }
 
 #[cfg(test)]

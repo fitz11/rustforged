@@ -2,13 +2,10 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 
-use crate::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
+use super::params::CameraWithProjection;
 use crate::map::{MapData, render_layer};
 use crate::session::PlayerMapView;
 use crate::theme;
-
-use super::EditorCamera;
-use super::camera::CameraZoom;
 
 #[derive(Resource)]
 pub struct GridSettings {
@@ -81,28 +78,15 @@ fn draw_grid_lines<Config: GizmoConfigGroup>(
     }
 }
 
-pub fn draw_grid(
-    mut gizmos: Gizmos,
-    map_data: Res<MapData>,
-    camera_query: Query<(&Transform, &CameraZoom), With<EditorCamera>>,
-) {
+pub fn draw_grid(mut gizmos: Gizmos, map_data: Res<MapData>, camera: CameraWithProjection) {
     if !map_data.grid_visible {
         return;
     }
-
-    let Ok((camera_transform, zoom)) = camera_query.single() else {
+    // Over the whole window, whatever its size
+    let Some((min, max)) = camera.visible_world_rect() else {
         return;
     };
-
-    let view_size = Vec2::new(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) * zoom.scale;
-    let camera_pos = camera_transform.translation.truncate();
-
-    draw_grid_lines(
-        &mut gizmos,
-        camera_pos - view_size / 2.0,
-        camera_pos + view_size / 2.0,
-        map_data.grid_size,
-    );
+    draw_grid_lines(&mut gizmos, min, max, map_data.grid_size);
 }
 
 /// Draw the grid in the player view, over the area the players can see

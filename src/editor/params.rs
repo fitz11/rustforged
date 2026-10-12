@@ -70,6 +70,17 @@ impl CameraWithProjection<'_, '_> {
         camera.viewport_to_world_2d(transform, cursor_pos).ok()
     }
 
+    /// The world area the editor camera shows, as (min, max)
+    pub fn visible_world_rect(&self) -> Option<(Vec2, Vec2)> {
+        let (_, transform, projection) = self.camera.single().ok()?;
+        let Projection::Orthographic(ortho) = projection else {
+            return None;
+        };
+        // The projection's area already includes the zoom
+        let center = transform.translation().truncate();
+        Some((center + ortho.area.min, center + ortho.area.max))
+    }
+
     /// Get the current zoom scale from projection
     pub fn zoom_scale(&self) -> f32 {
         self.camera
