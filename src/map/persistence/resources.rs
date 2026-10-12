@@ -96,6 +96,8 @@ pub struct OpenMap {
     pub path: Option<PathBuf>,
     pub is_dirty: bool,
     pub saved_state: Option<crate::map::SavedMap>,
+    /// The map file's stable id, once it has been saved or loaded
+    pub map_id: Option<String>,
     /// Asset fingerprints carried from the map file. Kept so references to files that are
     /// missing right now (e.g. still syncing) are saved with their fingerprint intact.
     pub asset_fingerprints: BTreeMap<String, AssetFingerprint>,
@@ -121,6 +123,7 @@ impl Default for OpenMaps {
                 path: None,
                 is_dirty: false,
                 saved_state: None,
+                map_id: None,
                 asset_fingerprints: BTreeMap::new(),
             },
         );

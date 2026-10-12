@@ -5390,6 +5390,7 @@ dependencies = [
  "chrono",
  "dirs",
  "futures-lite",
+ "gethostname",
  "image",
  "keepawake",
  "open",

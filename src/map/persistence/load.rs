@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use crate::assets::{AssetLibrary, LibraryIndex, library_asset_path};
 use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use crate::map::{FogOfWarData, Layer, MapData, PlacedItem, SavedMap};
+use crate::map::{FogOfWarData, Layer, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedMap};
 
 use super::helpers::array_to_color;
 use super::messages::LoadMapRequest;
@@ -60,6 +60,17 @@ pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
         .and_then(|json| {
             serde_json::from_str::<SavedMap>(&json)
                 .map_err(|e| format!("Failed to parse map file: {}", e))
+        })
+        .and_then(|map| {
+            if map.format_version > MAP_FORMAT_VERSION {
+                Err(format!(
+                    "This map was saved by a newer version of Rustforged (map format {}, \
+                     this version reads up to {}).",
+                    map.format_version, MAP_FORMAT_VERSION
+                ))
+            } else {
+                Ok(map)
+            }
         });
     let mut saved_map = match parsed {
         Ok(saved_map) => saved_map,
@@ -141,6 +152,7 @@ pub fn poll_load_tasks(
                 continue;
             };
             let asset_fingerprints = std::mem::take(&mut saved_map.asset_fingerprints);
+            let map_id = saved_map.map_id.take();
 
             for (old, new) in &result.relinked {
                 info!("Relinked asset {} -> {}", old, new);
@@ -272,6 +284,7 @@ pub fn poll_load_tasks(
                 // Map already open - just switch to it and update state
                 if let Some(map) = open_maps.maps.get_mut(&id) {
                     map.is_dirty = relinked_any;
+                    map.map_id = map_id;
                     map.asset_fingerprints = asset_fingerprints;
                 }
                 open_maps.active_map_id = Some(id);
@@ -292,6 +305,7 @@ pub fn poll_load_tasks(
                         path: Some(result.path.clone()),
                         is_dirty: relinked_any,
                         saved_state: None,
+                        map_id,
                         asset_fingerprints,
                     },
                 );

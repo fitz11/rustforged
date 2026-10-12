@@ -6,6 +6,7 @@ mod common;
 mod config;
 mod constants;
 mod editor;
+mod fsutil;
 mod map;
 mod paths;
 mod session;

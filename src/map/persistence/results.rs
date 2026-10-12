@@ -11,6 +11,8 @@ pub struct SaveResult {
     pub path: PathBuf,
     pub success: bool,
     pub error: Option<String>,
+    /// Id written to the file
+    pub map_id: String,
     /// Fingerprints written to the file
     pub asset_fingerprints: BTreeMap<String, AssetFingerprint>,
     /// Fingerprints computed while saving, for the library's cache

@@ -45,12 +45,23 @@ pub fn save_map_system(
             capture_current_map_state(&map_data, &fog_data, &placed_items, &paths, &lines, &texts);
         let used_assets = saved_map.used_assets();
         let mut index = asset_library.index();
-        let carried = open_maps
-            .active_map()
+        let active = open_maps.active_map();
+        let carried = active
             .map(|m| m.asset_fingerprints.clone())
             .unwrap_or_default();
 
         let path = event.path.clone();
+
+        // Keep the map's id across saves; saving it under a different file makes a copy,
+        // which gets its own id.
+        let same_file = active.is_some_and(|m| m.path.is_none() || m.path.as_ref() == Some(&path));
+        let map_id = active
+            .and_then(|m| m.map_id.clone())
+            .filter(|_| same_file)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        saved_map.map_id = Some(map_id.clone());
+        saved_map.saved_by = crate::fsutil::machine_name();
+
         let map_name = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -67,11 +78,12 @@ pub fn save_map_system(
             let fingerprints = fingerprint_assets(used_assets, &mut index, &carried);
             saved_map.asset_fingerprints = fingerprints.clone();
 
-            let error = write_map(&path, &saved_map).err();
+            let error = write_map(&path, &mut saved_map).err();
             SaveResult {
                 path,
                 success: error.is_none(),
                 error,
+                map_id,
                 asset_fingerprints: fingerprints,
                 computed: index.into_computed(),
             }
@@ -100,7 +112,8 @@ pub(super) fn fingerprint_assets(
         .collect()
 }
 
-fn write_map(path: &Path, saved_map: &SavedMap) -> Result<(), String> {
+pub(super) fn write_map(path: &Path, saved_map: &mut SavedMap) -> Result<(), String> {
+    saved_map.sort_for_save();
     // Serialize (could be slow for large maps)
     let json = serde_json::to_string_pretty(saved_map)
         .map_err(|e| format!("Failed to serialize map: {}", e))?;
@@ -108,7 +121,13 @@ fn write_map(path: &Path, saved_map: &SavedMap) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create maps folder: {}", e))?;
     }
-    std::fs::write(path, json).map_err(|e| format!("Failed to write file: {}", e))
+    // Atomic, and skipped when nothing changed so sync clients have nothing to upload
+    let wrote = crate::fsutil::write_if_changed(path, json.as_bytes())
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+    if !wrote {
+        info!("Map unchanged on disk, skipped writing {:?}", path);
+    }
+    Ok(())
 }
 
 /// Polls save tasks and handles completion
@@ -157,6 +176,7 @@ pub fn poll_save_tasks(
                 if let Some(active_map) = open_maps.active_map_mut() {
                     active_map.is_dirty = false;
                     active_map.asset_fingerprints = result.asset_fingerprints;
+                    active_map.map_id = Some(result.map_id);
                     active_map.path = Some(result.path.clone());
                     active_map.name = result
                         .path

@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use crate::assets::library_asset_path;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{
-    FogOfWarData, Layer, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar, SavedLine, SavedMap,
-    SavedPath, SavedPlacedItem, SavedTextBox,
+    FogOfWarData, Layer, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
+    SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
 };
 
 use super::helpers::{array_to_color, color_to_array};
@@ -72,6 +72,7 @@ pub fn new_map_system(
                 path: None,
                 is_dirty: false,
                 saved_state: None,
+                map_id: None,
                 asset_fingerprints: Default::default(),
             },
         );
@@ -124,8 +125,11 @@ pub(super) fn capture_current_map_state(
         })
         .collect();
 
-    // Fingerprints live on the OpenMap entry; this snapshot only holds what's on the map
+    // Id and fingerprints live on the OpenMap entry; this snapshot only holds what's on the map
     SavedMap {
+        format_version: MAP_FORMAT_VERSION,
+        map_id: None,
+        saved_by: None,
         asset_fingerprints: Default::default(),
         map_data: map_data.clone(),
         placed_items: items,

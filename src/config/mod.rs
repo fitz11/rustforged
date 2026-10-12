@@ -141,7 +141,7 @@ fn load_config() -> LoadConfigResult {
 fn save_config(config: &AppConfig) {
     match serde_json::to_string_pretty(&config.data) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(&config.config_path, json) {
+            if let Err(e) = crate::fsutil::write_atomic(&config.config_path, json.as_bytes()) {
                 error!("Failed to save config: {}", e);
             } else {
                 info!("Config saved to {:?}", config.config_path);

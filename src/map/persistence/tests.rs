@@ -7,10 +7,12 @@ use std::path::Path;
 use super::helpers::{array_to_color, color_to_array};
 use super::load::read_map;
 use super::resources::MapLoadError;
-use super::save::fingerprint_assets;
+use super::save::{fingerprint_assets, write_map};
 use crate::assets::fingerprint_test_support::stamp_of;
 use crate::assets::{AssetFingerprint, FingerprintCache, LibraryIndex};
-use crate::map::{Layer, MapData, SavedAnnotations, SavedFogOfWar, SavedMap, SavedPlacedItem};
+use crate::map::{
+    Layer, MAP_FORMAT_VERSION, MapData, SavedAnnotations, SavedFogOfWar, SavedMap, SavedPlacedItem,
+};
 
 // color_to_array tests
 #[test]
@@ -177,6 +179,9 @@ fn item(asset_path: &str) -> SavedPlacedItem {
 
 fn map_with(items: Vec<SavedPlacedItem>, fingerprints: &[(&str, &str)]) -> SavedMap {
     SavedMap {
+        format_version: MAP_FORMAT_VERSION,
+        map_id: None,
+        saved_by: None,
         asset_fingerprints: fingerprints
             .iter()
             .map(|(path, contents)| (path.to_string(), fingerprint_of(contents)))
@@ -277,4 +282,79 @@ fn test_fingerprint_assets_keeps_carried_fingerprint_for_missing_files() {
     assert_eq!(fingerprints["tokens/orc.png"], fingerprint_of("orc"));
     assert_eq!(fingerprints["tokens/gone.png"], fingerprint_of("gone"));
     assert!(!fingerprints.contains_key("tokens/never.png"));
+}
+
+// Deterministic, skip-if-unchanged map writes
+
+fn item_at(asset_path: &str, x: f32) -> SavedPlacedItem {
+    SavedPlacedItem {
+        position: Vec2::new(x, 0.0),
+        ..item(asset_path)
+    }
+}
+
+#[test]
+fn test_write_map_output_does_not_depend_on_entity_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut forward = map_with(
+        vec![
+            item_at("a.png", 1.0),
+            item_at("b.png", 2.0),
+            item_at("a.png", 0.0),
+        ],
+        &[],
+    );
+    let mut backward = map_with(
+        vec![
+            item_at("a.png", 0.0),
+            item_at("b.png", 2.0),
+            item_at("a.png", 1.0),
+        ],
+        &[],
+    );
+    for cell in [(3, 1), (-2, 5), (0, 0)] {
+        forward.fog_of_war.revealed_cells.insert(cell);
+    }
+    for cell in [(0, 0), (3, 1), (-2, 5)] {
+        backward.fog_of_war.revealed_cells.insert(cell);
+    }
+
+    let first = dir.path().join("first.json");
+    let second = dir.path().join("second.json");
+    write_map(&first, &mut forward).unwrap();
+    write_map(&second, &mut backward).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&first).unwrap(),
+        std::fs::read_to_string(&second).unwrap()
+    );
+}
+
+#[test]
+fn test_write_map_creates_maps_folder_and_skips_unchanged_rewrite() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("maps/campaign/cave.json");
+    let mut map = map_with(vec![item("a.png")], &[]);
+
+    write_map(&path, &mut map).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    write_map(&path, &mut map).unwrap();
+
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().modified().unwrap(),
+        modified
+    );
+}
+
+#[test]
+fn test_read_map_rejects_newer_format() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("future.json");
+    let mut map = map_with(vec![], &[]);
+    map.format_version = MAP_FORMAT_VERSION + 1;
+    std::fs::write(&path, serde_json::to_string(&map).unwrap()).unwrap();
+
+    let result = read_map(path, library_index(dir.path(), &[]));
+
+    assert!(result.error.unwrap().contains("newer version"));
 }

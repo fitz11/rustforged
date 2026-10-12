@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// Runtime state for fog of war
 ///
@@ -69,8 +69,9 @@ impl FogOfWarData {
 pub struct SavedFogOfWar {
     /// Set of revealed cell coordinates
     /// Empty = fully fogged, populated = those cells are revealed
+    /// (Ordered, so the saved file is identical when nothing changed)
     #[serde(default)]
-    pub revealed_cells: HashSet<(i32, i32)>,
+    pub revealed_cells: BTreeSet<(i32, i32)>,
     /// Legacy field for backwards compatibility with old save files
     /// Will be migrated to revealed_cells on load
     #[serde(default, skip_serializing)]
@@ -81,7 +82,7 @@ pub struct SavedFogOfWar {
 impl From<&FogOfWarData> for SavedFogOfWar {
     fn from(data: &FogOfWarData) -> Self {
         Self {
-            revealed_cells: data.revealed_cells.clone(),
+            revealed_cells: data.revealed_cells.iter().copied().collect(),
             fogged_cells: HashSet::new(), // Never save this, only for loading legacy
         }
     }
@@ -94,7 +95,7 @@ impl From<SavedFogOfWar> for FogOfWarData {
         // we'll just start fresh. Old maps will lose their fog state but that's acceptable
         // for this format migration.
         Self {
-            revealed_cells: saved.revealed_cells,
+            revealed_cells: saved.revealed_cells.into_iter().collect(),
         }
     }
 }

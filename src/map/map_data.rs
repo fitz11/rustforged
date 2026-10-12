@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::assets::AssetFingerprint;
@@ -63,8 +64,20 @@ impl SavedPlacedItem {
     }
 }
 
+/// Map file format this version writes. Files without a version predate versioning.
+pub const MAP_FORMAT_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedMap {
+    #[serde(default)]
+    pub format_version: u32,
+    /// Stable identifier, kept across saves and renames; a copy saved under a new name gets
+    /// a new one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub map_id: Option<String>,
+    /// Host name of the machine that last saved the map
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_by: Option<String>,
     /// Content fingerprint of each referenced asset, by library-relative path, as of the
     /// last save. Lets a reference be found again after its file was renamed or moved.
     #[serde(default)]
@@ -91,6 +104,55 @@ impl SavedMap {
             changed = true;
         }
         changed
+    }
+
+    /// Puts items and annotations in a canonical order, so saving an unchanged map produces
+    /// identical bytes (entity iteration order varies from run to run).
+    pub fn sort_for_save(&mut self) {
+        fn vec2(a: Vec2, b: Vec2) -> Ordering {
+            a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y))
+        }
+        fn color(a: &[f32; 4], b: &[f32; 4]) -> Ordering {
+            a.iter()
+                .zip(b)
+                .map(|(x, y)| x.total_cmp(y))
+                .find(|o| o.is_ne())
+                .unwrap_or(Ordering::Equal)
+        }
+
+        self.placed_items.sort_by(|a, b| {
+            a.layer
+                .z_base()
+                .total_cmp(&b.layer.z_base())
+                .then(a.z_index.cmp(&b.z_index))
+                .then_with(|| a.asset_path.cmp(&b.asset_path))
+                .then_with(|| vec2(a.position, b.position))
+                .then(a.rotation.total_cmp(&b.rotation))
+                .then_with(|| vec2(a.scale, b.scale))
+        });
+        self.annotations.paths.sort_by(|a, b| {
+            a.points
+                .iter()
+                .zip(&b.points)
+                .map(|(p, q)| vec2(*p, *q))
+                .find(|o| o.is_ne())
+                .unwrap_or(Ordering::Equal)
+                .then(a.points.len().cmp(&b.points.len()))
+                .then_with(|| color(&a.color, &b.color))
+                .then(a.stroke_width.total_cmp(&b.stroke_width))
+        });
+        self.annotations.lines.sort_by(|a, b| {
+            vec2(a.start, b.start)
+                .then_with(|| vec2(a.end, b.end))
+                .then_with(|| color(&a.color, &b.color))
+                .then(a.stroke_width.total_cmp(&b.stroke_width))
+        });
+        self.annotations.text_boxes.sort_by(|a, b| {
+            vec2(a.position, b.position)
+                .then_with(|| a.content.cmp(&b.content))
+                .then(a.font_size.total_cmp(&b.font_size))
+                .then_with(|| color(&a.color, &b.color))
+        });
     }
 
     /// Unique library-relative paths of the assets this map places.
@@ -335,6 +397,9 @@ mod tests {
     #[test]
     fn test_saved_map_serialization() {
         let saved_map = SavedMap {
+            format_version: MAP_FORMAT_VERSION,
+            map_id: None,
+            saved_by: None,
             asset_fingerprints: BTreeMap::new(),
             map_data: MapData::default(),
             placed_items: vec![],
@@ -374,6 +439,9 @@ mod tests {
             },
         ];
         let saved_map = SavedMap {
+            format_version: MAP_FORMAT_VERSION,
+            map_id: None,
+            saved_by: None,
             asset_fingerprints: BTreeMap::new(),
             map_data: MapData {
                 name: "Test Map".to_string(),

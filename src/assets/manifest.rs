@@ -104,7 +104,7 @@ pub fn save_library_metadata(
     let json = serde_json::to_string_pretty(metadata)
         .map_err(|e| format!("Failed to serialize library manifest: {}", e))?;
     let manifest_path = library_path.join(LIBRARY_MANIFEST_FILE);
-    std::fs::write(&manifest_path, json)
+    crate::fsutil::write_atomic(&manifest_path, json.as_bytes())
         .map_err(|e| format!("Failed to write library manifest: {}", e))?;
 
     info!("Saved library manifest to {:?}", manifest_path);
