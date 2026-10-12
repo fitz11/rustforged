@@ -7,6 +7,13 @@ use crate::map::{SavedLine, SavedPath, SavedPlacedItem, SavedTextBox};
 use super::super::history::MapObject;
 use super::helpers::{color_to_array, path_center};
 
+fn depth(object: &MapObject) -> f32 {
+    match object {
+        MapObject::Item { transform, .. } => transform.translation.z,
+        _ => 0.0,
+    }
+}
+
 /// Where an object sits, for keeping copied objects in place relative to each other
 fn anchor(object: &MapObject) -> Vec2 {
     match object {
@@ -63,6 +70,10 @@ impl Clipboard {
         }
         self.clear();
         let centroid = objects.iter().map(anchor).sum::<Vec2>() / objects.len() as f32;
+
+        // Placed items bottom first, so a paste stacks them the same way
+        let mut objects: Vec<&MapObject> = objects.iter().collect();
+        objects.sort_by(|a, b| depth(a).total_cmp(&depth(b)));
 
         for object in objects {
             let offset = anchor(object) - centroid;

@@ -15,7 +15,7 @@ use bevy_egui::EguiContexts;
 
 use crate::assets::SelectedAsset;
 use crate::input::{command_held, shift_held};
-use crate::map::{MapData, PlacedItem, Selected, render_layer};
+use crate::map::{MapData, PlacedItem, Selected, StackTops, render_layer};
 use crate::ui::DialogState;
 
 use super::GridSettings;
@@ -155,6 +155,7 @@ pub fn handle_placement(
     mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
     selected_query: Query<Entity, With<Selected>>,
+    stack: StackTops,
 ) {
     if current_tool.tool != EditorTool::Place {
         return;
@@ -185,14 +186,14 @@ pub fn handle_placement(
     let final_pos = placement_position(world_pos, &keyboard, &grid_settings, map_data.grid_size);
 
     // Use the selected layer instead of deriving from asset category
-    let object = MapObject::new_item(
-        PlacedItem {
-            asset_path: asset.path.clone(),
-            layer: selected_layer.layer,
-            z_index: 0,
-        },
-        Transform::from_translation(final_pos.extend(0.0)),
-    );
+    let item = PlacedItem {
+        asset_path: asset.path.clone(),
+        layer: selected_layer.layer,
+        z_index: 0,
+    };
+    // On top of what's already on the layer
+    let z = stack.z_on_top(&item);
+    let object = MapObject::new_item(item, Transform::from_translation(final_pos.extend(z)));
     let entity = object.spawn(&mut commands, &asset_server);
     history_writer.write(RecordEditorCommand {
         command: EditorCommand::Add(vec![object]),

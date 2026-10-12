@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::map::{ItemId, Layer, MapData, Selected};
+use crate::map::{ItemId, Layer, MapData, Selected, StackTops};
 
 use super::super::annotations::{DrawnLine, DrawnPath, TextAnnotation};
 use super::super::history::{EditorCommand, MapObject, RecordEditorCommand};
@@ -20,6 +20,7 @@ pub fn handle_paste(
     selected_query: Query<Entity, With<Selected>>,
     map_data: Res<MapData>,
     mut history_writer: MessageWriter<RecordEditorCommand>,
+    stack: StackTops,
 ) {
     // Check clipboard has content
     if clipboard.is_empty() {
@@ -38,6 +39,8 @@ pub fn handle_paste(
 
     // Everything pasted is one undo step
     let mut pasted: Vec<MapObject> = Vec::new();
+    // Pasted items go on top, keeping their order (the clipboard lists them bottom first)
+    let mut stacker = stack.stacker();
 
     // Paste placed items
     for clip_item in &clipboard.placed_items {
@@ -45,14 +48,12 @@ pub fn handle_paste(
         if map_data.is_layer_locked(clip_item.saved.layer) {
             continue;
         }
+        let item = clip_item.saved.placed_item();
         let transform = Transform {
-            translation: (paste_pos + clip_item.offset).extend(0.0),
+            translation: (paste_pos + clip_item.offset).extend(stacker.next_z(&item)),
             ..clip_item.saved.transform()
         };
-        pasted.push(MapObject::new_item(
-            clip_item.saved.placed_item(),
-            transform,
-        ));
+        pasted.push(MapObject::new_item(item, transform));
     }
 
     if !map_data.is_layer_locked(Layer::Annotation) {

@@ -103,6 +103,18 @@ pub struct SavedPlacedItem {
 }
 
 impl SavedPlacedItem {
+    /// A fixed order for items that are otherwise level: by asset, then placement
+    pub fn canonical_cmp(&self, other: &Self) -> Ordering {
+        fn vec2(a: Vec2, b: Vec2) -> Ordering {
+            a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y))
+        }
+        self.asset_path
+            .cmp(&other.asset_path)
+            .then_with(|| vec2(self.position, other.position))
+            .then(self.rotation.total_cmp(&other.rotation))
+            .then_with(|| vec2(self.scale, other.scale))
+    }
+
     /// The item's transform; its depth is set when it's spawned.
     pub fn transform(&self) -> Transform {
         Transform {
@@ -208,15 +220,13 @@ impl SavedMap {
                 .unwrap_or(Ordering::Equal)
         }
 
+        // By layer and z-index; within those the list is already in stacking order (see
+        // capture_current_map_state), which the sort keeps
         self.placed_items.sort_by(|a, b| {
             a.layer
                 .z_base()
                 .total_cmp(&b.layer.z_base())
                 .then(a.z_index.cmp(&b.z_index))
-                .then_with(|| a.asset_path.cmp(&b.asset_path))
-                .then_with(|| vec2(a.position, b.position))
-                .then(a.rotation.total_cmp(&b.rotation))
-                .then_with(|| vec2(a.scale, b.scale))
         });
         self.annotations.paths.sort_by(|a, b| {
             a.points

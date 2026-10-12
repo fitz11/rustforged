@@ -295,24 +295,11 @@ fn item_at(asset_path: &str, x: f32) -> SavedPlacedItem {
 }
 
 #[test]
-fn test_write_map_output_does_not_depend_on_entity_order() {
+fn test_write_map_output_does_not_depend_on_set_order() {
     let dir = tempfile::tempdir().unwrap();
-    let mut forward = map_with(
-        vec![
-            item_at("a.png", 1.0),
-            item_at("b.png", 2.0),
-            item_at("a.png", 0.0),
-        ],
-        &[],
-    );
-    let mut backward = map_with(
-        vec![
-            item_at("a.png", 0.0),
-            item_at("b.png", 2.0),
-            item_at("a.png", 1.0),
-        ],
-        &[],
-    );
+    let items = || vec![item_at("a.png", 0.0), item_at("b.png", 2.0)];
+    let mut forward = map_with(items(), &[]);
+    let mut backward = map_with(items(), &[]);
     for cell in [(3, 1), (-2, 5), (0, 0)] {
         forward.fog_of_war.revealed_cells.insert(cell);
     }
@@ -329,6 +316,28 @@ fn test_write_map_output_does_not_depend_on_entity_order() {
         std::fs::read_to_string(&first).unwrap(),
         std::fs::read_to_string(&second).unwrap()
     );
+}
+
+#[test]
+fn test_write_map_keeps_stacking_order_within_a_layer() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut background = item_at("floor.png", 0.0);
+    background.layer = Layer::Background;
+    // Listed bottom first: b.png was placed on top of a.png
+    let mut map = map_with(
+        vec![item_at("b.png", 0.0), item_at("a.png", 0.0), background],
+        &[],
+    );
+    let path = dir.path().join("stack.json");
+    write_map(&path, &mut map).unwrap();
+
+    let order: Vec<_> = map
+        .placed_items
+        .iter()
+        .map(|i| i.asset_path.as_str())
+        .collect();
+    // Layers bottom first; within a layer the stacking order stays
+    assert_eq!(order, ["floor.png", "b.png", "a.png"]);
 }
 
 #[test]

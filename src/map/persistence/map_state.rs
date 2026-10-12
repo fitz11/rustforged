@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{
     FogOfWarData, MAP_FORMAT_VERSION, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
-    SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
+    SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox, Stacker,
 };
 
 use super::helpers::{array_to_color, color_to_array};
@@ -90,8 +90,15 @@ pub(super) fn capture_current_map_state(
     lines: &Query<&DrawnLine>,
     texts: &Query<(&Transform, &TextAnnotation)>,
 ) -> SavedMap {
-    let items: Vec<SavedPlacedItem> = placed_items
-        .iter()
+    // In stacking order, bottom first, so loading the file stacks them the same way
+    let mut stacked: Vec<_> = placed_items.iter().collect();
+    stacked.sort_by(|(a, at), (b, bt)| {
+        at.translation.z.total_cmp(&bt.translation.z).then_with(|| {
+            SavedPlacedItem::from_entity(a, at).canonical_cmp(&SavedPlacedItem::from_entity(b, bt))
+        })
+    });
+    let items: Vec<SavedPlacedItem> = stacked
+        .into_iter()
         .map(|(item, transform)| SavedPlacedItem::from_entity(item, transform))
         .collect();
 
@@ -147,8 +154,13 @@ pub(super) fn spawn_map_contents(
     asset_server: &AssetServer,
     map: &SavedMap,
 ) {
-    for item in &map.placed_items {
-        commands.spawn(item.placed_item().bundle(asset_server, item.transform()));
+    // The file lists items in stacking order, bottom first
+    let mut stacker = Stacker::default();
+    for saved in &map.placed_items {
+        let item = saved.placed_item();
+        let mut transform = saved.transform();
+        transform.translation.z = stacker.next_z(&item);
+        commands.spawn(item.bundle(asset_server, transform));
     }
 
     for path in &map.annotations.paths {

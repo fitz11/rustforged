@@ -32,9 +32,10 @@ pub enum MapObject {
 }
 
 impl MapObject {
-    /// A placed item, with `transform` moved to the item's depth.
-    pub fn item(id: ItemId, item: PlacedItem, mut transform: Transform) -> Self {
-        transform.translation.z = item.depth();
+    /// A placed item, with `transform` moved to the item's depth (keeping its place in the
+    /// stack of items on the same layer and z-index).
+    pub fn item(id: ItemId, item: PlacedItem, transform: Transform) -> Self {
+        let transform = item.at_depth(transform);
         Self::Item {
             id,
             item,

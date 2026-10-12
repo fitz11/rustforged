@@ -14,7 +14,9 @@ use crate::ui::panel_layout::DockedPanel;
 use super::HelpWindowState;
 use super::fog::render_fog_controls;
 use super::layers::render_layers;
-use super::properties::{ItemEdit, PropertiesOutput, SelectedQuery, render_properties};
+use super::properties::{
+    ItemEdit, OtherItemsStack, PropertiesOutput, SelectedQuery, render_properties,
+};
 use super::session::render_session_controls;
 
 /// Main layers panel UI system.
@@ -36,6 +38,7 @@ pub fn layers_panel_ui(
         MessageWriter<RecordEditorCommand>,
     ),
     mut unfinished_edit: Local<Option<MapObject>>,
+    stack: OtherItemsStack,
 ) -> Result {
     let missing: Vec<Entity> = missing_query.iter().collect();
     let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
@@ -65,7 +68,8 @@ pub fn layers_panel_ui(
             }
 
             // Properties section
-            properties = render_properties(ui, &mut selected_query, &missing, library_selection);
+            properties =
+                render_properties(ui, &mut selected_query, &stack, &missing, library_selection);
 
             // Live Session controls (when active)
             if render_session_controls(

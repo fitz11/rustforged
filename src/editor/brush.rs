@@ -15,7 +15,7 @@ use bevy_egui::EguiContexts;
 
 use crate::assets::SelectedAsset;
 use crate::input::shift_held;
-use crate::map::{MapData, PlacedItem};
+use crate::map::{MapData, PlacedItem, StackTops};
 
 use super::grid::snap_to_grid;
 use super::history::{EditorCommand, MapObject, RecordEditorCommand};
@@ -103,6 +103,7 @@ pub fn handle_brush(
     mut brush_state: ResMut<BrushState>,
     mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
+    stack: StackTops,
 ) {
     // Mouse release - stop brushing and record the stroke, wherever the mouse is (over a
     // panel too), so the stroke is one undo step right away
@@ -188,14 +189,17 @@ pub fn handle_brush(
         half_size: placed_size.max(Vec2::splat(grid_size)) / 2.0,
     });
 
+    let item = PlacedItem {
+        asset_path: asset.path.clone(),
+        layer: selected_layer.layer,
+        z_index: 0,
+    };
+    // On top of what's already on the layer
+    let z = stack.z_on_top(&item);
     let object = MapObject::new_item(
-        PlacedItem {
-            asset_path: asset.path.clone(),
-            layer: selected_layer.layer,
-            z_index: 0,
-        },
+        item,
         Transform {
-            translation: final_pos.extend(0.0),
+            translation: final_pos.extend(z),
             scale,
             ..default()
         },

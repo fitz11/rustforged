@@ -7,7 +7,7 @@ use bevy_egui::egui;
 use crate::assets::RetargetAssetRequest;
 use crate::editor::SelectionEdit;
 use crate::editor::history::MapObject;
-use crate::map::{ItemId, Layer, PlacedItem, Selected};
+use crate::map::{ItemId, Layer, PlacedItem, Selected, StackTops};
 
 /// Selected item query type for the properties panel.
 pub type SelectedQuery<'w, 's> = Query<
@@ -42,6 +42,10 @@ pub struct ItemEdit {
     pub editing: bool,
 }
 
+/// Stacking of the items that aren't selected, for putting an item on top when it moves
+/// to another layer or z-index
+pub type OtherItemsStack<'w, 's> = StackTops<'w, 's, Without<Selected>>;
+
 /// Renders the properties section for selected items.
 ///
 /// `missing` lists selected items whose asset is missing; `library_selection` is the asset
@@ -49,6 +53,7 @@ pub struct ItemEdit {
 pub fn render_properties(
     ui: &mut egui::Ui,
     selected_query: &mut SelectedQuery,
+    stack: &OtherItemsStack,
     missing: &[Entity],
     library_selection: Option<&str>,
 ) -> PropertiesOutput {
@@ -68,7 +73,14 @@ pub fn render_properties(
         ui.add_space(8.0);
         output.selection_edit = render_selection_edit_buttons(ui);
     } else {
-        render_single_selection(ui, selected_query, missing, library_selection, &mut output);
+        render_single_selection(
+            ui,
+            selected_query,
+            stack,
+            missing,
+            library_selection,
+            &mut output,
+        );
     }
     output
 }
@@ -144,6 +156,7 @@ fn number_field(ui: &mut egui::Ui, label: &str, value: &mut f32, speed: f64, suf
 fn render_single_selection(
     ui: &mut egui::Ui,
     selected_query: &mut SelectedQuery,
+    stack: &OtherItemsStack,
     missing: &[Entity],
     library_selection: Option<&str>,
     output: &mut PropertiesOutput,
@@ -241,6 +254,11 @@ fn render_single_selection(
 
     ui.add_space(8.0);
     output.selection_edit = render_selection_edit_buttons(ui);
+
+    // Moved to another layer or z-index: on top of the items there
+    if new_item.layer != item.layer || new_item.z_index != item.z_index {
+        new_transform.translation.z = stack.z_on_top(&new_item);
+    }
 
     let after = MapObject::item(*id, new_item.clone(), new_transform);
     if after != before {
