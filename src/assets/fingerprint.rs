@@ -196,7 +196,21 @@ impl LibraryIndex {
             }
         }
 
-        // The only file in the library with that name (moved and edited, or no fingerprint)
+        // The only file in the library with that name, when the map recorded no fingerprint
+        // (saved before fingerprints). With a fingerprint that matched nothing, a same-named
+        // file is a different picture, or the right one hasn't synced yet: relinking to it
+        // would lose the reference for good on the next save, so it's only a suggestion
+        // (see same_name_candidate).
+        if known.is_none() {
+            return self.unique(|p| fold(file_name(p)) == name);
+        }
+        None
+    }
+
+    /// The only library file with the same name as `path`, offered for a reference that
+    /// couldn't be resolved (its content didn't match).
+    pub fn same_name_candidate(&self, path: &str) -> Option<String> {
+        let name = fold(file_name(&path.replace('\\', "/")));
         self.unique(|p| fold(file_name(p)) == name)
     }
 
@@ -318,11 +332,24 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_moved_and_edited_file_by_unique_name() {
+    fn test_resolve_same_name_different_content_is_only_a_candidate() {
+        // Moved and edited, or an unrelated file while the right one is still syncing:
+        // either way not relinked silently
         let (_dir, mut index) = library(&[("monsters/orc.png", "orc, retouched")]);
         let known = fingerprint_of("orc");
+        assert_eq!(index.resolve("tokens/orc.png", Some(&known)), None);
         assert_eq!(
-            index.resolve("tokens/orc.png", Some(&known)),
+            index.same_name_candidate("tokens/orc.png"),
+            Some("monsters/orc.png".into())
+        );
+    }
+
+    #[test]
+    fn test_resolve_unique_name_without_fingerprint() {
+        // Maps saved before fingerprints still find a moved file by name
+        let (_dir, mut index) = library(&[("monsters/orc.png", "orc")]);
+        assert_eq!(
+            index.resolve("tokens/orc.png", None),
             Some("monsters/orc.png".into())
         );
     }

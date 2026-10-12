@@ -34,8 +34,9 @@ pub struct LoadResult {
     pub disk_hash: Option<String>,
     /// References found under a different path: (old path, new path)
     pub relinked: Vec<(String, String)>,
-    /// References with no matching asset in the library
-    pub missing: Vec<String>,
+    /// References with no matching asset in the library, each with the one library file
+    /// that has the same name but different contents, if there is one
+    pub missing: Vec<(String, Option<String>)>,
     /// Fingerprints computed while resolving, for the library's cache
     pub computed: FingerprintCache,
 }

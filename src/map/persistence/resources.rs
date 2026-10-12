@@ -31,8 +31,9 @@ pub struct MapAssetReport {
     pub map_name: String,
     /// References whose file was found under a different path: (old path, new path)
     pub relinked: Vec<(String, String)>,
-    /// References with no matching file in the library; shown as placeholders
-    pub missing: Vec<String>,
+    /// References with no matching file in the library; shown as placeholders. Each comes
+    /// with a same-named library file (different contents) the user can switch it to.
+    pub missing: Vec<(String, Option<String>)>,
 }
 
 /// Why a save stopped before writing.

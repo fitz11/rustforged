@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use std::path::{Path, PathBuf};
 
-use crate::assets::AssetLibrary;
+use crate::assets::{AssetLibrary, RetargetAssetRequest};
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
 use crate::map::{
     AsyncMapOperation, LoadMapRequest, MapAssetReport, MapLoadError, MapSaveError, SaveConflict,
@@ -423,10 +423,12 @@ pub fn save_conflict_dialog_ui(
 pub fn map_asset_report_ui(
     mut contexts: EguiContexts,
     mut report: ResMut<MapAssetReport>,
+    mut retarget_events: MessageWriter<RetargetAssetRequest>,
 ) -> Result {
     if !report.show {
         return Ok(());
     }
+    let mut relink: Vec<(String, String)> = Vec::new();
 
     let mut dismiss = false;
     egui::Window::new("Map Assets")
@@ -477,11 +479,33 @@ pub fn map_asset_report_ui(
                     .id_salt("missing_assets")
                     .max_height(150.0)
                     .show(ui, |ui| {
-                        for asset_path in &report.missing {
+                        for (asset_path, candidate) in &report.missing {
                             ui.label(
                                 egui::RichText::new(format!("  - {}", asset_path))
                                     .color(egui::Color32::from_rgb(200, 100, 100)),
                             );
+                            if let Some(candidate) = candidate {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(16.0);
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} has the same name, but different contents",
+                                            candidate
+                                        ))
+                                        .weak()
+                                        .small(),
+                                    );
+                                    if ui
+                                        .small_button("Use it")
+                                        .on_hover_text(
+                                            "Point every item using the missing asset at this file",
+                                        )
+                                        .clicked()
+                                    {
+                                        relink.push((asset_path.clone(), candidate.clone()));
+                                    }
+                                });
+                            }
                         }
                     });
                 ui.label(
@@ -503,6 +527,12 @@ pub fn map_asset_report_ui(
 
     if dismiss {
         *report = MapAssetReport::default();
+    }
+
+    for (old_path, new_path) in relink {
+        report.missing.retain(|(path, _)| *path != old_path);
+        report.relinked.push((old_path.clone(), new_path.clone()));
+        retarget_events.write(RetargetAssetRequest { old_path, new_path });
     }
 
     Ok(())

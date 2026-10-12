@@ -227,7 +227,7 @@ fn test_read_map_relinks_moved_assets_and_reports_missing() {
             "tokens/orc-chief.png".to_string()
         )]
     );
-    assert_eq!(result.missing, vec!["tokens/gone.png".to_string()]);
+    assert_eq!(result.missing, vec![("tokens/gone.png".to_string(), None)]);
     let loaded = result.saved_map.unwrap();
     let paths: Vec<&str> = loaded
         .placed_items

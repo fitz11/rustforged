@@ -102,7 +102,10 @@ pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
         match index.resolve(&asset, saved_map.asset_fingerprints.get(&asset)) {
             Some(found) if found == asset => {}
             Some(found) => relinked.push((asset, found)),
-            None => missing.push(asset),
+            None => {
+                let candidate = index.same_name_candidate(&asset);
+                missing.push((asset, candidate));
+            }
         }
     }
     for (old, new) in &relinked {
@@ -174,7 +177,7 @@ pub fn poll_load_tasks(
             for (old, new) in &result.relinked {
                 info!("Relinked asset {} -> {}", old, new);
             }
-            for asset in &result.missing {
+            for (asset, _) in &result.missing {
                 warn!("Asset not in library, using placeholder: {}", asset);
             }
 
