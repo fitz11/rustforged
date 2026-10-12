@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::RefreshAssetLibrary;
+use super::fingerprint::{FileStamp, FingerprintCache, LibraryIndex};
 use super::source::{LibraryRoot, library_asset_path};
 use crate::config::AddRecentLibraryRequest;
 
@@ -44,6 +45,8 @@ pub struct AssetLibrary {
     /// Bumped on every scan, so systems can react to rescans without relying on
     /// change detection (the browser UI touches this resource mutably every frame).
     generation: u64,
+    /// Content fingerprints of this library's files, filled lazily by save/load tasks
+    pub fingerprints: FingerprintCache,
 }
 
 impl Default for AssetLibrary {
@@ -64,6 +67,7 @@ impl AssetLibrary {
             metadata: LibraryMetadata::default(),
             root,
             generation: 0,
+            fingerprints: FingerprintCache::default(),
         }
     }
 
@@ -74,8 +78,20 @@ impl AssetLibrary {
 
     /// Points the library, and the `lib://` asset source, at a new directory.
     pub fn set_library_path(&mut self, path: PathBuf) {
+        if path != self.library_path {
+            self.fingerprints = FingerprintCache::default();
+        }
         self.root.set(path.clone());
         self.library_path = path;
+    }
+
+    /// Snapshot for fingerprinting and resolving references off the main thread.
+    pub fn index(&self) -> LibraryIndex {
+        LibraryIndex::new(
+            self.library_path.clone(),
+            self.assets.iter().map(|a| (a.path.clone(), a.stamp)),
+            self.fingerprints.clone(),
+        )
     }
 
     /// Returns true if the library currently contains an asset at this library-relative path.
@@ -187,6 +203,8 @@ pub struct LibraryAsset {
     pub extension: String,
     /// Full filesystem path for reading metadata
     pub full_path: PathBuf,
+    /// Size and modification time when the library was scanned
+    pub stamp: FileStamp,
 }
 
 impl LibraryAsset {
@@ -270,6 +288,10 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
         let Some(relative_path) = relative_to_library(base_path, &path) else {
             continue;
         };
+        // Metadata only: reading contents would download online-only files from sync clients
+        let stamp = std::fs::metadata(&path)
+            .map(|m| FileStamp::of_metadata(&m))
+            .unwrap_or_default();
 
         library.assets.push(LibraryAsset {
             name,
@@ -277,6 +299,7 @@ fn scan_directory_recursive(library: &mut AssetLibrary, base_path: &Path, curren
             folder_path,
             extension,
             full_path: path,
+            stamp,
         });
     }
 }

@@ -5,8 +5,8 @@ use bevy_egui::{EguiContexts, egui};
 use crate::assets::AssetLibrary;
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
 use crate::map::{
-    AsyncMapOperation, LoadValidationWarning, MapLoadError, MapSaveError, NewMapRequest, OpenMaps,
-    SaveMapRequest, SaveValidationWarning, UnsavedChangesDialog,
+    AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, NewMapRequest, OpenMaps,
+    SaveMapRequest, UnsavedChangesDialog,
 };
 
 #[derive(Resource, Default)]
@@ -409,56 +409,6 @@ pub fn save_error_dialog_ui(
     Ok(())
 }
 
-/// Renders the warning dialog about missing assets before save
-pub fn save_validation_warning_ui(
-    mut contexts: EguiContexts,
-    mut warning: ResMut<SaveValidationWarning>,
-    mut save_events: MessageWriter<SaveMapRequest>,
-) -> Result {
-    if !warning.show {
-        return Ok(());
-    }
-
-    egui::Window::new("Missing Assets Warning")
-        .collapsible(false)
-        .resizable(true)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(contexts.ctx_mut()?, |ui| {
-            ui.label("The following assets could not be found:");
-            ui.add_space(8.0);
-
-            egui::ScrollArea::vertical()
-                .max_height(150.0)
-                .show(ui, |ui| {
-                    for path in &warning.missing_assets {
-                        ui.label(egui::RichText::new(format!("  - {}", path)).weak());
-                    }
-                });
-
-            ui.add_space(8.0);
-            ui.label("These items will appear as placeholders when the map is loaded.");
-            ui.add_space(8.0);
-
-            ui.horizontal(|ui| {
-                if ui.button("Save Anyway").clicked() {
-                    if let Some(path) = warning.pending_save_path.take() {
-                        save_events.write(SaveMapRequest { path });
-                    }
-                    warning.show = false;
-                    warning.missing_assets.clear();
-                }
-
-                if ui.button("Cancel").clicked() {
-                    warning.show = false;
-                    warning.missing_assets.clear();
-                    warning.pending_save_path = None;
-                }
-            });
-        });
-
-    Ok(())
-}
-
 /// Notification dialog shown when config was reset to defaults
 pub fn config_reset_notification_ui(
     mut contexts: EguiContexts,
@@ -493,66 +443,91 @@ pub fn config_reset_notification_ui(
     Ok(())
 }
 
-/// Renders the warning dialog when a map cannot be loaded due to missing assets
-pub fn load_validation_warning_ui(
+/// Renders the report shown after opening a map whose asset references needed attention
+pub fn map_asset_report_ui(
     mut contexts: EguiContexts,
-    mut warning: ResMut<LoadValidationWarning>,
+    mut report: ResMut<MapAssetReport>,
 ) -> Result {
-    if !warning.show {
+    if !report.show {
         return Ok(());
     }
 
-    egui::Window::new("Missing Assets")
+    let mut dismiss = false;
+    egui::Window::new("Map Assets")
         .collapsible(false)
         .resizable(true)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(contexts.ctx_mut()?, |ui| {
-            ui.label(egui::RichText::new("Cannot load map").strong());
+            ui.label(
+                egui::RichText::new(format!("Map: {}", report.map_name))
+                    .weak()
+                    .small(),
+            );
             ui.add_space(4.0);
 
-            if let Some(ref path) = warning.map_path {
-                let map_name = path
-                    .file_stem()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("Unknown");
+            if !report.relinked.is_empty() {
                 ui.label(
-                    egui::RichText::new(format!("Map: {}", map_name))
+                    egui::RichText::new(format!(
+                        "Found {} moved or renamed asset(s):",
+                        report.relinked.len()
+                    ))
+                    .strong(),
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("relinked_assets")
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        for (old, new) in &report.relinked {
+                            ui.label(egui::RichText::new(format!("  {} -> {}", old, new)).weak());
+                        }
+                    });
+                ui.label(
+                    egui::RichText::new("Save the map to keep the new paths.")
                         .weak()
                         .small(),
                 );
-                ui.add_space(4.0);
+                ui.add_space(8.0);
             }
 
-            ui.label("The following assets are not in the current library:");
-            ui.add_space(8.0);
-
-            egui::ScrollArea::vertical()
-                .max_height(200.0)
-                .show(ui, |ui| {
-                    for asset_path in &warning.missing_assets {
-                        ui.label(
-                            egui::RichText::new(format!("  - {}", asset_path))
-                                .color(egui::Color32::from_rgb(200, 100, 100)),
-                        );
-                    }
-                });
-
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new(
-                    "Import the missing assets to the library, or open a library that contains them.",
-                )
-                .weak()
-                .small(),
-            );
-            ui.add_space(8.0);
+            if !report.missing.is_empty() {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} asset(s) aren't in this library:",
+                        report.missing.len()
+                    ))
+                    .strong(),
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("missing_assets")
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        for asset_path in &report.missing {
+                            ui.label(
+                                egui::RichText::new(format!("  - {}", asset_path))
+                                    .color(egui::Color32::from_rgb(200, 100, 100)),
+                            );
+                        }
+                    });
+                ui.label(
+                    egui::RichText::new(
+                        "They show as red placeholders and come back when the library is \
+                         refreshed after the files appear. To use a different asset, select a \
+                         placeholder and use Relink in its properties.",
+                    )
+                    .weak()
+                    .small(),
+                );
+                ui.add_space(8.0);
+            }
 
             if ui.button("OK").clicked() {
-                warning.show = false;
-                warning.missing_assets.clear();
-                warning.map_path = None;
+                dismiss = true;
             }
         });
+
+    if dismiss {
+        *report = MapAssetReport::default();
+    }
 
     Ok(())
 }

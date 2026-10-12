@@ -12,8 +12,7 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use crate::config::{ConfigResetNotification, MissingMapWarning};
 use crate::map::{
-    AsyncMapOperation, LoadValidationWarning, MapLoadError, MapSaveError, SaveValidationWarning,
-    UnsavedChangesDialog,
+    AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, UnsavedChangesDialog,
 };
 use crate::session::MonitorSelectionDialog;
 
@@ -44,8 +43,7 @@ fn update_dialog_state(
     missing_map: Res<MissingMapWarning>,
     config_reset: Res<ConfigResetNotification>,
     unsaved_changes: Res<UnsavedChangesDialog>,
-    save_validation: Res<SaveValidationWarning>,
-    load_validation: Res<LoadValidationWarning>,
+    asset_report: Res<MapAssetReport>,
     save_error: Res<MapSaveError>,
     load_error: Res<MapLoadError>,
     async_op: Res<AsyncMapOperation>,
@@ -65,8 +63,7 @@ fn update_dialog_state(
         || missing_map.show
         || config_reset.show
         || unsaved_changes.show_close_confirmation
-        || save_validation.show
-        || load_validation.show
+        || asset_report.show
         || save_error.message.is_some()
         || load_error.message.is_some()
         || async_op.is_busy()
@@ -120,8 +117,7 @@ impl Plugin for UiPlugin {
                     file_menu::unsaved_changes_dialog_ui,
                     file_menu::async_operation_modal_ui,
                     file_menu::save_error_dialog_ui,
-                    file_menu::save_validation_warning_ui,
-                    file_menu::load_validation_warning_ui,
+                    file_menu::map_asset_report_ui,
                     file_menu::config_reset_notification_ui,
                     asset_import::asset_import_ui,
                     layers_panel::help_popup_ui,

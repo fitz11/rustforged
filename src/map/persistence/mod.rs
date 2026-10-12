@@ -2,7 +2,7 @@
 //!
 //! Handles async file I/O for map data, including:
 //! - Save/load with async task pooling
-//! - Missing asset validation
+//! - Resolving asset references that moved, and reporting missing ones
 //! - Multi-map management (OpenMaps)
 //! - Dirty state tracking
 //!
@@ -49,8 +49,8 @@ pub use messages::{LoadMapRequest, NewMapRequest, SaveMapRequest, SwitchMapReque
 
 // Re-exports - Resources
 pub use resources::{
-    AsyncMapOperation, CurrentMapFile, LoadValidationWarning, MapDirtyState, MapLoadError,
-    MapSaveError, OpenMaps, SaveValidationWarning, UnsavedChangesDialog,
+    AsyncMapOperation, CurrentMapFile, MapAssetReport, MapDirtyState, MapLoadError, MapSaveError,
+    OpenMaps, UnsavedChangesDialog,
 };
 
 // Re-exports - Helpers

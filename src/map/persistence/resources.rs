@@ -2,8 +2,10 @@
 
 use bevy::prelude::*;
 use bevy::tasks::Task;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+
+use crate::assets::AssetFingerprint;
 
 use super::results::{LoadResult, SaveResult};
 
@@ -18,26 +20,18 @@ pub struct MapSaveError {
     pub message: Option<String>,
 }
 
-/// Resource for pre-save validation warnings about missing assets.
+/// What happened to a map's asset references when it was opened, shown to the user when
+/// anything had to be relinked or is missing.
 #[derive(Resource, Default)]
-pub struct SaveValidationWarning {
-    /// Whether to show the warning dialog
+pub struct MapAssetReport {
+    /// Whether to show the report dialog
     pub show: bool,
-    /// List of asset paths that are missing
-    pub missing_assets: Vec<String>,
-    /// The path we want to save to after user confirmation
-    pub pending_save_path: Option<PathBuf>,
-}
-
-/// Resource for load-time validation warnings about missing assets.
-#[derive(Resource, Default)]
-pub struct LoadValidationWarning {
-    /// Whether to show the warning dialog
-    pub show: bool,
-    /// List of asset paths that are missing from the library
-    pub missing_assets: Vec<String>,
-    /// The map file that failed to load
-    pub map_path: Option<PathBuf>,
+    /// Name of the map the report is about
+    pub map_name: String,
+    /// References whose file was found under a different path: (old path, new path)
+    pub relinked: Vec<(String, String)>,
+    /// References with no matching file in the library; shown as placeholders
+    pub missing: Vec<String>,
 }
 
 /// Resource tracking async map I/O operations for modal dialog
@@ -102,6 +96,9 @@ pub struct OpenMap {
     pub path: Option<PathBuf>,
     pub is_dirty: bool,
     pub saved_state: Option<crate::map::SavedMap>,
+    /// Asset fingerprints carried from the map file. Kept so references to files that are
+    /// missing right now (e.g. still syncing) are saved with their fingerprint intact.
+    pub asset_fingerprints: BTreeMap<String, AssetFingerprint>,
 }
 
 /// Resource tracking all open maps
@@ -124,6 +121,7 @@ impl Default for OpenMaps {
                 path: None,
                 is_dirty: false,
                 saved_state: None,
+                asset_fingerprints: BTreeMap::new(),
             },
         );
         Self {
@@ -136,7 +134,6 @@ impl Default for OpenMaps {
 
 impl OpenMaps {
     /// Get the currently active map
-    #[allow(dead_code)]
     pub fn active_map(&self) -> Option<&OpenMap> {
         self.active_map_id.and_then(|id| self.maps.get(&id))
     }

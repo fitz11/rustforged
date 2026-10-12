@@ -3,7 +3,8 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::map::{FogOfWarData, MapData, MapDirtyState};
+use crate::assets::{RetargetAssetRequest, SelectedAsset};
+use crate::map::{FogOfWarData, MapData, MapDirtyState, MissingAsset, Selected};
 use crate::session::LiveSessionState;
 use crate::ui::panel_layout::DockedPanel;
 
@@ -24,7 +25,14 @@ pub fn layers_panel_ui(
     images: Res<Assets<Image>>,
     mut session_state: ResMut<LiveSessionState>,
     mut help_state: ResMut<HelpWindowState>,
+    missing_query: Query<Entity, (With<Selected>, With<MissingAsset>)>,
+    selected_asset: Res<SelectedAsset>,
+    mut retarget_events: MessageWriter<RetargetAssetRequest>,
 ) -> Result {
+    let missing: Vec<Entity> = missing_query.iter().collect();
+    let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
+    let mut relink = None;
+
     egui::Panel::right("layers_panel")
         .default_size(200.0)
         .show_docked(contexts.ctx_mut()?, |ui| {
@@ -35,7 +43,14 @@ pub fn layers_panel_ui(
             render_fog_controls(ui, &mut map_data, &mut fog_data, &mut dirty_state);
 
             // Properties section
-            render_properties(ui, &map_data, &mut selected_query, &images);
+            relink = render_properties(
+                ui,
+                &map_data,
+                &mut selected_query,
+                &images,
+                &missing,
+                library_selection,
+            );
 
             // Live Session controls (when active)
             render_session_controls(ui, &mut session_state);
@@ -53,5 +68,8 @@ pub fn layers_panel_ui(
                 }
             });
         });
+    if let Some(request) = relink {
+        retarget_events.write(request);
+    }
     Ok(())
 }

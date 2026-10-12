@@ -4,8 +4,9 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
+use std::path::PathBuf;
 
-use crate::assets::{AssetLibrary, library_asset_path};
+use crate::assets::{AssetLibrary, LibraryIndex, library_asset_path};
 use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{FogOfWarData, Layer, MapData, PlacedItem, SavedMap};
@@ -13,16 +14,17 @@ use crate::map::{FogOfWarData, Layer, MapData, PlacedItem, SavedMap};
 use super::helpers::array_to_color;
 use super::messages::LoadMapRequest;
 use super::resources::{
-    AsyncMapOperation, CurrentMapFile, LoadMapTask, LoadValidationWarning, MapDirtyState,
-    MapLoadError, OpenMap, OpenMaps,
+    AsyncMapOperation, CurrentMapFile, LoadMapTask, MapAssetReport, MapDirtyState, MapLoadError,
+    OpenMap, OpenMaps,
 };
 use super::results::LoadResult;
 
-/// Starts an async load operation (file I/O only)
+/// Starts an async load operation (file I/O and asset reference resolution)
 pub fn load_map_system(
     mut commands: Commands,
     mut events: MessageReader<LoadMapRequest>,
     mut async_op: ResMut<AsyncMapOperation>,
+    asset_library: Res<AssetLibrary>,
 ) {
     for event in events.read() {
         // Don't start a new load if one is already in progress
@@ -42,37 +44,57 @@ pub fn load_map_system(
         async_op.is_loading = true;
         async_op.operation_description = Some(format!("Loading {}...", map_name));
 
-        // Spawn async task for file I/O and parsing
-        let task_pool = IoTaskPool::get();
-        let task = task_pool.spawn(async move {
-            // Read file
-            let json = match std::fs::read_to_string(&path) {
-                Ok(content) => content,
-                Err(e) => {
-                    return LoadResult {
-                        path,
-                        saved_map: None,
-                        error: Some(format!("Failed to read file: {}", e)),
-                    };
-                }
-            };
+        let index = asset_library.index();
 
-            // Parse JSON
-            match serde_json::from_str::<SavedMap>(&json) {
-                Ok(saved_map) => LoadResult {
-                    path,
-                    saved_map: Some(saved_map),
-                    error: None,
-                },
-                Err(e) => LoadResult {
-                    path,
-                    saved_map: None,
-                    error: Some(format!("Failed to parse map file: {}", e)),
-                },
-            }
-        });
+        // Spawn async task for file I/O, parsing and resolving asset references
+        let task_pool = IoTaskPool::get();
+        let task = task_pool.spawn(async move { read_map(path, index) });
 
         commands.spawn(LoadMapTask(task));
+    }
+}
+
+pub(super) fn read_map(path: PathBuf, mut index: LibraryIndex) -> LoadResult {
+    let parsed = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))
+        .and_then(|json| {
+            serde_json::from_str::<SavedMap>(&json)
+                .map_err(|e| format!("Failed to parse map file: {}", e))
+        });
+    let mut saved_map = match parsed {
+        Ok(saved_map) => saved_map,
+        Err(error) => {
+            return LoadResult {
+                path,
+                saved_map: None,
+                error: Some(error),
+                relinked: Vec::new(),
+                missing: Vec::new(),
+                computed: index.into_computed(),
+            };
+        }
+    };
+
+    let mut relinked = Vec::new();
+    let mut missing = Vec::new();
+    for asset in saved_map.used_assets() {
+        match index.resolve(&asset, saved_map.asset_fingerprints.get(&asset)) {
+            Some(found) if found == asset => {}
+            Some(found) => relinked.push((asset, found)),
+            None => missing.push(asset),
+        }
+    }
+    for (old, new) in &relinked {
+        saved_map.retarget_asset(old, new);
+    }
+
+    LoadResult {
+        path,
+        saved_map: Some(saved_map),
+        error: None,
+        relinked,
+        missing,
+        computed: index.into_computed(),
     }
 }
 
@@ -85,8 +107,8 @@ pub fn poll_load_tasks(
     mut map_data: ResMut<MapData>,
     mut fog_data: ResMut<FogOfWarData>,
     mut load_error: ResMut<MapLoadError>,
-    mut load_warning: ResMut<LoadValidationWarning>,
-    asset_library: Res<AssetLibrary>,
+    mut asset_report: ResMut<MapAssetReport>,
+    mut asset_library: ResMut<AssetLibrary>,
     asset_server: Res<AssetServer>,
     existing_items: Query<Entity, With<PlacedItem>>,
     existing_annotations: Query<Entity, With<AnnotationMarker>>,
@@ -110,37 +132,21 @@ pub fn poll_load_tasks(
                 continue;
             }
 
-            let Some(saved_map) = result.saved_map else {
+            if !result.computed.is_empty() {
+                asset_library.fingerprints.merge(result.computed);
+            }
+
+            let Some(mut saved_map) = result.saved_map else {
                 commands.entity(entity).despawn();
                 continue;
             };
+            let asset_fingerprints = std::mem::take(&mut saved_map.asset_fingerprints);
 
-            // Every referenced asset must exist in the open library
-            let mut saved_map = saved_map;
-            for item in &mut saved_map.placed_items {
-                item.asset_path = item.asset_path.replace('\\', "/");
+            for (old, new) in &result.relinked {
+                info!("Relinked asset {} -> {}", old, new);
             }
-            let missing_assets: Vec<String> = saved_map
-                .asset_manifest
-                .assets
-                .iter()
-                .map(|path| path.replace('\\', "/"))
-                .filter(|path| !asset_library.contains(path))
-                .collect();
-
-            if !missing_assets.is_empty() {
-                // Show warning dialog with missing assets
-                load_warning.show = true;
-                load_warning.missing_assets = missing_assets.clone();
-                load_warning.map_path = Some(result.path.clone());
-
-                warn!(
-                    "Cannot load map {:?}: {} missing assets",
-                    result.path,
-                    missing_assets.len()
-                );
-                commands.entity(entity).despawn();
-                continue;
+            for asset in &result.missing {
+                warn!("Asset not in library, using placeholder: {}", asset);
             }
 
             // Clear existing items
@@ -238,8 +244,10 @@ pub fn poll_load_tasks(
                 path: result.path.clone(),
             });
 
-            // Clear dirty state (freshly loaded map is clean)
-            dirty_state.is_dirty = false;
+            // A freshly loaded map is clean, unless references were relinked: the new paths
+            // only reach the file when the user saves.
+            let relinked_any = !result.relinked.is_empty();
+            dirty_state.is_dirty = relinked_any;
             dirty_state.last_known_item_count = 0; // Will be updated by detection system
             dirty_state.last_known_annotation_count = 0;
             // Ignore the spawn wave from loading so the map stays clean.
@@ -263,7 +271,8 @@ pub fn poll_load_tasks(
             if let Some(id) = existing_id {
                 // Map already open - just switch to it and update state
                 if let Some(map) = open_maps.maps.get_mut(&id) {
-                    map.is_dirty = false;
+                    map.is_dirty = relinked_any;
+                    map.asset_fingerprints = asset_fingerprints;
                 }
                 open_maps.active_map_id = Some(id);
             } else {
@@ -279,13 +288,23 @@ pub fn poll_load_tasks(
                     new_id,
                     OpenMap {
                         id: new_id,
-                        name: map_name,
+                        name: map_name.clone(),
                         path: Some(result.path.clone()),
-                        is_dirty: false,
+                        is_dirty: relinked_any,
                         saved_state: None,
+                        asset_fingerprints,
                     },
                 );
                 open_maps.active_map_id = Some(new_id);
+            }
+
+            if relinked_any || !result.missing.is_empty() {
+                *asset_report = MapAssetReport {
+                    show: true,
+                    map_name,
+                    relinked: result.relinked,
+                    missing: result.missing,
+                };
             }
 
             commands.entity(entity).despawn();

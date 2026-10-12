@@ -44,6 +44,8 @@ tracing-appender = "0.2"
 chrono = "0.4"
 dirs = "6"
 keepawake = "0.6"
+blake3 = "1"
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

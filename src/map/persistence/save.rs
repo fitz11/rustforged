@@ -3,15 +3,15 @@
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use futures_lite::future;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
+use crate::assets::{AssetFingerprint, AssetLibrary, LibraryIndex};
 use crate::config::UpdateLastMapPathRequest;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use crate::map::{
-    AssetManifest, FogOfWarData, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar, SavedLine,
-    SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
-};
+use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
 
-use super::helpers::color_to_array;
+use super::map_state::capture_current_map_state;
 use super::messages::SaveMapRequest;
 use super::resources::{
     AsyncMapOperation, CurrentMapFile, MapDirtyState, MapSaveError, OpenMaps, SaveMapTask,
@@ -30,6 +30,8 @@ pub fn save_map_system(
     lines: Query<&DrawnLine>,
     texts: Query<(&Transform, &TextAnnotation)>,
     mut async_op: ResMut<AsyncMapOperation>,
+    asset_library: Res<AssetLibrary>,
+    open_maps: Res<OpenMaps>,
 ) {
     for event in events.read() {
         // Don't start a new save if one is already in progress
@@ -39,55 +41,14 @@ pub fn save_map_system(
         }
 
         // Placed items already hold library-relative paths, which is what map files store
-        let items: Vec<SavedPlacedItem> = placed_items
-            .iter()
-            .map(|(item, transform)| SavedPlacedItem::from_entity(item, transform))
-            .collect();
-
-        // Collect annotations
-        let saved_paths: Vec<SavedPath> = paths
-            .iter()
-            .map(|p| SavedPath {
-                points: p.points.clone(),
-                color: color_to_array(p.color),
-                stroke_width: p.stroke_width,
-            })
-            .collect();
-
-        let saved_lines: Vec<SavedLine> = lines
-            .iter()
-            .map(|l| SavedLine {
-                start: l.start,
-                end: l.end,
-                color: color_to_array(l.color),
-                stroke_width: l.stroke_width,
-            })
-            .collect();
-
-        let saved_texts: Vec<SavedTextBox> = texts
-            .iter()
-            .map(|(transform, t)| SavedTextBox {
-                position: transform.translation.truncate(),
-                content: t.content.clone(),
-                font_size: t.font_size,
-                color: color_to_array(t.color),
-            })
-            .collect();
-
-        // Build asset manifest from placed items
-        let asset_manifest = AssetManifest::from_items(items.iter());
-
-        let saved_map = SavedMap {
-            asset_manifest,
-            map_data: map_data.clone(),
-            placed_items: items,
-            annotations: SavedAnnotations {
-                paths: saved_paths,
-                lines: saved_lines,
-                text_boxes: saved_texts,
-            },
-            fog_of_war: SavedFogOfWar::from(&*fog_data),
-        };
+        let mut saved_map =
+            capture_current_map_state(&map_data, &fog_data, &placed_items, &paths, &lines, &texts);
+        let used_assets = saved_map.used_assets();
+        let mut index = asset_library.index();
+        let carried = open_maps
+            .active_map()
+            .map(|m| m.asset_fingerprints.clone())
+            .unwrap_or_default();
 
         let path = event.path.clone();
         let map_name = path
@@ -100,37 +61,54 @@ pub fn save_map_system(
         async_op.is_saving = true;
         async_op.operation_description = Some(format!("Saving {}...", map_name));
 
-        // Spawn async task for file I/O
+        // Spawn async task for fingerprinting and file I/O
         let task_pool = IoTaskPool::get();
         let task = task_pool.spawn(async move {
-            // Serialize (could be slow for large maps)
-            match serde_json::to_string_pretty(&saved_map) {
-                Ok(json) => {
-                    // Write to file
-                    if let Err(e) = std::fs::write(&path, json) {
-                        SaveResult {
-                            path,
-                            success: false,
-                            error: Some(format!("Failed to write file: {}", e)),
-                        }
-                    } else {
-                        SaveResult {
-                            path,
-                            success: true,
-                            error: None,
-                        }
-                    }
-                }
-                Err(e) => SaveResult {
-                    path,
-                    success: false,
-                    error: Some(format!("Failed to serialize map: {}", e)),
-                },
+            let fingerprints = fingerprint_assets(used_assets, &mut index, &carried);
+            saved_map.asset_fingerprints = fingerprints.clone();
+
+            let error = write_map(&path, &saved_map).err();
+            SaveResult {
+                path,
+                success: error.is_none(),
+                error,
+                asset_fingerprints: fingerprints,
+                computed: index.into_computed(),
             }
         });
 
         commands.spawn(SaveMapTask(task));
     }
+}
+
+/// Fingerprints every referenced asset. One that's missing right now (deleted, or not synced
+/// to this machine yet) keeps the fingerprint the map was loaded with, so the reference can
+/// still be found once the file shows up.
+pub(super) fn fingerprint_assets(
+    used_assets: BTreeSet<String>,
+    index: &mut LibraryIndex,
+    carried: &BTreeMap<String, AssetFingerprint>,
+) -> BTreeMap<String, AssetFingerprint> {
+    used_assets
+        .into_iter()
+        .filter_map(|asset| {
+            let fp = index
+                .fingerprint(&asset)
+                .or_else(|| carried.get(&asset).cloned())?;
+            Some((asset, fp))
+        })
+        .collect()
+}
+
+fn write_map(path: &Path, saved_map: &SavedMap) -> Result<(), String> {
+    // Serialize (could be slow for large maps)
+    let json = serde_json::to_string_pretty(saved_map)
+        .map_err(|e| format!("Failed to serialize map: {}", e))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create maps folder: {}", e))?;
+    }
+    std::fs::write(path, json).map_err(|e| format!("Failed to write file: {}", e))
 }
 
 /// Polls save tasks and handles completion
@@ -144,6 +122,7 @@ pub fn poll_save_tasks(
     mut dirty_state: ResMut<MapDirtyState>,
     mut open_maps: ResMut<OpenMaps>,
     mut save_error: ResMut<MapSaveError>,
+    mut asset_library: ResMut<AssetLibrary>,
     placed_items: Query<Entity, With<PlacedItem>>,
     annotations: Query<Entity, With<AnnotationMarker>>,
 ) {
@@ -152,6 +131,10 @@ pub fn poll_save_tasks(
             // Clear async state
             async_op.is_saving = false;
             async_op.operation_description = None;
+
+            if !result.computed.is_empty() {
+                asset_library.fingerprints.merge(result.computed);
+            }
 
             if result.success {
                 info!("Map saved to {:?}", result.path);
@@ -173,6 +156,7 @@ pub fn poll_save_tasks(
                 // Update open maps
                 if let Some(active_map) = open_maps.active_map_mut() {
                     active_map.is_dirty = false;
+                    active_map.asset_fingerprints = result.asset_fingerprints;
                     active_map.path = Some(result.path.clone());
                     active_map.name = result
                         .path

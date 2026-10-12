@@ -1,9 +1,16 @@
 //! Unit tests for the persistence module.
 
 use bevy::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use super::helpers::{array_to_color, color_to_array};
+use super::load::read_map;
 use super::resources::MapLoadError;
+use super::save::fingerprint_assets;
+use crate::assets::fingerprint_test_support::stamp_of;
+use crate::assets::{AssetFingerprint, FingerprintCache, LibraryIndex};
+use crate::map::{Layer, MapData, SavedAnnotations, SavedFogOfWar, SavedMap, SavedPlacedItem};
 
 // color_to_array tests
 #[test]
@@ -135,4 +142,139 @@ fn test_color_roundtrip_multiple() {
 fn test_map_load_error_default() {
     let error = MapLoadError::default();
     assert!(error.message.is_none());
+}
+
+// Asset reference resolution on load / fingerprinting on save
+
+/// Writes `files` (relative path, contents) under `root` and indexes them as a library.
+fn library_index(root: &Path, files: &[(&str, &str)]) -> LibraryIndex {
+    let mut assets = Vec::new();
+    for (path, contents) in files {
+        let full = root.join(path);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(&full, contents).unwrap();
+        assets.push((path.to_string(), stamp_of(&full)));
+    }
+    LibraryIndex::new(root.to_path_buf(), assets, FingerprintCache::default())
+}
+
+fn fingerprint_of(contents: &str) -> AssetFingerprint {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("f"), contents).unwrap();
+    AssetFingerprint::of_file(&dir.path().join("f")).unwrap()
+}
+
+fn item(asset_path: &str) -> SavedPlacedItem {
+    SavedPlacedItem {
+        asset_path: asset_path.to_string(),
+        position: Vec2::ZERO,
+        rotation: 0.0,
+        scale: Vec2::ONE,
+        layer: Layer::Token,
+        z_index: 0,
+    }
+}
+
+fn map_with(items: Vec<SavedPlacedItem>, fingerprints: &[(&str, &str)]) -> SavedMap {
+    SavedMap {
+        asset_fingerprints: fingerprints
+            .iter()
+            .map(|(path, contents)| (path.to_string(), fingerprint_of(contents)))
+            .collect(),
+        map_data: MapData::default(),
+        placed_items: items,
+        annotations: SavedAnnotations::default(),
+        fog_of_war: SavedFogOfWar::default(),
+    }
+}
+
+#[test]
+fn test_read_map_relinks_moved_assets_and_reports_missing() {
+    let library = tempfile::tempdir().unwrap();
+    let index = library_index(
+        library.path(),
+        &[
+            ("tokens/orc-chief.png", "orc"),
+            ("tokens/goblin.png", "gob"),
+        ],
+    );
+    let map = map_with(
+        vec![
+            item("tokens/orc.png"),
+            item("tokens/orc.png"),
+            item("tokens/gone.png"),
+            item("tokens/goblin.png"),
+        ],
+        &[("tokens/orc.png", "orc"), ("tokens/gone.png", "gone")],
+    );
+    let map_path = library.path().join("maps/cave.json");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+
+    let result = read_map(map_path, index);
+
+    assert!(result.error.is_none());
+    assert_eq!(
+        result.relinked,
+        vec![(
+            "tokens/orc.png".to_string(),
+            "tokens/orc-chief.png".to_string()
+        )]
+    );
+    assert_eq!(result.missing, vec!["tokens/gone.png".to_string()]);
+    let loaded = result.saved_map.unwrap();
+    let paths: Vec<&str> = loaded
+        .placed_items
+        .iter()
+        .map(|i| i.asset_path.as_str())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "tokens/orc-chief.png",
+            "tokens/orc-chief.png",
+            "tokens/gone.png",
+            "tokens/goblin.png"
+        ]
+    );
+    // Missing references keep their fingerprint so they can still be found later
+    assert!(loaded.asset_fingerprints.contains_key("tokens/gone.png"));
+    // Fingerprints computed while resolving are handed back for the library cache
+    assert!(!result.computed.is_empty());
+}
+
+#[test]
+fn test_read_map_reports_parse_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let map_path = dir.path().join("broken.json");
+    std::fs::write(&map_path, "{ not json").unwrap();
+    let index = library_index(dir.path(), &[]);
+
+    let result = read_map(map_path, index);
+
+    assert!(result.saved_map.is_none());
+    assert!(result.error.unwrap().contains("Failed to parse"));
+}
+
+#[test]
+fn test_fingerprint_assets_keeps_carried_fingerprint_for_missing_files() {
+    let library = tempfile::tempdir().unwrap();
+    let mut index = library_index(library.path(), &[("tokens/orc.png", "orc")]);
+    let carried: BTreeMap<String, AssetFingerprint> = [
+        ("tokens/gone.png".to_string(), fingerprint_of("gone")),
+        ("tokens/orc.png".to_string(), fingerprint_of("stale orc")),
+    ]
+    .into_iter()
+    .collect();
+    let used: BTreeSet<String> = ["tokens/orc.png", "tokens/gone.png", "tokens/never.png"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    let fingerprints = fingerprint_assets(used, &mut index, &carried);
+
+    // Files on disk are fingerprinted fresh; missing ones fall back to what was loaded
+    assert_eq!(fingerprints["tokens/orc.png"], fingerprint_of("orc"));
+    assert_eq!(fingerprints["tokens/gone.png"], fingerprint_of("gone"));
+    assert!(!fingerprints.contains_key("tokens/never.png"));
 }

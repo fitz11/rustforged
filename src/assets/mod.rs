@@ -1,7 +1,12 @@
+mod fingerprint;
 mod library;
 mod placeholder;
 mod source;
 mod validation;
+#[cfg(test)]
+pub use fingerprint::test_support as fingerprint_test_support;
+pub use fingerprint::{AssetFingerprint, FingerprintCache, LibraryIndex};
+pub use library::relative_to_library;
 pub use library::{
     AssetLibrary, LibraryAsset, THUMBNAIL_SIZE, ThumbnailCache, create_and_open_library,
     get_image_dimensions, load_thumbnail, open_library_directory, save_library_metadata,
@@ -15,7 +20,7 @@ use std::path::PathBuf;
 use crate::config::{AppConfig, ConfigLoaded};
 use crate::editor::Clipboard;
 use crate::editor::history::CommandHistory;
-use crate::map::{MissingAsset, OpenMaps, PlacedItem};
+use crate::map::{MapDirtyState, MissingAsset, OpenMaps, PlacedItem};
 
 #[derive(Message)]
 pub struct RefreshAssetLibrary;
@@ -28,7 +33,7 @@ pub struct UpdateLibraryMetadataRequest {
 
 /// Message to point everything that references one library-relative asset path at another:
 /// placed items, background open maps, the clipboard and undo history. Sent after an asset
-/// is renamed or moved in the app.
+/// is renamed or moved in the app, or when the user relinks a missing asset.
 #[derive(Message)]
 pub struct RetargetAssetRequest {
     pub old_path: String,
@@ -96,12 +101,14 @@ fn update_library_metadata_system(
 }
 
 /// System to point every in-memory reference to an asset at its new path
+#[allow(clippy::too_many_arguments)]
 fn retarget_asset_system(
     mut commands: Commands,
     mut events: MessageReader<RetargetAssetRequest>,
     asset_server: Res<AssetServer>,
     mut placed_items: Query<(Entity, &mut PlacedItem, &mut Sprite, Has<MissingAsset>)>,
     mut open_maps: ResMut<OpenMaps>,
+    mut dirty_state: ResMut<MapDirtyState>,
     mut clipboard: ResMut<Clipboard>,
     mut history: ResMut<CommandHistory>,
 ) {
@@ -123,13 +130,23 @@ fn retarget_asset_system(
             count += 1;
         }
 
+        // The map files still name the old path until saved (they'd find the asset again
+        // by fingerprint anyway), so changed maps count as unsaved.
+        if count > 0 {
+            dirty_state.is_dirty = true;
+            if let Some(active) = open_maps.active_map_mut() {
+                active.is_dirty = true;
+            }
+        }
+
         // Maps open in the background keep their items in a snapshot, not as entities
         let active_id = open_maps.active_map_id;
         for map in open_maps.maps.values_mut() {
             if Some(map.id) != active_id
                 && let Some(state) = map.saved_state.as_mut()
+                && state.retarget_asset(&event.old_path, &event.new_path)
             {
-                state.retarget_asset(&event.old_path, &event.new_path);
+                map.is_dirty = true;
             }
         }
         clipboard.retarget_asset(&event.old_path, &event.new_path);

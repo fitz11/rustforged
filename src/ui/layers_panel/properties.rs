@@ -4,6 +4,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy_egui::egui;
 
+use crate::assets::RetargetAssetRequest;
 use crate::map::{Layer, MapData, PlacedItem, Selected};
 
 /// Selected item query type for the properties panel.
@@ -21,12 +22,17 @@ pub type SelectedQuery<'w, 's> = Query<
 >;
 
 /// Renders the properties section for selected items.
+///
+/// `missing` lists selected items whose asset is missing; `library_selection` is the asset
+/// selected in the library browser. Returns a relink request if the user asked for one.
 pub fn render_properties(
     ui: &mut egui::Ui,
     map_data: &MapData,
     selected_query: &mut SelectedQuery,
     images: &Assets<Image>,
-) {
+    missing: &[Entity],
+    library_selection: Option<&str>,
+) -> Option<RetargetAssetRequest> {
     ui.add_space(4.0);
     ui.label(egui::RichText::new("Properties").heading().size(18.0));
     ui.add_space(4.0);
@@ -37,10 +43,50 @@ pub fn render_properties(
 
     if selected_count == 0 {
         ui.label(egui::RichText::new("No item selected").size(14.0).weak());
+        None
     } else if selected_count > 1 {
         render_multi_selection(ui, map_data, selected_query, images);
+        None
     } else {
-        render_single_selection(ui, map_data, selected_query, images);
+        render_single_selection(
+            ui,
+            map_data,
+            selected_query,
+            images,
+            missing,
+            library_selection,
+        )
+    }
+}
+
+/// Explains a missing asset and offers to relink it to the asset selected in the library.
+fn render_missing_asset(
+    ui: &mut egui::Ui,
+    asset_path: &str,
+    library_selection: Option<&str>,
+) -> Option<RetargetAssetRequest> {
+    ui.colored_label(
+        egui::Color32::from_rgb(220, 90, 90),
+        egui::RichText::new("Asset missing from library").size(13.0),
+    );
+    ui.label(egui::RichText::new(asset_path).small().weak());
+    ui.add_space(4.0);
+
+    let button = ui
+        .add_enabled(
+            library_selection.is_some(),
+            egui::Button::new("Relink to selected asset"),
+        )
+        .on_hover_text("Use the asset selected in the library for every item that uses this one")
+        .on_disabled_hover_text("Select an asset in the library first");
+    ui.add_space(8.0);
+
+    match library_selection {
+        Some(new_path) if button.clicked() => Some(RetargetAssetRequest {
+            old_path: asset_path.to_string(),
+            new_path: new_path.to_string(),
+        }),
+        _ => None,
     }
 }
 
@@ -116,8 +162,11 @@ fn render_single_selection(
     map_data: &MapData,
     selected_query: &mut SelectedQuery,
     images: &Assets<Image>,
-) {
-    if let Ok((_entity, mut item, mut transform, sprite, mut render_layers)) =
+    missing: &[Entity],
+    library_selection: Option<&str>,
+) -> Option<RetargetAssetRequest> {
+    let mut relink = None;
+    if let Ok((entity, mut item, mut transform, sprite, mut render_layers)) =
         selected_query.single_mut()
     {
         // Asset path (truncated if too long)
@@ -129,6 +178,10 @@ fn render_single_selection(
         ui.label(egui::RichText::new(format!("Asset: {}", asset_name)).size(13.0));
 
         ui.add_space(8.0);
+
+        if missing.contains(&entity) {
+            relink = render_missing_asset(ui, &item.asset_path, library_selection);
+        }
 
         // Layer selector
         ui.horizontal(|ui| {
@@ -281,4 +334,5 @@ fn render_single_selection(
             transform.scale.y = uniform_scale;
         }
     }
+    relink
 }

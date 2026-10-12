@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use crate::assets::library_asset_path;
 use crate::editor::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use crate::map::{
-    AssetManifest, FogOfWarData, Layer, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar,
-    SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
+    FogOfWarData, Layer, MapData, PlacedItem, SavedAnnotations, SavedFogOfWar, SavedLine, SavedMap,
+    SavedPath, SavedPlacedItem, SavedTextBox,
 };
 
 use super::helpers::{array_to_color, color_to_array};
@@ -72,6 +72,7 @@ pub fn new_map_system(
                 path: None,
                 is_dirty: false,
                 saved_state: None,
+                asset_fingerprints: Default::default(),
             },
         );
         open_maps.active_map_id = Some(new_id);
@@ -81,7 +82,7 @@ pub fn new_map_system(
 }
 
 /// Helper to capture current map state as a SavedMap
-fn capture_current_map_state(
+pub(super) fn capture_current_map_state(
     map_data: &MapData,
     fog_data: &FogOfWarData,
     placed_items: &Query<(&PlacedItem, &Transform)>,
@@ -123,10 +124,9 @@ fn capture_current_map_state(
         })
         .collect();
 
-    let asset_manifest = AssetManifest::from_items(items.iter());
-
+    // Fingerprints live on the OpenMap entry; this snapshot only holds what's on the map
     SavedMap {
-        asset_manifest,
+        asset_fingerprints: Default::default(),
         map_data: map_data.clone(),
         placed_items: items,
         annotations: SavedAnnotations {

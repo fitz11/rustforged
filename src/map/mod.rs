@@ -7,13 +7,11 @@ mod placed_item;
 pub use fog::{FogOfWarData, SavedFogOfWar, cell_to_world, cells_in_radius, world_to_cell};
 pub use layer::Layer;
 pub use map_data::{
-    AssetManifest, MapData, SavedAnnotations, SavedLine, SavedMap, SavedPath, SavedPlacedItem,
-    SavedTextBox,
+    MapData, SavedAnnotations, SavedLine, SavedMap, SavedPath, SavedPlacedItem, SavedTextBox,
 };
 pub use persistence::{
-    AsyncMapOperation, CurrentMapFile, LoadMapRequest, LoadValidationWarning, MapDirtyState,
-    MapLoadError, MapSaveError, NewMapRequest, OpenMaps, SaveMapRequest, SaveValidationWarning,
-    SwitchMapRequest, UnsavedChangesDialog,
+    AsyncMapOperation, CurrentMapFile, LoadMapRequest, MapAssetReport, MapDirtyState, MapLoadError,
+    MapSaveError, NewMapRequest, OpenMaps, SaveMapRequest, SwitchMapRequest, UnsavedChangesDialog,
 };
 pub use placed_item::{MissingAsset, PlacedItem, Selected};
 
@@ -27,8 +25,7 @@ impl Plugin for MapPlugin {
             .init_resource::<FogOfWarData>()
             .init_resource::<MapLoadError>()
             .init_resource::<MapSaveError>()
-            .init_resource::<SaveValidationWarning>()
-            .init_resource::<LoadValidationWarning>()
+            .init_resource::<MapAssetReport>()
             .init_resource::<CurrentMapFile>()
             .init_resource::<MapDirtyState>()
             .init_resource::<OpenMaps>()

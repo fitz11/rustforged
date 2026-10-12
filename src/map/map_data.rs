@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::assets::AssetFingerprint;
 
 use super::{Layer, PlacedItem, SavedFogOfWar};
 
@@ -61,44 +63,12 @@ impl SavedPlacedItem {
     }
 }
 
-/// Manifest of all assets used in a map.
-///
-/// Stored at the top of map files for quick validation without
-/// scanning all placed items. Used to verify all required assets
-/// exist before loading a map.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct AssetManifest {
-    /// Unique list of asset paths used in the map
-    pub assets: Vec<String>,
-}
-
-impl AssetManifest {
-    /// Build a manifest from a collection of placed items
-    pub fn from_items<'a>(items: impl Iterator<Item = &'a SavedPlacedItem>) -> Self {
-        let unique: HashSet<_> = items.map(|item| item.asset_path.clone()).collect();
-        let mut assets: Vec<_> = unique.into_iter().collect();
-        assets.sort(); // Deterministic ordering for diffs
-        Self { assets }
-    }
-
-    /// Check if the manifest is empty (no assets used)
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.assets.is_empty()
-    }
-
-    /// Get the number of unique assets in the manifest
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.assets.len()
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedMap {
-    /// Asset manifest for quick validation (stored first in JSON)
+    /// Content fingerprint of each referenced asset, by library-relative path, as of the
+    /// last save. Lets a reference be found again after its file was renamed or moved.
     #[serde(default)]
-    pub asset_manifest: AssetManifest,
+    pub asset_fingerprints: BTreeMap<String, AssetFingerprint>,
     pub map_data: MapData,
     pub placed_items: Vec<SavedPlacedItem>,
     #[serde(default)]
@@ -109,15 +79,26 @@ pub struct SavedMap {
 
 impl SavedMap {
     /// Point placed items at a different asset path (after a rename, move or relink).
-    pub fn retarget_asset(&mut self, old_path: &str, new_path: &str) {
+    /// Returns true if any item changed.
+    pub fn retarget_asset(&mut self, old_path: &str, new_path: &str) -> bool {
+        let mut changed = false;
         for item in self
             .placed_items
             .iter_mut()
             .filter(|i| i.asset_path == old_path)
         {
             item.asset_path = new_path.to_string();
+            changed = true;
         }
-        self.asset_manifest = AssetManifest::from_items(self.placed_items.iter());
+        changed
+    }
+
+    /// Unique library-relative paths of the assets this map places.
+    pub fn used_assets(&self) -> BTreeSet<String> {
+        self.placed_items
+            .iter()
+            .map(|i| i.asset_path.clone())
+            .collect()
     }
 }
 
@@ -350,96 +331,11 @@ mod tests {
         assert_eq!(text_box.color, deserialized.color);
     }
 
-    // AssetManifest tests
-    #[test]
-    fn test_asset_manifest_default() {
-        let manifest = AssetManifest::default();
-        assert!(manifest.is_empty());
-        assert_eq!(manifest.len(), 0);
-    }
-
-    #[test]
-    fn test_asset_manifest_from_items() {
-        let items = [
-            SavedPlacedItem {
-                asset_path: "tokens/hero.png".to_string(),
-                position: Vec2::ZERO,
-                rotation: 0.0,
-                scale: Vec2::ONE,
-                layer: Layer::Token,
-                z_index: 0,
-            },
-            SavedPlacedItem {
-                asset_path: "terrain/grass.png".to_string(),
-                position: Vec2::ZERO,
-                rotation: 0.0,
-                scale: Vec2::ONE,
-                layer: Layer::Terrain,
-                z_index: 0,
-            },
-            SavedPlacedItem {
-                asset_path: "tokens/hero.png".to_string(), // Duplicate
-                position: Vec2::ONE,
-                rotation: 0.0,
-                scale: Vec2::ONE,
-                layer: Layer::Token,
-                z_index: 1,
-            },
-        ];
-
-        let manifest = AssetManifest::from_items(items.iter());
-
-        // Should have only 2 unique assets
-        assert_eq!(manifest.len(), 2);
-        assert!(manifest.assets.contains(&"tokens/hero.png".to_string()));
-        assert!(manifest.assets.contains(&"terrain/grass.png".to_string()));
-    }
-
-    #[test]
-    fn test_asset_manifest_sorted() {
-        let items = [
-            SavedPlacedItem {
-                asset_path: "z_last.png".to_string(),
-                position: Vec2::ZERO,
-                rotation: 0.0,
-                scale: Vec2::ONE,
-                layer: Layer::Token,
-                z_index: 0,
-            },
-            SavedPlacedItem {
-                asset_path: "a_first.png".to_string(),
-                position: Vec2::ZERO,
-                rotation: 0.0,
-                scale: Vec2::ONE,
-                layer: Layer::Token,
-                z_index: 0,
-            },
-        ];
-
-        let manifest = AssetManifest::from_items(items.iter());
-
-        // Assets should be sorted alphabetically
-        assert_eq!(manifest.assets[0], "a_first.png");
-        assert_eq!(manifest.assets[1], "z_last.png");
-    }
-
-    #[test]
-    fn test_asset_manifest_serialization() {
-        let manifest = AssetManifest {
-            assets: vec!["a.png".to_string(), "b.png".to_string()],
-        };
-
-        let json = serde_json::to_string(&manifest).unwrap();
-        let deserialized: AssetManifest = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(manifest.assets, deserialized.assets);
-    }
-
     // SavedMap tests
     #[test]
     fn test_saved_map_serialization() {
         let saved_map = SavedMap {
-            asset_manifest: AssetManifest::default(),
+            asset_fingerprints: BTreeMap::new(),
             map_data: MapData::default(),
             placed_items: vec![],
             annotations: SavedAnnotations::default(),
@@ -454,7 +350,7 @@ mod tests {
             saved_map.placed_items.len(),
             deserialized.placed_items.len()
         );
-        assert!(deserialized.asset_manifest.is_empty());
+        assert!(deserialized.asset_fingerprints.is_empty());
     }
 
     #[test]
@@ -477,10 +373,8 @@ mod tests {
                 z_index: 1,
             },
         ];
-        let manifest = AssetManifest::from_items(items.iter());
-
         let saved_map = SavedMap {
-            asset_manifest: manifest,
+            asset_fingerprints: BTreeMap::new(),
             map_data: MapData {
                 name: "Test Map".to_string(),
                 ..MapData::default()
@@ -497,12 +391,12 @@ mod tests {
         assert_eq!(deserialized.placed_items.len(), 2);
         assert_eq!(deserialized.placed_items[0].asset_path, "item1.png");
         assert_eq!(deserialized.placed_items[1].asset_path, "item2.png");
-        assert_eq!(deserialized.asset_manifest.len(), 2);
+        assert_eq!(deserialized.used_assets().len(), 2);
     }
 
     #[test]
     fn test_saved_map_annotations_default_on_deserialize() {
-        // Test that annotations and asset_manifest default to empty when not present in JSON
+        // Test that annotations and asset_fingerprints default to empty when not present in JSON
         // (simulating loading an old save file without these fields)
         let json = r#"{
             "map_data": {
@@ -518,6 +412,6 @@ mod tests {
         assert!(deserialized.annotations.paths.is_empty());
         assert!(deserialized.annotations.lines.is_empty());
         assert!(deserialized.annotations.text_boxes.is_empty());
-        assert!(deserialized.asset_manifest.is_empty());
+        assert!(deserialized.asset_fingerprints.is_empty());
     }
 }
