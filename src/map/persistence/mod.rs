@@ -17,6 +17,7 @@
 //! - [`map_state`] - New map and switch map systems
 //! - [`dirty`] - Dirty state detection systems
 //! - [`disk_changes`] - Noticing the open map's file change on disk
+//! - [`recovery`] - Autosave to a recovery folder, offered back after a crash
 //!
 //! ## Key Types
 //!
@@ -39,6 +40,7 @@ mod helpers;
 mod load;
 mod map_state;
 mod messages;
+mod recovery;
 mod resources;
 mod results;
 mod save;
@@ -65,4 +67,8 @@ pub use dirty::{
 pub use disk_changes::detect_open_map_changes;
 pub use load::{load_map_system, poll_load_tasks};
 pub use map_state::{new_map_system, switch_map_system};
+pub use recovery::{
+    Autosave, RecoverMapRequest, RecoveryOffer, autosave_recovery_file, find_recovery_files,
+    recover_map_system, remove_recovery_files_on_exit, remove_unneeded_recovery_files,
+};
 pub use save::{poll_save_tasks, save_map_system};

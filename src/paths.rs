@@ -52,6 +52,14 @@ pub fn data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|p| p.join("rustforged"))
 }
 
+/// Where unsaved maps are autosaved for crash recovery.
+///
+/// - Dev mode: `./recovery/`
+/// - Installed: `{data_dir}/recovery/`
+pub fn recovery_dir() -> Option<PathBuf> {
+    data_dir().map(|p| p.join("recovery"))
+}
+
 /// Path to the config file.
 ///
 /// - Dev mode: `./config.json`

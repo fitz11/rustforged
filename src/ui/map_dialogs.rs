@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use crate::assets::{AssetLibrary, RetargetAssetRequest};
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
 use crate::map::{
-    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapLoadError, MapSaveError, SaveConflict,
-    SaveConflictDialog, SaveConflictKind, SaveMapRequest,
+    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapLoadError, MapSaveError,
+    RecoverMapRequest, RecoveryOffer, SaveConflict, SaveConflictDialog, SaveConflictKind,
+    SaveMapRequest,
 };
 
 use super::map_actions::{UnsavedChangesPrompt, sanitize_map_name};
@@ -540,6 +541,64 @@ pub fn map_asset_report_ui(
         retarget_events.write(RetargetAssetRequest { old_path, new_path });
     }
 
+    Ok(())
+}
+
+/// After a crash: offers back the unsaved changes autosaved before it, newest first.
+pub fn recovery_offer_ui(
+    mut contexts: EguiContexts,
+    mut offer: ResMut<RecoveryOffer>,
+    mut recover_events: MessageWriter<RecoverMapRequest>,
+) -> Result {
+    let Some((path, file)) = offer.files.first().cloned() else {
+        return Ok(());
+    };
+
+    let mut choice = None;
+    egui::Window::new("Recover Unsaved Changes")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.label(
+                "Rustforged didn't close properly last time. These unsaved changes were kept:",
+            );
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(&file.name).strong());
+            ui.label(egui::RichText::new(format!("Autosaved {}", file.saved_at)).weak());
+            if let Some(original) = &file.original_path {
+                ui.label(
+                    egui::RichText::new(format!("Saving it goes to {}", original.display()))
+                        .weak()
+                        .small(),
+                );
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Recover")
+                    .on_hover_text("Open these changes as an unsaved map")
+                    .clicked()
+                {
+                    choice = Some(true);
+                }
+                if ui.button("Discard").clicked() {
+                    choice = Some(false);
+                }
+            });
+        });
+
+    match choice {
+        Some(true) => {
+            recover_events.write(RecoverMapRequest { path });
+            offer.files.remove(0);
+        }
+        Some(false) => {
+            let _ = std::fs::remove_file(&path);
+            offer.files.remove(0);
+        }
+        None => {}
+    }
     Ok(())
 }
 

@@ -3,6 +3,7 @@
 /releases
 /library
 /cache
+/recovery
 config.json
 *.DS_Store
 

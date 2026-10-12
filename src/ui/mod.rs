@@ -117,6 +117,7 @@ impl Plugin for UiPlugin {
                     map_dialogs::save_error_dialog_ui,
                     map_dialogs::map_asset_report_ui,
                     map_dialogs::save_conflict_dialog_ui,
+                    map_dialogs::recovery_offer_ui,
                     map_dialogs::config_reset_notification_ui,
                     asset_import::asset_import_ui,
                     layers_panel::help_popup_ui,

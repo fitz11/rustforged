@@ -16,6 +16,7 @@ pub use persistence::{
     OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest, SaveOutcome,
     SwitchMapRequest,
 };
+pub use persistence::{RecoverMapRequest, RecoveryOffer};
 pub use placed_item::{ItemId, MissingAsset, PlacedItem, Selected, StackTops, Stacker};
 
 use bevy::prelude::*;
@@ -41,6 +42,20 @@ impl Plugin for MapPlugin {
             .add_message::<LoadMapRequest>()
             .add_message::<NewMapRequest>()
             .add_message::<SwitchMapRequest>()
+            .init_resource::<persistence::Autosave>()
+            .init_resource::<persistence::RecoveryOffer>()
+            .add_message::<persistence::RecoverMapRequest>()
+            .add_systems(Startup, persistence::find_recovery_files)
+            .add_systems(
+                Update,
+                (
+                    persistence::autosave_recovery_file,
+                    persistence::remove_unneeded_recovery_files,
+                    persistence::recover_map_system
+                        .run_if(on_message::<persistence::RecoverMapRequest>),
+                ),
+            )
+            .add_systems(Last, persistence::remove_recovery_files_on_exit)
             .add_systems(
                 Update,
                 (
