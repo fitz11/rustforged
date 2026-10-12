@@ -39,6 +39,11 @@ fn cache_key(library_path: &Path, metadata: &LibraryMetadata) -> String {
     if !id.is_empty() {
         return id;
     }
+    location_key(library_path)
+}
+
+/// Cache folder name for a library without an id, from where it is.
+fn location_key(library_path: &Path) -> String {
     let location = library_path
         .canonicalize()
         .unwrap_or_else(|_| library_path.to_path_buf());
@@ -131,17 +136,38 @@ pub fn open_library_cache(
         .iter()
         .filter_map(|a| thumbnail_file(&dir, &a.path, a.stamp))
         .collect();
+    // A library that got an id (when created or renamed) used to be cached under a key
+    // from its location; that folder is now unused
+    let old_dir = crate::paths::cache_dir()
+        .map(|root| root.join(location_key(&library.library_path)))
+        .filter(|old| *old != dir);
     IoTaskPool::get()
-        .spawn(async move { prune_thumbnails(&dir, &keep) })
+        .spawn(async move {
+            prune_thumbnails(&dir, &keep);
+            if let Some(old) = old_dir
+                && old.is_dir()
+                && let Err(e) = std::fs::remove_dir_all(&old)
+            {
+                debug!("Couldn't remove old cache {:?}: {}", old, e);
+            }
+        })
         .detach();
 }
 
-/// System that writes the fingerprint cache after save/load tasks added to it.
+/// System that writes the fingerprint cache after save/load tasks added to it. One write at
+/// a time: a newer one waits for the last to finish, so an older snapshot can't land last.
 pub fn save_fingerprint_cache(
     library: Res<AssetLibrary>,
     cache: Res<LibraryCache>,
     mut saved_revision: Local<u64>,
+    mut writing: Local<Option<bevy::tasks::Task<()>>>,
 ) {
+    if let Some(task) = writing.as_mut() {
+        if futures_lite::future::block_on(futures_lite::future::poll_once(task)).is_none() {
+            return;
+        }
+        *writing = None;
+    }
     if *saved_revision == library.fingerprint_revision() {
         return;
     }
@@ -153,22 +179,18 @@ pub fn save_fingerprint_cache(
     let mut fingerprints = library.fingerprints.clone();
     let current: HashSet<&str> = library.assets.iter().map(|a| a.path.as_str()).collect();
     fingerprints.retain_paths(|path| current.contains(path));
-    IoTaskPool::get()
-        .spawn(async move {
-            let written = serde_json::to_vec(&fingerprints)
-                .map_err(|e| e.to_string())
-                .and_then(|json| {
-                    std::fs::create_dir_all(&dir)
-                        .and_then(|()| {
-                            crate::fsutil::write_atomic(&dir.join(FINGERPRINTS_FILE), &json)
-                        })
-                        .map_err(|e| e.to_string())
-                });
-            if let Err(e) = written {
-                warn!("Couldn't save fingerprint cache: {}", e);
-            }
-        })
-        .detach();
+    *writing = Some(IoTaskPool::get().spawn(async move {
+        let written = serde_json::to_vec(&fingerprints)
+            .map_err(|e| e.to_string())
+            .and_then(|json| {
+                std::fs::create_dir_all(&dir)
+                    .and_then(|()| crate::fsutil::write_atomic(&dir.join(FINGERPRINTS_FILE), &json))
+                    .map_err(|e| e.to_string())
+            });
+        if let Err(e) = written {
+            warn!("Couldn't save fingerprint cache: {}", e);
+        }
+    }));
 }
 
 #[cfg(test)]
