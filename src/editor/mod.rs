@@ -19,6 +19,7 @@ pub use conditions::{
     tool_is,
 };
 pub use grid::GridSettings;
+pub use selection::SelectionEdit;
 pub use tools::{CurrentTool, EditorTool, SelectedLayer};
 
 use bevy::input::common_conditions::input_pressed;
@@ -69,6 +70,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<clipboard::Clipboard>()
             .init_resource::<history::CommandHistory>()
             .add_message::<history::RecordEditorCommand>()
+            .add_message::<selection::SelectionEdit>()
             .init_resource::<fog::FogState>()
             .init_resource::<brush::BrushState>()
             // Register gizmo groups for editor-only rendering
@@ -120,26 +122,11 @@ impl Plugin for EditorPlugin {
                         .run_if(tool_is(EditorTool::Select).and_then(no_dialog_open)),
                     selection::draw_selection_indicators,
                     selection::draw_box_select_rect,
-                    selection::handle_fit_to_grid.run_if(
-                        plain_key(KeyCode::KeyG)
-                            .and_then(tool_is(EditorTool::Select))
-                            .and_then(shortcuts_enabled),
-                    ),
-                    selection::handle_center_to_grid.run_if(
-                        plain_key(KeyCode::KeyG)
-                            .and_then(tool_is(EditorTool::Select))
-                            .and_then(shortcuts_enabled),
-                    ),
-                    selection::handle_restore_aspect_ratio.run_if(
-                        plain_key(KeyCode::KeyA)
-                            .and_then(tool_is(EditorTool::Select))
-                            .and_then(shortcuts_enabled),
-                    ),
-                    selection::handle_rotate_90.run_if(
-                        plain_key(KeyCode::KeyR)
-                            .and_then(tool_is(EditorTool::Select))
-                            .and_then(shortcuts_enabled),
-                    ),
+                    selection::selection_edit_shortcuts
+                        .run_if(tool_is(EditorTool::Select).and_then(shortcuts_enabled)),
+                    selection::apply_selection_edits
+                        .run_if(on_message::<selection::SelectionEdit>)
+                        .after(selection::selection_edit_shortcuts),
                     selection::handle_deletion.run_if(
                         plain_key(KeyCode::Delete)
                             .or_else(plain_key(KeyCode::Backspace))

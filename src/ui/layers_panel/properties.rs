@@ -5,7 +5,9 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 
 use crate::assets::RetargetAssetRequest;
-use crate::map::{Layer, MapData, PlacedItem, Selected};
+use crate::editor::SelectionEdit;
+use crate::editor::history::MapObject;
+use crate::map::{ItemId, Layer, PlacedItem, Selected};
 
 /// Selected item query type for the properties panel.
 pub type SelectedQuery<'w, 's> = Query<
@@ -13,26 +15,43 @@ pub type SelectedQuery<'w, 's> = Query<
     's,
     (
         Entity,
+        &'static ItemId,
         &'static mut PlacedItem,
         &'static mut Transform,
-        &'static Sprite,
         &'static mut RenderLayers,
     ),
     With<Selected>,
 >;
 
+/// What the user did in the Properties panel this frame.
+#[derive(Default)]
+pub struct PropertiesOutput {
+    /// Relink the selected item's missing asset
+    pub relink: Option<RetargetAssetRequest>,
+    /// A button for an edit that also has a keyboard shortcut
+    pub selection_edit: Option<SelectionEdit>,
+    /// The single selected item before and after this frame's field edits
+    pub item_edit: Option<ItemEdit>,
+}
+
+/// The single selected item before and after this frame's edits in the panel.
+pub struct ItemEdit {
+    pub before: MapObject,
+    pub after: MapObject,
+    /// A field is still being dragged or typed in, so the edit isn't finished
+    pub editing: bool,
+}
+
 /// Renders the properties section for selected items.
 ///
 /// `missing` lists selected items whose asset is missing; `library_selection` is the asset
-/// selected in the library browser. Returns a relink request if the user asked for one.
+/// selected in the library browser.
 pub fn render_properties(
     ui: &mut egui::Ui,
-    map_data: &MapData,
     selected_query: &mut SelectedQuery,
-    images: &Assets<Image>,
     missing: &[Entity],
     library_selection: Option<&str>,
-) -> Option<RetargetAssetRequest> {
+) -> PropertiesOutput {
     ui.add_space(4.0);
     ui.label(egui::RichText::new("Properties").heading().size(18.0));
     ui.add_space(4.0);
@@ -40,23 +59,18 @@ pub fn render_properties(
     ui.add_space(4.0);
 
     let selected_count = selected_query.iter().count();
+    let mut output = PropertiesOutput::default();
 
     if selected_count == 0 {
         ui.label(egui::RichText::new("No item selected").size(14.0).weak());
-        None
     } else if selected_count > 1 {
-        render_multi_selection(ui, map_data, selected_query, images);
-        None
+        ui.label(egui::RichText::new(format!("{} items selected", selected_count)).size(14.0));
+        ui.add_space(8.0);
+        output.selection_edit = render_selection_edit_buttons(ui);
     } else {
-        render_single_selection(
-            ui,
-            map_data,
-            selected_query,
-            images,
-            missing,
-            library_selection,
-        )
+        render_single_selection(ui, selected_query, missing, library_selection, &mut output);
     }
+    output
 }
 
 /// Explains a missing asset and offers to relink it to the asset selected in the library.
@@ -90,264 +104,166 @@ fn render_missing_asset(
     }
 }
 
-/// Renders UI for multiple selected items.
-fn render_multi_selection(
-    ui: &mut egui::Ui,
-    map_data: &MapData,
-    selected_query: &mut SelectedQuery,
-    images: &Assets<Image>,
-) {
-    let selected_count = selected_query.iter().count();
-    ui.label(egui::RichText::new(format!("{} items selected", selected_count)).size(14.0));
-    ui.add_space(8.0);
-
-    // Multi-selection: show fit-to-grid and center-to-grid buttons
+/// Fit, Center and Restore Aspect Ratio, which work the same as their shortcuts
+fn render_selection_edit_buttons(ui: &mut egui::Ui) -> Option<SelectionEdit> {
+    let mut edit = None;
     if ui
         .add_sized([140.0, 26.0], egui::Button::new("Fit to Grid (G)"))
         .clicked()
     {
-        for (_entity, _item, mut transform, sprite, _render_layers) in selected_query.iter_mut() {
-            let original_size = if let Some(custom_size) = sprite.custom_size {
-                custom_size
-            } else if let Some(image) = images.get(&sprite.image) {
-                image.size().as_vec2()
-            } else {
-                Vec2::splat(64.0)
-            };
-
-            if original_size.x > 0.0 && original_size.y > 0.0 {
-                let grid_size = map_data.grid_size;
-                let scale_x = grid_size / original_size.x;
-                let scale_y = grid_size / original_size.y;
-                let uniform_scale = scale_x.min(scale_y);
-                transform.scale = Vec3::new(uniform_scale, uniform_scale, 1.0);
-            }
-        }
+        edit = Some(SelectionEdit::FitToGrid);
     }
-
     ui.add_space(4.0);
     if ui
         .add_sized([140.0, 26.0], egui::Button::new("Center to Grid (Shift+G)"))
         .clicked()
     {
-        let grid_size = map_data.grid_size;
-        let half = grid_size / 2.0;
-        for (_entity, _item, mut transform, _sprite, _render_layers) in selected_query.iter_mut() {
-            let pos = transform.translation.truncate();
-            let snapped = Vec2::new(
-                (pos.x / grid_size).floor() * grid_size + half,
-                (pos.y / grid_size).floor() * grid_size + half,
-            );
-            transform.translation.x = snapped.x;
-            transform.translation.y = snapped.y;
-        }
+        edit = Some(SelectionEdit::CenterToGrid);
     }
-
     ui.add_space(4.0);
     if ui
         .add_sized([140.0, 26.0], egui::Button::new("Restore Aspect Ratio (A)"))
         .clicked()
     {
-        for (_entity, _item, mut transform, _sprite, _render_layers) in selected_query.iter_mut() {
-            let uniform_scale = transform.scale.x.abs().max(transform.scale.y.abs());
-            transform.scale.x = uniform_scale;
-            transform.scale.y = uniform_scale;
-        }
+        edit = Some(SelectionEdit::RestoreAspectRatio);
     }
+    edit
+}
+
+/// A labelled number field. Returns whether it's still being dragged or typed in.
+fn number_field(ui: &mut egui::Ui, label: &str, value: &mut f32, speed: f64, suffix: &str) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(14.0));
+        let response = ui.add(egui::DragValue::new(value).speed(speed).suffix(suffix));
+        response.dragged() || response.has_focus()
+    })
+    .inner
 }
 
 /// Renders UI for a single selected item with full property controls.
 fn render_single_selection(
     ui: &mut egui::Ui,
-    map_data: &MapData,
     selected_query: &mut SelectedQuery,
-    images: &Assets<Image>,
     missing: &[Entity],
     library_selection: Option<&str>,
-) -> Option<RetargetAssetRequest> {
-    let mut relink = None;
-    if let Ok((entity, mut item, mut transform, sprite, mut render_layers)) =
-        selected_query.single_mut()
-    {
-        // Asset path (truncated if too long)
-        let asset_name = item
-            .asset_path
-            .split('/')
-            .next_back()
-            .unwrap_or(&item.asset_path);
-        ui.label(egui::RichText::new(format!("Asset: {}", asset_name)).size(13.0));
+    output: &mut PropertiesOutput,
+) {
+    let Ok((entity, id, mut item, mut transform, mut render_layers)) = selected_query.single_mut()
+    else {
+        return;
+    };
 
-        ui.add_space(8.0);
+    // Asset path (truncated if too long)
+    let asset_name = item
+        .asset_path
+        .split('/')
+        .next_back()
+        .unwrap_or(&item.asset_path);
+    ui.label(egui::RichText::new(format!("Asset: {}", asset_name)).size(13.0));
 
-        if missing.contains(&entity) {
-            relink = render_missing_asset(ui, &item.asset_path, library_selection);
-        }
+    ui.add_space(8.0);
 
-        // Layer selector
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Layer:").size(14.0));
-            egui::ComboBox::from_id_salt("item_layer")
-                .selected_text(item.layer.display_name())
-                .show_ui(ui, |ui| {
-                    for layer in Layer::all() {
-                        // Skip FogOfWar layer (not for placing items)
-                        if *layer == Layer::FogOfWar {
-                            continue;
-                        }
-                        let is_selected = item.layer == *layer;
-                        if ui
-                            .selectable_label(is_selected, layer.display_name())
-                            .clicked()
-                        {
-                            item.layer = *layer;
-                            // Update z position to match new layer
-                            transform.translation.z = layer.z_base() + item.z_index as f32;
-                            // Update render layer for player visibility
-                            *render_layers = layer.render_layers();
-                        }
+    if missing.contains(&entity) {
+        output.relink = render_missing_asset(ui, &item.asset_path, library_selection);
+    }
+
+    // Edit copies, so an untouched panel doesn't mark the item changed every frame
+    let before = MapObject::item(*id, item.clone(), *transform);
+    let mut new_item = item.clone();
+    let mut new_transform = *transform;
+    let mut editing = false;
+
+    // Layer selector
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Layer:").size(14.0));
+        egui::ComboBox::from_id_salt("item_layer")
+            .selected_text(new_item.layer.display_name())
+            .show_ui(ui, |ui| {
+                for layer in Layer::all() {
+                    // Skip FogOfWar layer (not for placing items)
+                    if *layer == Layer::FogOfWar {
+                        continue;
                     }
-                });
-        });
-
-        ui.add_space(4.0);
-
-        // Z-Index property
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Z-Index:").size(14.0));
-            ui.label(egui::RichText::new(format!("{}", item.z_index)).size(14.0));
-
-            let max_z = Layer::max_z_index();
-
-            ui.add_enabled_ui(item.z_index < max_z, |ui| {
-                if ui.small_button("+").clicked() {
-                    item.z_index += 1;
-                    transform.translation.z = item.layer.z_base() + item.z_index as f32;
+                    let is_selected = new_item.layer == *layer;
+                    if ui
+                        .selectable_label(is_selected, layer.display_name())
+                        .clicked()
+                    {
+                        new_item.layer = *layer;
+                    }
                 }
             });
+    });
 
-            ui.add_enabled_ui(item.z_index > 0, |ui| {
-                if ui.small_button("-").clicked() {
-                    item.z_index -= 1;
-                    transform.translation.z = item.layer.z_base() + item.z_index as f32;
-                }
-            });
-        });
+    ui.add_space(4.0);
 
-        ui.add_space(8.0);
+    // Z-Index property
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Z-Index:").size(14.0));
+        ui.label(egui::RichText::new(format!("{}", new_item.z_index)).size(14.0));
 
-        // Position
-        // Edit copies so an untouched field doesn't mark the Transform changed every frame
-        let mut x = transform.translation.x;
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("X:").size(14.0));
-            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                transform.translation.x = x;
-            }
-        });
-        ui.add_space(2.0);
+        let max_z = Layer::max_z_index();
 
-        let mut y = transform.translation.y;
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Y:").size(14.0));
-            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                transform.translation.y = y;
+        ui.add_enabled_ui(new_item.z_index < max_z, |ui| {
+            if ui.small_button("+").clicked() {
+                new_item.z_index += 1;
             }
         });
 
-        ui.add_space(8.0);
-
-        // Rotation
-        // EulerRot::ZYX returns (z, y, x) - we want the Z rotation (first component)
-        let (rotation, _, _) = transform.rotation.to_euler(EulerRot::ZYX);
-        let mut rotation_deg = rotation.to_degrees();
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Rotation:").size(14.0));
-            if ui
-                .add(
-                    egui::DragValue::new(&mut rotation_deg)
-                        .speed(1.0)
-                        .suffix("°"),
-                )
-                .changed()
-            {
-                transform.rotation = Quat::from_rotation_z(rotation_deg.to_radians());
+        ui.add_enabled_ui(new_item.z_index > 0, |ui| {
+            if ui.small_button("-").clicked() {
+                new_item.z_index -= 1;
             }
         });
+    });
 
-        ui.add_space(8.0);
+    ui.add_space(8.0);
 
-        // Scale
-        let mut scale_x = transform.scale.x;
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Scale X:").size(14.0));
-            if ui
-                .add(egui::DragValue::new(&mut scale_x).speed(0.01))
-                .changed()
-            {
-                transform.scale.x = scale_x;
-            }
-        });
-        ui.add_space(2.0);
+    // Position
+    editing |= number_field(ui, "X:", &mut new_transform.translation.x, 1.0, "");
+    ui.add_space(2.0);
+    editing |= number_field(ui, "Y:", &mut new_transform.translation.y, 1.0, "");
 
-        let mut scale_y = transform.scale.y;
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Scale Y:").size(14.0));
-            if ui
-                .add(egui::DragValue::new(&mut scale_y).speed(0.01))
-                .changed()
-            {
-                transform.scale.y = scale_y;
-            }
-        });
+    ui.add_space(8.0);
 
-        ui.add_space(8.0);
+    // Rotation
+    // EulerRot::ZYX returns (z, y, x) - we want the Z rotation (first component)
+    let (rotation, _, _) = new_transform.rotation.to_euler(EulerRot::ZYX);
+    let mut rotation_deg = rotation.to_degrees();
+    let rotation_before = rotation_deg;
+    editing |= number_field(ui, "Rotation:", &mut rotation_deg, 1.0, "°");
+    if rotation_deg != rotation_before {
+        new_transform.rotation = Quat::from_rotation_z(rotation_deg.to_radians());
+    }
 
-        if ui
-            .add_sized([140.0, 26.0], egui::Button::new("Fit to Grid (G)"))
-            .clicked()
-        {
-            let original_size = if let Some(custom_size) = sprite.custom_size {
-                custom_size
-            } else if let Some(image) = images.get(&sprite.image) {
-                image.size().as_vec2()
-            } else {
-                Vec2::splat(64.0)
-            };
+    ui.add_space(8.0);
 
-            if original_size.x > 0.0 && original_size.y > 0.0 {
-                let grid_size = map_data.grid_size;
-                let scale_x = grid_size / original_size.x;
-                let scale_y = grid_size / original_size.y;
-                let uniform_scale = scale_x.min(scale_y);
-                transform.scale = Vec3::new(uniform_scale, uniform_scale, 1.0);
-            }
+    // Scale
+    editing |= number_field(ui, "Scale X:", &mut new_transform.scale.x, 0.01, "");
+    ui.add_space(2.0);
+    editing |= number_field(ui, "Scale Y:", &mut new_transform.scale.y, 0.01, "");
+
+    ui.add_space(8.0);
+    output.selection_edit = render_selection_edit_buttons(ui);
+
+    let after = MapObject::item(*id, new_item.clone(), new_transform);
+    if after != before {
+        if new_item != *item {
+            *render_layers = new_item.layer.render_layers();
+            *item = new_item;
         }
-
-        ui.add_space(4.0);
-        if ui
-            .add_sized([140.0, 26.0], egui::Button::new("Center to Grid (Shift+G)"))
-            .clicked()
+        if let MapObject::Item {
+            transform: normalized,
+            ..
+        } = &after
         {
-            let grid_size = map_data.grid_size;
-            let half = grid_size / 2.0;
-            let pos = transform.translation.truncate();
-            let snapped = Vec2::new(
-                (pos.x / grid_size).floor() * grid_size + half,
-                (pos.y / grid_size).floor() * grid_size + half,
-            );
-            transform.translation.x = snapped.x;
-            transform.translation.y = snapped.y;
-        }
-
-        ui.add_space(4.0);
-        if ui
-            .add_sized([140.0, 26.0], egui::Button::new("Restore Aspect Ratio (A)"))
-            .clicked()
-        {
-            let uniform_scale = transform.scale.x.abs().max(transform.scale.y.abs());
-            transform.scale.x = uniform_scale;
-            transform.scale.y = uniform_scale;
+            // At the item's depth for its (possibly new) layer and z-index
+            *transform = *normalized;
         }
     }
-    relink
+    output.item_edit = Some(ItemEdit {
+        before,
+        after,
+        editing,
+    });
 }

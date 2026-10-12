@@ -5,6 +5,8 @@ use bevy_egui::{EguiContexts, egui};
 
 use crate::assets::{RetargetAssetRequest, SelectedAsset};
 use crate::config::AppConfig;
+use crate::editor::SelectionEdit;
+use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
 use crate::map::{FogOfWarData, MapData, MapDirtyState, MissingAsset, Selected};
 use crate::session::LiveSessionState;
 use crate::ui::panel_layout::DockedPanel;
@@ -12,7 +14,7 @@ use crate::ui::panel_layout::DockedPanel;
 use super::HelpWindowState;
 use super::fog::render_fog_controls;
 use super::layers::render_layers;
-use super::properties::{SelectedQuery, render_properties};
+use super::properties::{ItemEdit, PropertiesOutput, SelectedQuery, render_properties};
 use super::session::render_session_controls;
 
 /// Main layers panel UI system.
@@ -23,17 +25,21 @@ pub fn layers_panel_ui(
     mut fog_data: ResMut<FogOfWarData>,
     mut dirty_state: ResMut<MapDirtyState>,
     mut selected_query: SelectedQuery,
-    images: Res<Assets<Image>>,
     mut session_state: ResMut<LiveSessionState>,
     mut help_state: ResMut<HelpWindowState>,
     missing_query: Query<Entity, (With<Selected>, With<MissingAsset>)>,
     selected_asset: Res<SelectedAsset>,
     mut retarget_events: MessageWriter<RetargetAssetRequest>,
     config: Res<AppConfig>,
+    mut edit_events: (
+        MessageWriter<SelectionEdit>,
+        MessageWriter<RecordEditorCommand>,
+    ),
+    mut unfinished_edit: Local<Option<MapObject>>,
 ) -> Result {
     let missing: Vec<Entity> = missing_query.iter().collect();
     let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
-    let mut relink = None;
+    let mut properties = PropertiesOutput::default();
 
     egui::Panel::right("layers_panel")
         .default_size(200.0)
@@ -59,14 +65,7 @@ pub fn layers_panel_ui(
             }
 
             // Properties section
-            relink = render_properties(
-                ui,
-                &map_data,
-                &mut selected_query,
-                &images,
-                &missing,
-                library_selection,
-            );
+            properties = render_properties(ui, &mut selected_query, &missing, library_selection);
 
             // Live Session controls (when active)
             if render_session_controls(
@@ -90,8 +89,103 @@ pub fn layers_panel_ui(
                 }
             });
         });
-    if let Some(request) = relink {
+    if let Some(request) = properties.relink {
         retarget_events.write(request);
     }
+    if let Some(edit) = properties.selection_edit {
+        edit_events.0.write(edit);
+    }
+    if let Some(command) = finished_item_edit(properties.item_edit, &mut unfinished_edit) {
+        edit_events.1.write(RecordEditorCommand { command });
+    }
     Ok(())
+}
+
+/// Turns Properties panel edits into undo steps: one per finished edit, so dragging a
+/// number field is one step rather than one per frame. `unfinished` holds the item's state
+/// from before an edit that's still in progress.
+fn finished_item_edit(
+    edit: Option<ItemEdit>,
+    unfinished: &mut Option<MapObject>,
+) -> Option<EditorCommand> {
+    let Some(ItemEdit {
+        before,
+        after,
+        editing,
+    }) = edit
+    else {
+        // The selection changed mid-edit; what was changed so far stays without a step
+        *unfinished = None;
+        return None;
+    };
+    if unfinished
+        .as_ref()
+        .is_some_and(|start| start.id() != after.id())
+    {
+        *unfinished = None;
+    }
+    if before != after && unfinished.is_none() {
+        *unfinished = Some(before);
+    }
+    if editing {
+        return None;
+    }
+    EditorCommand::change([(unfinished.take()?, after)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::{Layer, PlacedItem};
+
+    fn token_at(object: &MapObject, x: f32) -> MapObject {
+        let MapObject::Item { id, item, .. } = object else {
+            unreachable!()
+        };
+        MapObject::item(*id, item.clone(), Transform::from_xyz(x, 0.0, 0.0))
+    }
+
+    #[test]
+    fn test_dragging_a_field_is_one_undo_step() {
+        let start = MapObject::new_item(
+            PlacedItem {
+                asset_path: "token.png".to_string(),
+                layer: Layer::Token,
+                z_index: 0,
+            },
+            Transform::default(),
+        );
+        let mut unfinished = None;
+        let frame = |before: f32, after: f32, editing| {
+            Some(ItemEdit {
+                before: token_at(&start, before),
+                after: token_at(&start, after),
+                editing,
+            })
+        };
+
+        assert_eq!(
+            finished_item_edit(frame(0.0, 5.0, true), &mut unfinished),
+            None
+        );
+        assert_eq!(
+            finished_item_edit(frame(5.0, 9.0, true), &mut unfinished),
+            None
+        );
+        let command = finished_item_edit(frame(9.0, 9.0, false), &mut unfinished);
+        assert_eq!(
+            command,
+            Some(EditorCommand::Change(vec![(
+                token_at(&start, 0.0),
+                token_at(&start, 9.0)
+            )]))
+        );
+        assert!(unfinished.is_none());
+
+        // Nothing changed: no step
+        assert_eq!(
+            finished_item_edit(frame(9.0, 9.0, false), &mut unfinished),
+            None
+        );
+    }
 }
