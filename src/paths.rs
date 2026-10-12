@@ -75,6 +75,20 @@ pub fn default_library_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("library"))
 }
 
+/// Platform-appropriate cache directory, for data that can be rebuilt (thumbnails,
+/// fingerprints). Kept out of libraries so it never syncs.
+///
+/// - Dev mode: `./cache/`
+/// - Linux: `~/.cache/rustforged/`
+/// - macOS: `~/Library/Caches/rustforged/`
+/// - Windows: `%LOCALAPPDATA%\rustforged\`
+pub fn cache_dir() -> Option<PathBuf> {
+    if is_dev_mode() {
+        return Some(PathBuf::from("cache"));
+    }
+    dirs::cache_dir().map(|p| p.join("rustforged"))
+}
+
 /// Path to the logs directory.
 ///
 /// - Dev mode: `./logs/`

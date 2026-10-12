@@ -209,9 +209,7 @@ pub fn poll_save_tasks(
             async_op.is_saving = false;
             async_op.operation_description = None;
 
-            if !result.computed.is_empty() {
-                asset_library.fingerprints.merge(result.computed);
-            }
+            asset_library.merge_fingerprints(result.computed);
 
             if result.success {
                 info!("Map saved to {:?}", result.path);

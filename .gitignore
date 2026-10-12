@@ -2,6 +2,7 @@
 /logs
 /releases
 /library
+/cache
 config.json
 *.DS_Store
 

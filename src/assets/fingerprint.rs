@@ -90,6 +90,11 @@ impl FingerprintCache {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// Drops entries for paths that aren't in the library any more.
+    pub fn retain_paths(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.entries.retain(|path, _| keep(path));
+    }
 }
 
 /// A snapshot of the library that background tasks can fingerprint and resolve against

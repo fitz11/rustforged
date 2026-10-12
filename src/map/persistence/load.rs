@@ -150,9 +150,7 @@ pub fn poll_load_tasks(
                 continue;
             }
 
-            if !result.computed.is_empty() {
-                asset_library.fingerprints.merge(result.computed);
-            }
+            asset_library.merge_fingerprints(result.computed);
 
             let Some(mut saved_map) = result.saved_map else {
                 commands.entity(entity).despawn();

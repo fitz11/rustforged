@@ -1,3 +1,4 @@
+mod cache;
 mod fingerprint;
 mod library;
 mod manifest;
@@ -5,13 +6,14 @@ mod placeholder;
 mod source;
 mod validation;
 mod watcher;
+pub use cache::{LibraryCache, load_thumbnail};
 #[cfg(test)]
 pub use fingerprint::test_support as fingerprint_test_support;
 pub use fingerprint::{AssetFingerprint, FingerprintCache, LibraryIndex};
 pub use library::relative_to_library;
 pub use library::{
     AssetLibrary, LibraryAsset, THUMBNAIL_SIZE, ThumbnailCache, create_and_open_library,
-    get_image_dimensions, load_thumbnail, open_library_directory,
+    get_image_dimensions, open_library_directory,
 };
 pub use manifest::{LIBRARY_MANIFEST_FILE, is_root_manifest, save_library_metadata};
 pub use source::{LibraryRoot, library_asset_path, register_library_source};
@@ -63,6 +65,7 @@ impl Plugin for AssetLibraryPlugin {
             .add_message::<RetargetAssetRequest>()
             .add_message::<MapFilesChanged>()
             .init_resource::<watcher::LibraryWatcher>()
+            .init_resource::<LibraryCache>()
             .add_systems(
                 Startup,
                 (
@@ -87,6 +90,7 @@ impl Plugin for AssetLibraryPlugin {
                         watcher::process_library_changes,
                     )
                         .chain(),
+                    (cache::open_library_cache, cache::save_fingerprint_cache).chain(),
                     // Check for missing assets periodically (runs on entities without MissingAsset marker)
                     validation::detect_missing_assets,
                     // Bring placeholders back once their file shows up in the library

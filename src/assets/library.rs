@@ -32,6 +32,8 @@ pub struct AssetLibrary {
     generation: u64,
     /// Content fingerprints of this library's files, filled lazily by save/load tasks
     pub fingerprints: FingerprintCache,
+    /// Bumped when save/load tasks add fingerprints, so the cache knows to persist them
+    fingerprint_revision: u64,
 }
 
 impl Default for AssetLibrary {
@@ -53,6 +55,7 @@ impl AssetLibrary {
             root,
             generation: 0,
             fingerprints: FingerprintCache::default(),
+            fingerprint_revision: 0,
         }
     }
 
@@ -68,6 +71,25 @@ impl AssetLibrary {
         }
         self.root.set(path.clone());
         self.library_path = path;
+    }
+
+    /// Adds fingerprints computed by a background task.
+    pub fn merge_fingerprints(&mut self, computed: FingerprintCache) {
+        if !computed.is_empty() {
+            self.fingerprints.merge(computed);
+            self.fingerprint_revision += 1;
+        }
+    }
+
+    /// Adds fingerprints saved by an earlier session (they don't need saving again).
+    pub fn load_saved_fingerprints(&mut self, saved: FingerprintCache) {
+        let fresh = std::mem::replace(&mut self.fingerprints, saved);
+        self.fingerprints.merge(fresh);
+    }
+
+    /// Increases whenever fingerprints worth saving are added.
+    pub fn fingerprint_revision(&self) -> u64 {
+        self.fingerprint_revision
     }
 
     /// Snapshot for fingerprinting and resolving references off the main thread.
@@ -332,10 +354,9 @@ impl ThumbnailCache {
     }
 }
 
-/// Load a thumbnail image from a file path, returning a Bevy Image.
-/// For animated formats (GIF), only the first frame is loaded.
-/// The image is resized to THUMBNAIL_SIZE x THUMBNAIL_SIZE.
-pub fn load_thumbnail(path: &Path) -> Option<Image> {
+/// Renders a thumbnail from an image file, at most THUMBNAIL_SIZE on its longer side.
+/// For animated formats (GIF), only the first frame is used.
+pub fn render_thumbnail(path: &Path) -> Option<image::RgbaImage> {
     use image::imageops::FilterType;
     use image::{GenericImageView, ImageReader};
 
@@ -356,15 +377,16 @@ pub fn load_thumbnail(path: &Path) -> Option<Image> {
         )
     };
 
-    // Resize the image
-    let resized = img.resize(thumb_w, thumb_h, FilterType::Triangle);
+    Some(
+        img.resize(thumb_w, thumb_h, FilterType::Triangle)
+            .to_rgba8(),
+    )
+}
 
-    // Convert to RGBA8
-    let rgba = resized.to_rgba8();
+/// Wraps thumbnail pixels in a Bevy Image.
+pub fn thumbnail_to_image(rgba: image::RgbaImage) -> Image {
     let (width, height) = rgba.dimensions();
-
-    // Create Bevy Image
-    Some(Image::new(
+    Image::new(
         Extent3d {
             width,
             height,
@@ -374,7 +396,7 @@ pub fn load_thumbnail(path: &Path) -> Option<Image> {
         rgba.into_raw(),
         TextureFormat::Rgba8UnormSrgb,
         default(),
-    ))
+    )
 }
 
 pub fn refresh_asset_library(

@@ -4,19 +4,20 @@ use bevy::prelude::*;
 use bevy_egui::{EguiTextureHandle, EguiUserTextures};
 use std::path::PathBuf;
 
-use crate::assets::{AssetLibrary, ThumbnailCache, load_thumbnail};
+use crate::assets::{AssetLibrary, LibraryAsset, LibraryCache, ThumbnailCache, load_thumbnail};
 use crate::constants::MAX_THUMBNAILS_PER_FRAME;
 
 /// System that loads thumbnails and registers them with egui.
 /// Runs in Update before the egui pass to avoid timing issues.
 pub fn load_and_register_thumbnails(
     library: Res<AssetLibrary>,
+    library_cache: Res<LibraryCache>,
     mut thumbnail_cache: ResMut<ThumbnailCache>,
     mut images: ResMut<Assets<Image>>,
     mut egui_textures: ResMut<EguiUserTextures>,
 ) {
     // Load a limited number of new thumbnails per frame to avoid stuttering
-    let assets_to_load: Vec<PathBuf> = library
+    let assets_to_load: Vec<&LibraryAsset> = library
         .assets
         .iter()
         .filter(|a| {
@@ -24,11 +25,12 @@ pub fn load_and_register_thumbnails(
                 && !thumbnail_cache.has_failed(&a.full_path)
         })
         .take(MAX_THUMBNAILS_PER_FRAME)
-        .map(|a| a.full_path.clone())
         .collect();
 
-    for path in assets_to_load {
-        if let Some(thumb_image) = load_thumbnail(&path) {
+    // Cached thumbnails avoid decoding (and, for online-only files, downloading) the image
+    for asset in assets_to_load {
+        let path = asset.full_path.clone();
+        if let Some(thumb_image) = load_thumbnail(asset, library_cache.dir.as_deref()) {
             let handle = images.add(thumb_image);
             thumbnail_cache.thumbnails.insert(path, handle);
         } else {
