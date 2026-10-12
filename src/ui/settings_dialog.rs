@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use bevy_egui::{EguiContexts, egui};
-use futures_lite::future;
 use std::path::PathBuf;
 
 use crate::assets::{AssetLibrary, UpdateLibraryMetadataRequest};
+use crate::common::poll_task;
 use crate::config::{AppConfig, SaveConfigRequest, SetDefaultLibraryRequest};
 
 /// State for the settings dialog
@@ -59,7 +59,7 @@ pub fn settings_dialog_ui(
 ) -> Result {
     // Poll pending browse task (before early return so cleanup happens even if closed)
     if let Some(ref mut task) = dialog_state.pending_browse
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         dialog_state.pending_browse = None;
         if let Some(path) = result {

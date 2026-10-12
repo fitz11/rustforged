@@ -2,10 +2,10 @@
 
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
-use futures_lite::future;
 
 use super::operations::check_for_updates;
 use super::state::{DownloadTask, UpdateCheckTask, UpdateState};
+use crate::common::poll_task;
 
 /// System to start the update check on startup
 pub fn start_update_check(mut commands: Commands, mut update_state: ResMut<UpdateState>) {
@@ -26,7 +26,7 @@ pub fn poll_update_check(
     mut tasks: Query<(Entity, &mut UpdateCheckTask)>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
+        if let Some(result) = poll_task(&mut task.0) {
             update_state.is_checking = false;
             update_state.update_available = result.update_available;
             update_state.latest_version = result.latest_version;
@@ -48,7 +48,7 @@ pub fn poll_download_task(
     mut tasks: Query<(Entity, &mut DownloadTask)>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
+        if let Some(result) = poll_task(&mut task.0) {
             update_state.is_downloading = false;
 
             if result.success {

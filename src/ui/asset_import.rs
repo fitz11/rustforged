@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use bevy_egui::{EguiContexts, egui};
-use futures_lite::future;
 use std::path::{Path, PathBuf};
 
 use crate::assets::{AssetLibrary, RefreshAssetLibrary};
+use crate::common::poll_task;
 use crate::map::SavedMap;
 
 #[derive(Resource, Default)]
@@ -151,7 +151,7 @@ pub fn asset_import_ui(
 ) -> Result {
     // Poll pending browse task (before early return so cleanup happens even if closed)
     if let Some(ref mut task) = dialog.pending_browse
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         dialog.pending_browse = None;
         if let Some(selection) = result {
@@ -162,7 +162,7 @@ pub fn asset_import_ui(
 
     // Poll the copy
     if let Some(ref mut task) = dialog.pending_import
-        && let Some(outcome) = future::block_on(future::poll_once(task))
+        && let Some(outcome) = poll_task(task)
     {
         dialog.pending_import = None;
         dialog.import_status = Some(if outcome.errors.is_empty() {

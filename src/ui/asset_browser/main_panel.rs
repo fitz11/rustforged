@@ -3,7 +3,6 @@
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use bevy_egui::{EguiContexts, egui};
-use futures_lite::future;
 use std::path::PathBuf;
 
 use crate::assets::{
@@ -27,6 +26,7 @@ use super::helpers::{
 };
 use super::library_ops::{export_library_to_zip, import_destination, import_library_from_zip};
 use super::state::{AssetBrowserState, DialogStates, MapResources, ZipJob, ZipJobKind};
+use crate::common::poll_task;
 
 /// Main asset browser UI system.
 #[allow(clippy::too_many_arguments)]
@@ -162,7 +162,7 @@ pub fn asset_browser_ui(
 fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetBrowserState) {
     // Poll: Open Library
     if let Some(ref mut task) = browser_state.pending_open_library
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         browser_state.pending_open_library = None;
         if let Some(path) = result {
@@ -178,7 +178,7 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
 
     // Poll: Create Library
     if let Some(ref mut task) = browser_state.pending_create_library
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         browser_state.pending_create_library = None;
         if let Some(path) = result {
@@ -194,7 +194,7 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
 
     // Poll: Export Library (destination picked: export in the background)
     if let Some(ref mut task) = browser_state.pending_export
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         browser_state.pending_export = None;
         if let Some(dest_path) = result {
@@ -210,7 +210,7 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
 
     // Poll: Import Phase 1 (pick zip)
     if let Some(ref mut task) = browser_state.pending_import_zip
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         browser_state.pending_import_zip = None;
         if let Some(zip_path) = result {
@@ -229,7 +229,7 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
 
     // Poll: Import Phase 2 (destination picked: extract in the background)
     if let Some(ref mut task) = browser_state.pending_import_dest
-        && let Some(result) = future::block_on(future::poll_once(task))
+        && let Some(result) = poll_task(task)
     {
         browser_state.pending_import_dest = None;
         let zip_path = browser_state.pending_import_zip_path.take();
@@ -247,7 +247,7 @@ fn poll_file_dialog_tasks(library: &mut AssetLibrary, browser_state: &mut AssetB
 
     // Poll: export or import finished
     if let Some(job) = browser_state.zip_job.as_mut()
-        && let Some(result) = future::block_on(future::poll_once(&mut job.task))
+        && let Some(result) = poll_task(&mut job.task)
     {
         let kind = job.kind;
         browser_state.zip_job = None;

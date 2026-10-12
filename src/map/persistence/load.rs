@@ -3,7 +3,6 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
-use futures_lite::future;
 use std::path::PathBuf;
 
 use crate::assets::{AssetLibrary, LibraryIndex};
@@ -18,6 +17,7 @@ use super::resources::{
     MapDirtyState, MapLoadError, OpenMap, OpenMaps,
 };
 use super::results::LoadResult;
+use crate::common::poll_task;
 
 /// Starts an async load operation (file I/O and asset reference resolution)
 pub fn load_map_system(
@@ -151,7 +151,7 @@ pub fn poll_load_tasks(
     mut open_maps: ResMut<OpenMaps>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
+        if let Some(result) = poll_task(&mut task.0) {
             // Clear async state
             async_op.is_loading = false;
             async_op.operation_description = None;

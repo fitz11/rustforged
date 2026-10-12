@@ -3,13 +3,13 @@
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use bevy_egui::{EguiTextureHandle, EguiUserTextures};
-use futures_lite::future;
 use std::path::PathBuf;
 
 use crate::assets::{AssetLibrary, LibraryCache, ThumbnailCache, load_thumbnail};
 use crate::constants::MAX_THUMBNAILS_IN_FLIGHT;
 
 use super::state::AssetBrowserState;
+use crate::common::poll_task;
 
 /// System that loads thumbnails and registers them with egui.
 ///
@@ -41,9 +41,7 @@ pub fn load_and_register_thumbnails(
     let finished: Vec<(PathBuf, Option<Image>)> = thumbnail_cache
         .pending
         .iter_mut()
-        .filter_map(|(path, task)| {
-            future::block_on(future::poll_once(task)).map(|image| (path.clone(), image))
-        })
+        .filter_map(|(path, task)| poll_task(task).map(|image| (path.clone(), image)))
         .collect();
     for (path, image) in finished {
         thumbnail_cache.pending.remove(&path);

@@ -10,6 +10,7 @@ use super::manifest::{
     LibraryMetadata, load_library_metadata, new_library_metadata, save_library_metadata,
 };
 use super::source::{LibraryRoot, library_asset_path};
+use crate::common::poll_task;
 use crate::config::AddRecentLibraryRequest;
 
 /// Size of thumbnail previews in pixels
@@ -457,7 +458,7 @@ pub fn refresh_asset_library(
     let requested = events.read().count() > 0;
 
     if let Some((path, task)) = rescan.task.as_mut()
-        && let Some(assets) = futures_lite::future::block_on(futures_lite::future::poll_once(task))
+        && let Some(assets) = poll_task(task)
     {
         // A scan of a library that's no longer open is dropped
         if *path == library.library_path {

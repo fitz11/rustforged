@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use super::fingerprint::{FileStamp, FingerprintCache};
 use super::library::{AssetLibrary, LibraryAsset, render_thumbnail, thumbnail_to_image};
 use super::manifest::LibraryMetadata;
+use crate::common::poll_task;
 
 const FINGERPRINTS_FILE: &str = "fingerprints.json";
 const THUMBNAILS_DIR: &str = "thumbnails";
@@ -163,7 +164,7 @@ pub fn save_fingerprint_cache(
     mut writing: Local<Option<bevy::tasks::Task<()>>>,
 ) {
     if let Some(task) = writing.as_mut() {
-        if futures_lite::future::block_on(futures_lite::future::poll_once(task)).is_none() {
+        if poll_task(task).is_none() {
             return;
         }
         *writing = None;

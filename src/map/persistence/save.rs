@@ -2,7 +2,6 @@
 
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
-use futures_lite::future;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -19,6 +18,7 @@ use super::resources::{
     SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapTask,
 };
 use super::results::SaveResult;
+use crate::common::poll_task;
 
 /// Starts an async save operation
 #[allow(clippy::too_many_arguments)]
@@ -215,7 +215,7 @@ pub fn poll_save_tasks(
     mut finished: MessageWriter<MapSaveFinished>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = future::block_on(future::poll_once(&mut task.task)) {
+        if let Some(result) = poll_task(&mut task.task) {
             // Clear async state
             async_op.is_saving = false;
             async_op.operation_description = None;

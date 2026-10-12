@@ -10,7 +10,6 @@ use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use bevy::window::{PrimaryWindow, WindowCloseRequested};
 use bevy_egui::{EguiContexts, egui};
-use futures_lite::future;
 use std::path::{Path, PathBuf};
 
 use crate::assets::AssetLibrary;
@@ -21,6 +20,7 @@ use crate::map::{
 };
 
 use super::file_menu::FileMenuState;
+use crate::common::poll_task;
 
 /// Name of a map that hasn't been named yet
 pub const UNTITLED_MAP_NAME: &str = "Untitled Map";
@@ -111,7 +111,7 @@ pub fn poll_open_map_picker(
     let Some(task) = picker.task.as_mut() else {
         return;
     };
-    if let Some(result) = future::block_on(future::poll_once(task)) {
+    if let Some(result) = poll_task(task) {
         picker.task = None;
         if let Some(path) = result {
             actions.write(MapFileAction::Open(path));

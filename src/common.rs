@@ -3,6 +3,7 @@
 //! This module contains types that are used by both the editor and session modules
 //! to avoid code duplication.
 
+use bevy::tasks::Task;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 
 /// Drag mode for selection and viewport interaction.
@@ -63,6 +64,12 @@ impl DragMode {
                 | DragMode::ResizeSW
         )
     }
+}
+
+/// The task's result if it has finished, without waiting. For background tasks polled once
+/// a frame by the system that started them.
+pub fn poll_task<T>(task: &mut Task<T>) -> Option<T> {
+    futures_lite::future::block_on(futures_lite::future::poll_once(task))
 }
 
 #[cfg(test)]
