@@ -32,6 +32,9 @@ pub enum MapFileAction {
     Save,
     SaveAs,
     Quit,
+    /// Quit so the downloaded installer at this path can replace the app (Windows)
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    QuitAndInstall(PathBuf),
 }
 
 /// An action that replaces or closes the active map, so its unsaved changes have to be
@@ -41,6 +44,7 @@ pub enum ReplacingAction {
     New,
     Open(PathBuf),
     Quit,
+    QuitAndInstall(PathBuf),
 }
 
 /// State of the Unsaved Changes dialog.
@@ -125,6 +129,7 @@ pub struct ActionRunner<'w, 's> {
     load_events: MessageWriter<'w, LoadMapRequest>,
     exit_events: MessageWriter<'w, AppExit>,
     primary_window: Query<'w, 's, Entity, With<PrimaryWindow>>,
+    update_state: ResMut<'w, crate::update::UpdateState>,
 }
 
 impl ActionRunner<'_, '_> {
@@ -136,14 +141,23 @@ impl ActionRunner<'_, '_> {
             ReplacingAction::Open(path) => {
                 self.load_events.write(LoadMapRequest { path });
             }
-            ReplacingAction::Quit => {
-                // Despawn the primary window so the OS can release it (prevents macOS hang)
-                if let Ok(entity) = self.primary_window.single() {
-                    self.commands.entity(entity).despawn();
+            ReplacingAction::Quit => self.quit(),
+            ReplacingAction::QuitAndInstall(path) => match crate::update::launch_installer(&path) {
+                Ok(()) => self.quit(),
+                Err(e) => {
+                    self.update_state.download_error = Some(e);
+                    self.update_state.show_dialog = true;
                 }
-                self.exit_events.write(AppExit::Success);
-            }
+            },
         }
+    }
+
+    fn quit(&mut self) {
+        // Despawn the primary window so the OS can release it (prevents macOS hang)
+        if let Ok(entity) = self.primary_window.single() {
+            self.commands.entity(entity).despawn();
+        }
+        self.exit_events.write(AppExit::Success);
     }
 }
 
@@ -233,6 +247,7 @@ pub fn handle_map_file_actions(
             MapFileAction::New => ReplacingAction::New,
             MapFileAction::Open(path) => ReplacingAction::Open(path),
             MapFileAction::Quit => ReplacingAction::Quit,
+            MapFileAction::QuitAndInstall(path) => ReplacingAction::QuitAndInstall(path),
         };
 
         if open_maps.has_any_unsaved(&dirty_state) {
@@ -293,6 +308,9 @@ pub fn unsaved_changes_dialog_ui(
                 .unwrap_or("the map")
         ),
         ReplacingAction::Quit => "Save before closing?".to_string(),
+        ReplacingAction::QuitAndInstall(_) => {
+            "The app closes to install the update. Save first?".to_string()
+        }
     };
 
     let mut choice = None;

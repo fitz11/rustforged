@@ -4,10 +4,13 @@ use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy_egui::{EguiContexts, egui};
 
+use crate::ui::map_actions::MapFileAction;
 use crate::ui::panel_layout::DockedPanel;
 
 use super::CURRENT_VERSION;
-use super::operations::{download_installer, install_and_restart};
+use super::operations::download_installer;
+#[cfg(not(target_os = "windows"))]
+use super::operations::launch_installer;
 use super::state::{DownloadTask, UpdateState};
 
 /// UI system to show update indicator in toolbar
@@ -58,6 +61,7 @@ pub fn update_dialog_ui(
     mut contexts: EguiContexts,
     mut update_state: ResMut<UpdateState>,
     mut commands: Commands,
+    mut file_actions: MessageWriter<MapFileAction>,
 ) -> Result {
     if !update_state.show_dialog {
         return Ok(());
@@ -219,11 +223,17 @@ pub fn update_dialog_ui(
         commands.spawn(DownloadTask(task));
     }
 
-    if start_install
-        && let Some(ref path) = update_state.downloaded_path
-        && let Err(e) = install_and_restart(path)
-    {
-        update_state.download_error = Some(e);
+    if start_install && let Some(path) = update_state.downloaded_path.clone() {
+        // The app quits for the installer, so unsaved changes are asked about first
+        #[cfg(target_os = "windows")]
+        {
+            update_state.show_dialog = false;
+            file_actions.write(MapFileAction::QuitAndInstall(path));
+        }
+        #[cfg(not(target_os = "windows"))]
+        if let Err(e) = launch_installer(&path) {
+            update_state.download_error = Some(e);
+        }
     }
 
     Ok(())

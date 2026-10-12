@@ -94,18 +94,28 @@ pub fn download_installer(url: String, version: String) -> DownloadResult {
     }
 }
 
-/// Launch the installer and exit the app
+/// Launch the downloaded installer. On Windows the app has to quit afterwards so the
+/// installer can replace it; the caller does that once unsaved changes are dealt with.
 #[allow(unused_variables)]
-pub fn install_and_restart(installer_path: &std::path::Path) -> Result<(), String> {
+pub fn launch_installer(installer_path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        // Launch MSI installer in passive mode and exit
-        std::process::Command::new("msiexec")
-            .args(["/i", &installer_path.to_string_lossy(), "/passive"])
-            .spawn()
-            .map_err(|e| format!("Failed to launch installer: {}", e))?;
-
-        std::process::exit(0);
+        let is_msi = installer_path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("msi"));
+        let result = if is_msi {
+            // MSI installer in passive mode (progress bar, no questions)
+            std::process::Command::new("msiexec")
+                .arg("/i")
+                .arg(installer_path)
+                .arg("/passive")
+                .spawn()
+        } else {
+            std::process::Command::new(installer_path).spawn()
+        };
+        result
+            .map(|_| ())
+            .map_err(|e| format!("Failed to launch installer: {}", e))
     }
 
     #[cfg(target_os = "macos")]
@@ -114,9 +124,8 @@ pub fn install_and_restart(installer_path: &std::path::Path) -> Result<(), Strin
         std::process::Command::new("open")
             .arg(installer_path)
             .spawn()
-            .map_err(|e| format!("Failed to open DMG: {}", e))?;
-
-        Ok(())
+            .map(|_| ())
+            .map_err(|e| format!("Failed to open DMG: {}", e))
     }
 
     #[cfg(target_os = "linux")]

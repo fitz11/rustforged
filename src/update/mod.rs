@@ -41,6 +41,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
 
 // Re-exports
+pub use operations::launch_installer;
 pub use state::UpdateState;
 pub use systems::{poll_download_task, poll_update_check, start_update_check};
 pub use ui::{update_dialog_ui, update_indicator_ui};
