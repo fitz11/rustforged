@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::editor::fog::FogState;
+use crate::editor::markings::{MeasureShape, MeasureState};
 use crate::editor::{AnnotationSettings, CurrentTool, EditorTool, SelectedLayer};
 use crate::map::{Layer, MapData, MapDirtyState};
 use crate::session::{LiveSessionState, MonitorSelectionDialog};
@@ -108,13 +109,15 @@ pub fn tool_settings_ui(
     mut annotation_settings: ResMut<AnnotationSettings>,
     mut selected_layer: ResMut<SelectedLayer>,
     mut fog_state: ResMut<FogState>,
+    mut measure: ResMut<MeasureState>,
     map_data: Res<MapData>,
 ) -> Result {
     // Only show settings bar for tools that have settings
     let has_settings = current_tool.tool.is_annotation_tool()
         || current_tool.tool == EditorTool::Place
         || current_tool.tool == EditorTool::Brush
-        || current_tool.tool == EditorTool::Fog;
+        || current_tool.tool == EditorTool::Fog
+        || current_tool.tool == EditorTool::Measure;
     if !has_settings {
         return Ok(());
     }
@@ -330,6 +333,40 @@ pub fn tool_settings_ui(
                             .size(11.0),
                         );
                     }
+                    EditorTool::Measure => {
+                        ui.label(egui::RichText::new("Measure:").color(egui::Color32::LIGHT_GRAY));
+                        ui.add_space(8.0);
+                        for shape in MeasureShape::ALL {
+                            if ui
+                                .selectable_label(measure.shape == shape, shape.name())
+                                .clicked()
+                            {
+                                measure.shape = shape;
+                            }
+                        }
+
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(12.0);
+
+                        ui.checkbox(&mut measure.show_players, "Players see it")
+                            .on_hover_text("Show the ruler or template on the player screen too");
+                        if ui
+                            .add_enabled(measure.marking.is_some(), egui::Button::new("Clear"))
+                            .clicked()
+                        {
+                            measure.marking = None;
+                        }
+
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "Drag to measure  ·  Ctrl: no snapping  ·  Alt+Click: ping",
+                            )
+                            .color(egui::Color32::GRAY)
+                            .size(11.0),
+                        );
+                    }
                     _ => {}
                 }
             });
@@ -347,5 +384,6 @@ fn tool_button_label(tool: &EditorTool) -> &'static str {
         EditorTool::Line => "Line [L]",
         EditorTool::Text => "Text [T]",
         EditorTool::Fog => "Fog [F]",
+        EditorTool::Measure => "Measure [M]",
     }
 }

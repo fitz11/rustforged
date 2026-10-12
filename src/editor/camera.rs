@@ -60,9 +60,10 @@ pub fn not_space_panning(pan: Res<CameraPan>) -> bool {
     !pan.space_held
 }
 
-/// Systems that move the editor camera, which run before the tools see the mouse
+/// Mouse input that comes before the tools: moving the camera, and pinging. The tools skip
+/// a click one of these takes.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CameraInput;
+pub struct PreToolInput;
 
 pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((

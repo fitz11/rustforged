@@ -39,6 +39,10 @@ pub const SHORTCUTS: &[ShortcutGroup] = &[
                 "F",
                 "Fog: drag to reveal fog of war, right-drag to cover it",
             ),
+            s(
+                "M",
+                "Measure: drag a ruler or spell template that players see too",
+            ),
             s("C / Shift+C", "Cycle the target layer (Place and Brush)"),
             s("H", "Show or hide this help"),
         ],
@@ -87,6 +91,21 @@ pub const SHORTCUTS: &[ShortcutGroup] = &[
                 "Shift+Drag (Fog)",
                 "Reveal (or with the right button, cover) a rectangle of cells",
             ),
+        ],
+    },
+    ShortcutGroup {
+        title: "Measuring",
+        shortcuts: &[
+            s(
+                "Drag (Measure)",
+                "Measure from where the drag starts; it stays up until the next one",
+            ),
+            s(
+                "Ctrl+Drag (Measure)",
+                "Measure without snapping to the grid",
+            ),
+            s("Click or Escape", "Clear the ruler or template"),
+            s("Alt+Click", "Ping a spot, on the player screen too"),
         ],
     },
     ShortcutGroup {

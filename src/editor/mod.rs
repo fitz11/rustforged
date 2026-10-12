@@ -7,13 +7,14 @@ pub mod fog;
 mod fog_overlay;
 mod grid;
 pub mod history;
+pub mod markings;
 pub mod params;
 mod placement;
 mod selection;
 pub mod tools;
 
 pub use annotations::{AnnotationMarker, AnnotationSettings, DrawnLine, DrawnPath, TextAnnotation};
-pub use camera::{CameraInput, EditorCamera, not_space_panning};
+pub use camera::{EditorCamera, PreToolInput, not_space_panning};
 pub use clipboard::Clipboard;
 pub use conditions::{
     command_key, no_dialog_open, no_text_input, plain_key, session_is_active, shortcuts_enabled,
@@ -97,11 +98,17 @@ impl Plugin for EditorPlugin {
         app.configure_sets(
             Update,
             (
-                camera::CameraInput.before(ToolInput),
-                ToolInput.run_if(conditions::viewport_not_grabbed.and_then(not_space_panning)),
+                camera::PreToolInput.before(ToolInput),
+                ToolInput.run_if(
+                    conditions::viewport_not_grabbed
+                        .and_then(not_space_panning)
+                        .and_then(markings::not_pinging),
+                ),
             ),
         );
         app.init_resource::<camera::CameraPan>()
+            .init_resource::<markings::MeasureState>()
+            .init_resource::<markings::Pings>()
             .init_resource::<tools::CurrentTool>()
             .init_resource::<params::MapExtent>()
             .init_resource::<tools::SelectedLayer>()
@@ -123,6 +130,7 @@ impl Plugin for EditorPlugin {
             .init_gizmo_group::<fog::FogEditorGizmoGroup>()
             .init_gizmo_group::<selection::SelectionGizmoGroup>()
             .init_gizmo_group::<grid::PlayerGridGizmoGroup>()
+            .init_gizmo_group::<markings::MarkingGizmoGroup>()
             .add_systems(
                 Startup,
                 (
@@ -133,6 +141,8 @@ impl Plugin for EditorPlugin {
                     selection::configure_selection_gizmos,
                     placement::spawn_placement_ghost,
                     grid::configure_grid_gizmos,
+                    markings::configure_marking_gizmos,
+                    markings::spawn_marking_labels,
                 ),
             )
             .add_systems(
@@ -146,8 +156,8 @@ impl Plugin for EditorPlugin {
                         camera::frame_view
                             .run_if(plain_key(KeyCode::Home).and_then(shortcuts_enabled)),
                     )
-                        .in_set(camera::CameraInput),
-                    camera::apply_camera_zoom.after(camera::CameraInput),
+                        .in_set(camera::PreToolInput),
+                    camera::apply_camera_zoom.after(camera::PreToolInput),
                     camera::pan_cursor
                         .run_if(camera::is_panning)
                         .after(tools::update_cursor_icon)
@@ -248,6 +258,22 @@ impl Plugin for EditorPlugin {
                         .in_set(ToolInput),
                     fog_overlay::update_fog_overlays.after(crate::session::PlayerViewSync),
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),
+                ),
+            )
+            .add_systems(
+                Update,
+                (
+                    markings::start_ping.in_set(camera::PreToolInput),
+                    markings::handle_measure
+                        .run_if(tool_is(EditorTool::Measure).and_then(no_dialog_open))
+                        .in_set(ToolInput),
+                    markings::clear_marking
+                        .run_if(plain_key(KeyCode::Escape).and_then(shortcuts_enabled)),
+                    markings::clear_marks_on_map_change
+                        .run_if(on_message::<crate::map::MapReplaced>),
+                    markings::draw_marking,
+                    markings::draw_pings,
+                    markings::update_marking_labels,
                 ),
             )
             .add_systems(

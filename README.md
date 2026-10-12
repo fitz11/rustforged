@@ -77,6 +77,7 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 | L | Line: straight line annotations |
 | T | Text: click to type a note, click a note to edit it |
 | F | Fog: drag to reveal fog of war, right-drag to cover it |
+| M | Measure: drag a ruler or spell template that players see too |
 | C / Shift+C | Cycle the target layer (Place and Brush) |
 | H | Show or hide this help |
 
@@ -119,6 +120,15 @@ Ctrl is Cmd on macOS. Press **H** in the app for this list.
 | Drag (Fog) | Reveal with the brush |
 | Right-drag (Fog) | Cover with the brush |
 | Shift+Drag (Fog) | Reveal (or with the right button, cover) a rectangle of cells |
+
+### Measuring
+
+| Keys | Action |
+|------|--------|
+| Drag (Measure) | Measure from where the drag starts; it stays up until the next one |
+| Ctrl+Drag (Measure) | Measure without snapping to the grid |
+| Click or Escape | Clear the ruler or template |
+| Alt+Click | Ping a spot, on the player screen too |
 
 ### Notes
 

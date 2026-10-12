@@ -16,6 +16,7 @@ pub enum EditorTool {
     Line,
     Text,
     Fog,
+    Measure,
 }
 
 impl EditorTool {
@@ -28,6 +29,7 @@ impl EditorTool {
             EditorTool::Line => "Line (L)",
             EditorTool::Text => "Text (T)",
             EditorTool::Fog => "Fog (F)",
+            EditorTool::Measure => "Measure (M)",
         }
     }
 
@@ -40,6 +42,7 @@ impl EditorTool {
             EditorTool::Line => CursorIcon::System(SystemCursorIcon::Crosshair),
             EditorTool::Text => CursorIcon::System(SystemCursorIcon::Text),
             EditorTool::Fog => CursorIcon::System(SystemCursorIcon::Crosshair),
+            EditorTool::Measure => CursorIcon::System(SystemCursorIcon::Crosshair),
         }
     }
 
@@ -52,6 +55,7 @@ impl EditorTool {
             EditorTool::Line,
             EditorTool::Text,
             EditorTool::Fog,
+            EditorTool::Measure,
         ]
     }
 
@@ -107,6 +111,8 @@ pub fn handle_tool_shortcuts(
         Some(EditorTool::Text)
     } else if pressed(KeyCode::KeyF) {
         Some(EditorTool::Fog)
+    } else if pressed(KeyCode::KeyM) {
+        Some(EditorTool::Measure)
     } else {
         None
     };
@@ -186,6 +192,7 @@ mod tests {
         assert_eq!(EditorTool::Line.display_name(), "Line (L)");
         assert_eq!(EditorTool::Text.display_name(), "Text (T)");
         assert_eq!(EditorTool::Fog.display_name(), "Fog (F)");
+        assert_eq!(EditorTool::Measure.display_name(), "Measure (M)");
     }
 
     #[test]
@@ -209,7 +216,7 @@ mod tests {
     #[test]
     fn test_all_returns_all_tools() {
         let all = EditorTool::all();
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 8);
         assert!(all.contains(&EditorTool::Select));
         assert!(all.contains(&EditorTool::Place));
         assert!(all.contains(&EditorTool::Brush));
@@ -217,6 +224,7 @@ mod tests {
         assert!(all.contains(&EditorTool::Line));
         assert!(all.contains(&EditorTool::Text));
         assert!(all.contains(&EditorTool::Fog));
+        assert!(all.contains(&EditorTool::Measure));
     }
 
     #[test]
