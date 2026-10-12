@@ -20,6 +20,28 @@ impl VisitedDirs {
     }
 }
 
+/// Whether renaming `from` to `to` would replace a different file. Changing only the
+/// letter case is fine on case-insensitive file systems, where `to` "exists" because it
+/// is `from`; on a case-sensitive one a file with exactly that name is a different file.
+pub fn rename_would_replace(from: &Path, to: &Path) -> bool {
+    if from == to || !to.exists() {
+        return false;
+    }
+    let (Some(dir), Some(name)) = (to.parent(), to.file_name()) else {
+        return true;
+    };
+    let case_only = from.parent() == Some(dir)
+        && from.file_name().is_some_and(|old| {
+            old.to_string_lossy().to_lowercase() == name.to_string_lossy().to_lowercase()
+        });
+    if !case_only {
+        return true;
+    }
+    std::fs::read_dir(dir)
+        .map(|mut entries| entries.any(|e| e.is_ok_and(|e| e.file_name() == name)))
+        .unwrap_or(true)
+}
+
 /// Writes `contents` to `path` atomically: the data goes to a hidden temp file in the same
 /// folder, is flushed to disk, then renamed over the target. Readers and sync clients see
 /// either the old file or the new one, never a partly written file.
@@ -75,6 +97,24 @@ pub fn machine_name() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_rename_would_replace() {
+        let dir = tempfile::tempdir().unwrap();
+        let orc = dir.path().join("orc.png");
+        let goblin = dir.path().join("goblin.png");
+        std::fs::write(&orc, "orc").unwrap();
+        std::fs::write(&goblin, "goblin").unwrap();
+
+        assert!(super::rename_would_replace(&orc, &goblin));
+        assert!(!super::rename_would_replace(
+            &orc,
+            &dir.path().join("ogre.png")
+        ));
+        // Case only: never a different file unless one with exactly that name exists
+        let upper = dir.path().join("Orc.png");
+        assert!(!super::rename_would_replace(&orc, &upper));
+    }
 
     #[cfg(unix)]
     #[test]

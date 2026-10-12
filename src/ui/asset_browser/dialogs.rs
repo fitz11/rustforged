@@ -307,12 +307,7 @@ fn rename_active_map(map_res: &mut MapResources, new_name: &str) -> Result<(), S
     if let Some(old_path) = active.path.clone() {
         let new_path = old_path.with_file_name(format!("{}.json", filename));
         if new_path != old_path {
-            // Comparing names case-insensitively catches a case-only rename on
-            // case-insensitive file systems, which rename can do in place
-            let case_only = new_path
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&old_path.to_string_lossy());
-            if new_path.exists() && !case_only {
+            if crate::fsutil::rename_would_replace(&old_path, &new_path) {
                 return Err(format!("A map named \"{}\" already exists.", filename));
             }
             std::fs::rename(&old_path, &new_path)

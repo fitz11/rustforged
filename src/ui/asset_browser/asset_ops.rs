@@ -37,8 +37,8 @@ pub fn rename_asset(
 
     let new_path = parent.join(&new_filename);
 
-    // Check if target already exists
-    if new_path.exists() && new_path != old_path {
+    // Check if target already exists (a case-only rename is fine)
+    if crate::fsutil::rename_would_replace(old_path, &new_path) {
         return Err("A file with that name already exists".to_string());
     }
 
@@ -50,6 +50,34 @@ pub fn rename_asset(
     let new_relative =
         relative_to_library(library_path, &new_path).ok_or("Asset is outside the library")?;
     Ok((new_path, old_relative, new_relative))
+}
+
+/// A folder inside the library from what the user typed: plain folder names separated by
+/// `/` or `\`. Rejects anything that would leave the library (`..`, absolute paths, drive
+/// letters), hidden folders, and the maps folder (assets there aren't listed).
+fn library_subfolder(folder: &str) -> Result<PathBuf, String> {
+    let mut path = PathBuf::new();
+    for part in folder
+        .split(['/', '\\'])
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        if part == "." || part == ".." || part.starts_with('.') {
+            return Err(format!("\"{}\" can't be used as a folder name", part));
+        }
+        if part.contains([':', '*', '?', '"', '<', '>', '|']) {
+            return Err("Folder name contains invalid characters".to_string());
+        }
+        path.push(part);
+    }
+    if path
+        .components()
+        .next()
+        .is_some_and(|c| c.as_os_str().eq_ignore_ascii_case("maps"))
+    {
+        return Err("The maps folder is for maps, not assets".to_string());
+    }
+    Ok(path)
 }
 
 /// Move an asset file to a different folder. Returns the new file path and the old and new
@@ -66,11 +94,7 @@ pub fn move_asset(
         .ok_or("Invalid file path")?;
 
     // Build the new path in the target folder
-    let new_folder = if target_folder.is_empty() {
-        library_path.to_path_buf()
-    } else {
-        library_path.join(target_folder)
-    };
+    let new_folder = library_path.join(library_subfolder(target_folder)?);
     let new_path = new_folder.join(filename);
 
     // Check if target already exists
@@ -105,6 +129,32 @@ pub fn move_asset(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_move_stays_inside_the_library() {
+        for folder in ["../outside", "C:/x", "tokens/../../x", ".hidden", "maps/x"] {
+            assert!(library_subfolder(folder).is_err(), "{folder}");
+        }
+        // A leading slash is just a folder in the library
+        assert_eq!(library_subfolder("/props").unwrap(), PathBuf::from("props"));
+        assert_eq!(
+            library_subfolder(" tokens\\monsters/ ").unwrap(),
+            PathBuf::from("tokens").join("monsters")
+        );
+        assert_eq!(library_subfolder("").unwrap(), PathBuf::new());
+    }
+
+    #[test]
+    fn test_rename_can_change_only_the_case() {
+        let library = tempfile::tempdir().unwrap();
+        std::fs::write(library.path().join("orc.png"), "orc").unwrap();
+
+        let (new_path, _, new_relative) =
+            rename_asset(&library.path().join("orc.png"), "Orc", library.path()).unwrap();
+
+        assert_eq!(new_relative, "Orc.png");
+        assert!(new_path.exists());
+    }
 
     #[test]
     fn test_rename_leaves_map_files_alone() {
