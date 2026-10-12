@@ -68,6 +68,12 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     }
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|e| e.error)?;
+    // Flush the folder too, so the rename itself survives a crash or power cut (Unix only;
+    // on Windows the rename is durable once it returns)
+    #[cfg(unix)]
+    if let Err(e) = std::fs::File::open(dir).and_then(|d| d.sync_all()) {
+        bevy::log::debug!("Couldn't flush {:?}: {}", dir, e);
+    }
     Ok(())
 }
 
