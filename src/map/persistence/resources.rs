@@ -228,22 +228,3 @@ impl OpenMaps {
             .collect()
     }
 }
-
-/// UI state for unsaved changes confirmation dialogs
-#[derive(Resource, Default)]
-pub struct UnsavedChangesDialog {
-    /// Show dialog for switching maps
-    #[allow(dead_code)]
-    pub show_switch_confirmation: bool,
-    /// The map ID we want to switch to
-    #[allow(dead_code)]
-    pub pending_switch_id: Option<u64>,
-    /// Show dialog for closing app
-    pub show_close_confirmation: bool,
-    /// Show dialog for loading a new map
-    #[allow(dead_code)]
-    pub show_load_confirmation: bool,
-    /// Path to load after confirmation
-    #[allow(dead_code)]
-    pub pending_load_path: Option<PathBuf>,
-}

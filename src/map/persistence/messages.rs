@@ -21,6 +21,17 @@ impl SaveMapRequest {
     }
 }
 
+/// Sent when a [`SaveMapRequest`] is done, whether or not the map was written.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapSaveFinished {
+    /// The map was written to disk
+    Saved,
+    /// The file changed on disk; the save conflict dialog is asking what to do
+    Conflict,
+    /// Nothing was written: the save failed, or another save or load was in progress
+    Failed,
+}
+
 #[derive(Message)]
 pub struct LoadMapRequest {
     pub path: PathBuf,

@@ -2,6 +2,7 @@ mod asset_browser;
 pub mod asset_import;
 pub mod file_menu;
 mod layers_panel;
+pub mod map_actions;
 pub mod panel_layout;
 mod session_controls;
 mod settings_dialog;
@@ -13,7 +14,6 @@ use bevy_egui::EguiPrimaryContextPass;
 use crate::config::{ConfigResetNotification, MissingMapWarning};
 use crate::map::{
     AsyncMapOperation, MapAssetReport, MapLoadError, MapSaveError, SaveConflictDialog,
-    UnsavedChangesDialog,
 };
 use crate::session::MonitorSelectionDialog;
 
@@ -43,7 +43,7 @@ fn update_dialog_state(
     monitor_dialog: Res<MonitorSelectionDialog>,
     missing_map: Res<MissingMapWarning>,
     config_reset: Res<ConfigResetNotification>,
-    unsaved_changes: Res<UnsavedChangesDialog>,
+    unsaved_changes: Res<map_actions::UnsavedChangesPrompt>,
     asset_report: Res<MapAssetReport>,
     save_conflict: Res<SaveConflictDialog>,
     save_error: Res<MapSaveError>,
@@ -51,8 +51,7 @@ fn update_dialog_state(
     async_op: Res<AsyncMapOperation>,
     mut dialog_state: ResMut<DialogState>,
 ) {
-    dialog_state.any_modal_open = file_menu.show_new_confirmation
-        || file_menu.show_save_name_dialog
+    dialog_state.any_modal_open = file_menu.show_save_name_dialog
         || asset_browser.rename_dialog_open
         || asset_browser.rename_map_dialog_open
         || asset_browser.rename_library_dialog_open
@@ -64,7 +63,7 @@ fn update_dialog_state(
         || monitor_dialog.is_open
         || missing_map.show
         || config_reset.show
-        || unsaved_changes.show_close_confirmation
+        || unsaved_changes.pending.is_some()
         || asset_report.show
         || save_conflict.conflict.is_some()
         || save_error.message.is_some()
@@ -83,6 +82,8 @@ impl Plugin for UiPlugin {
             .init_resource::<asset_browser::AssetBrowserState>()
             .init_resource::<asset_import::AssetImportDialog>()
             .init_resource::<file_menu::FileMenuState>()
+            .init_resource::<map_actions::UnsavedChangesPrompt>()
+            .add_message::<map_actions::MapFileAction>()
             .init_resource::<layers_panel::HelpWindowState>()
             .init_resource::<settings_dialog::SettingsDialogState>()
             // Load thumbnails before egui pass
@@ -117,7 +118,7 @@ impl Plugin for UiPlugin {
                     // Last: dialogs/overlays
                     file_menu::file_menu_ui,
                     file_menu::missing_map_warning_ui,
-                    file_menu::unsaved_changes_dialog_ui,
+                    map_actions::unsaved_changes_dialog_ui,
                     file_menu::async_operation_modal_ui,
                     file_menu::save_error_dialog_ui,
                     file_menu::map_asset_report_ui,
@@ -129,7 +130,13 @@ impl Plugin for UiPlugin {
                 )
                     .after(toolbar::toolbar_ui),
             )
-            .add_systems(Update, file_menu::handle_window_close)
+            .add_systems(
+                Update,
+                (
+                    map_actions::handle_map_file_actions,
+                    map_actions::run_action_after_save,
+                ),
+            )
             .add_systems(
                 EguiPrimaryContextPass,
                 session_controls::monitor_selection_dialog,

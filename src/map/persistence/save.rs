@@ -13,7 +13,7 @@ use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
 
 use super::helpers::saved_by_of;
 use super::map_state::capture_current_map_state;
-use super::messages::SaveMapRequest;
+use super::messages::{MapSaveFinished, SaveMapRequest};
 use super::resources::{
     AsyncMapOperation, CurrentMapFile, MapChangedOnDisk, MapDirtyState, MapSaveError, OpenMaps,
     SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapTask,
@@ -34,11 +34,13 @@ pub fn save_map_system(
     mut async_op: ResMut<AsyncMapOperation>,
     asset_library: Res<AssetLibrary>,
     open_maps: Res<OpenMaps>,
+    mut finished: MessageWriter<MapSaveFinished>,
 ) {
     for event in events.read() {
         // Don't start a new save if one is already in progress
         if async_op.is_busy() {
             warn!("Save operation already in progress");
+            finished.write(MapSaveFinished::Failed);
             continue;
         }
 
@@ -200,6 +202,7 @@ pub fn poll_save_tasks(
     mut asset_library: ResMut<AssetLibrary>,
     mut conflict_dialog: ResMut<SaveConflictDialog>,
     mut disk_change: ResMut<MapChangedOnDisk>,
+    mut finished: MessageWriter<MapSaveFinished>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
         if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
@@ -238,16 +241,21 @@ pub fn poll_save_tasks(
                         .unwrap_or("Unknown")
                         .to_string();
                 }
+                finished.write(MapSaveFinished::Saved);
             } else if let Some(conflict) = result.conflict {
                 warn!(
                     "Not saving {:?}: {:?} on disk since it was opened",
                     conflict.path, conflict.kind
                 );
                 conflict_dialog.conflict = Some(conflict);
-            } else if let Some(error) = result.error {
-                error!("{}", error);
-                // Store error for display to user
-                save_error.message = Some(error);
+                finished.write(MapSaveFinished::Conflict);
+            } else {
+                if let Some(error) = result.error {
+                    error!("{}", error);
+                    // Store error for display to user
+                    save_error.message = Some(error);
+                }
+                finished.write(MapSaveFinished::Failed);
             }
 
             commands.entity(entity).despawn();

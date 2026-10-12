@@ -47,13 +47,14 @@ mod save;
 mod tests;
 
 // Re-exports - Messages
-pub use messages::{LoadMapRequest, NewMapRequest, SaveMapRequest, SwitchMapRequest};
+pub use messages::{
+    LoadMapRequest, MapSaveFinished, NewMapRequest, SaveMapRequest, SwitchMapRequest,
+};
 
 // Re-exports - Resources
 pub use resources::{
     AsyncMapOperation, CurrentMapFile, MapAssetReport, MapChangedOnDisk, MapDirtyState,
     MapLoadError, MapSaveError, OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind,
-    UnsavedChangesDialog,
 };
 
 // Re-exports - Systems

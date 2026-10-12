@@ -7,11 +7,11 @@ use std::path::PathBuf;
 
 use crate::map::{
     CurrentMapFile, LoadMapRequest, MapChangedOnDisk, MapData, MapDirtyState, OpenMaps,
-    SaveMapRequest, SwitchMapRequest,
+    SwitchMapRequest,
 };
 
 use super::super::asset_import::AssetImportDialog;
-use super::super::file_menu::FileMenuState;
+use super::super::map_actions::MapFileAction;
 use super::super::settings_dialog::SettingsDialogState;
 
 /// Bundle of map-related resources and event writers.
@@ -22,7 +22,8 @@ pub struct MapResources<'w> {
     pub dirty_state: ResMut<'w, MapDirtyState>,
     pub open_maps: ResMut<'w, OpenMaps>,
     pub load_events: MessageWriter<'w, LoadMapRequest>,
-    pub save_events: MessageWriter<'w, SaveMapRequest>,
+    /// New, Open and Save, which ask about unsaved changes first
+    pub file_actions: MessageWriter<'w, MapFileAction>,
     pub switch_events: MessageWriter<'w, SwitchMapRequest>,
     pub disk_change: ResMut<'w, MapChangedOnDisk>,
 }
@@ -30,7 +31,6 @@ pub struct MapResources<'w> {
 /// Bundle of dialog state resources.
 #[derive(SystemParam)]
 pub struct DialogStates<'w> {
-    pub menu_state: ResMut<'w, FileMenuState>,
     pub import_dialog: ResMut<'w, AssetImportDialog>,
     pub settings_state: ResMut<'w, SettingsDialogState>,
 }

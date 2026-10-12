@@ -1,71 +1,31 @@
 use bevy::prelude::*;
-use bevy::window::{PrimaryWindow, WindowCloseRequested};
 use bevy_egui::{EguiContexts, egui};
 use std::path::{Path, PathBuf};
 
 use crate::assets::AssetLibrary;
 use crate::config::{AppConfig, ConfigResetNotification, MissingMapWarning, SaveConfigRequest};
 use crate::map::{
-    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapDirtyState, MapLoadError, MapSaveError,
-    NewMapRequest, OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest,
-    UnsavedChangesDialog,
+    AsyncMapOperation, LoadMapRequest, MapAssetReport, MapLoadError, MapSaveError, SaveConflict,
+    SaveConflictDialog, SaveConflictKind, SaveMapRequest,
 };
+
+use super::map_actions::{UnsavedChangesPrompt, sanitize_map_name};
 
 #[derive(Resource, Default)]
 pub struct FileMenuState {
-    pub show_new_confirmation: bool,
     pub show_save_name_dialog: bool,
     pub save_filename: String,
-    /// Set when the user chose "Save First" in the New Map dialog: once the
-    /// triggered save completes successfully, a new map should be created.
-    pub pending_new_after_save: bool,
-    /// Tracks that the pending save has actually started (is_saving observed),
-    /// so we can detect the save->idle transition that signals completion.
-    pub saw_save_start: bool,
 }
 
 /// Renders the dialog windows for file operations (triggered from asset_browser menu)
-#[allow(clippy::too_many_arguments)]
 pub fn file_menu_ui(
     mut contexts: EguiContexts,
     mut menu_state: ResMut<FileMenuState>,
+    mut prompt: ResMut<UnsavedChangesPrompt>,
     mut save_events: MessageWriter<SaveMapRequest>,
-    mut new_events: MessageWriter<NewMapRequest>,
     mut load_error: ResMut<MapLoadError>,
-    async_op: Res<AsyncMapOperation>,
-    save_error: Res<MapSaveError>,
-    save_conflict: Res<SaveConflictDialog>,
     library: Res<AssetLibrary>,
 ) -> Result {
-    // New map confirmation dialog
-    if menu_state.show_new_confirmation {
-        egui::Window::new("New Map")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(contexts.ctx_mut()?, |ui| {
-                ui.label("Create a new map? Unsaved changes will be lost.");
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Save First").clicked() {
-                        // Open save dialog and arm the deferred "create new map"
-                        // so it fires once the save completes successfully.
-                        menu_state.show_save_name_dialog = true;
-                        menu_state.show_new_confirmation = false;
-                        menu_state.pending_new_after_save = true;
-                        menu_state.saw_save_start = false;
-                    }
-                    if ui.button("Create New").clicked() {
-                        new_events.write(NewMapRequest);
-                        menu_state.show_new_confirmation = false;
-                    }
-                    if ui.button("Cancel").clicked() {
-                        menu_state.show_new_confirmation = false;
-                    }
-                });
-            });
-    }
-
     // Save dialog for filename
     if menu_state.show_save_name_dialog {
         // Use library's maps directory
@@ -90,34 +50,18 @@ pub fn file_menu_ui(
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
-                        let filename = sanitize_filename(&menu_state.save_filename);
+                        let filename = sanitize_map_name(&menu_state.save_filename);
                         let path = maps_dir.join(format!("{}.json", filename));
                         save_events.write(SaveMapRequest::new(path));
                         menu_state.show_save_name_dialog = false;
                     }
                     if ui.button("Cancel").clicked() {
                         menu_state.show_save_name_dialog = false;
-                        // User backed out of the save; abandon the deferred new map.
-                        menu_state.pending_new_after_save = false;
-                        menu_state.saw_save_start = false;
+                        // Backed out of the save, so don't go on to replace or close the map
+                        prompt.after_save = None;
                     }
                 });
             });
-    }
-
-    // Deferred "New Map after Save First": wait for the triggered save to
-    // start and finish, then create the new map only if the save succeeded.
-    if menu_state.pending_new_after_save {
-        if async_op.is_saving {
-            menu_state.saw_save_start = true;
-        } else if menu_state.saw_save_start {
-            menu_state.pending_new_after_save = false;
-            menu_state.saw_save_start = false;
-            // A save stopped by a conflict didn't save anything either
-            if save_error.message.is_none() && save_conflict.conflict.is_none() {
-                new_events.write(NewMapRequest);
-            }
-        }
     }
 
     // Load error dialog
@@ -144,20 +88,6 @@ pub fn file_menu_ui(
     }
 
     Ok(())
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .trim()
-        .to_string()
 }
 
 /// Renders the missing map warning dialog (shown at startup if last map doesn't exist)
@@ -206,106 +136,6 @@ pub fn missing_map_warning_ui(
         });
 
     Ok(())
-}
-
-/// Renders the unsaved changes confirmation dialog when closing the app
-#[allow(clippy::too_many_arguments)]
-pub fn unsaved_changes_dialog_ui(
-    mut commands: Commands,
-    mut contexts: EguiContexts,
-    mut dialog: ResMut<UnsavedChangesDialog>,
-    open_maps: Res<OpenMaps>,
-    dirty_state: Res<MapDirtyState>,
-    mut menu_state: ResMut<FileMenuState>,
-    mut exit_events: MessageWriter<AppExit>,
-    primary_window: Query<Entity, With<PrimaryWindow>>,
-) -> Result {
-    if !dialog.show_close_confirmation {
-        return Ok(());
-    }
-
-    let mut should_exit = false;
-
-    egui::Window::new("Unsaved Changes")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(contexts.ctx_mut()?, |ui| {
-            ui.label("You have unsaved changes in:");
-            ui.add_space(4.0);
-
-            // List unsaved maps
-            for map in open_maps.unsaved_maps(&dirty_state) {
-                ui.label(egui::RichText::new(format!("  - {}", map.name)).strong());
-            }
-
-            ui.add_space(8.0);
-            ui.label("Do you want to save before closing?");
-            ui.add_space(8.0);
-
-            ui.horizontal(|ui| {
-                if ui.button("Save All").clicked() {
-                    // Trigger save dialog for each unsaved map
-                    // For simplicity, just show the save dialog for the current map
-                    menu_state.show_save_name_dialog = true;
-                    dialog.show_close_confirmation = false;
-                }
-
-                if ui.button("Discard & Close").clicked() {
-                    dialog.show_close_confirmation = false;
-                    should_exit = true;
-                }
-
-                if ui.button("Cancel").clicked() {
-                    dialog.show_close_confirmation = false;
-                }
-            });
-        });
-
-    if should_exit {
-        // Despawn the primary window so the OS can release it (prevents macOS hang)
-        if let Ok(entity) = primary_window.single() {
-            commands.entity(entity).despawn();
-        }
-        exit_events.write(AppExit::Success);
-    }
-
-    Ok(())
-}
-
-/// System to intercept window close requests and show unsaved changes dialog if needed.
-///
-/// With `close_when_requested: false` on WindowPlugin, we must manually handle closing.
-/// If there are unsaved changes, show a confirmation dialog. Otherwise, exit immediately.
-pub fn handle_window_close(
-    mut commands: Commands,
-    mut close_events: MessageReader<WindowCloseRequested>,
-    mut dialog: ResMut<UnsavedChangesDialog>,
-    open_maps: Res<OpenMaps>,
-    dirty_state: Res<MapDirtyState>,
-    mut exit_events: MessageWriter<AppExit>,
-    primary_window: Query<Entity, With<PrimaryWindow>>,
-) {
-    let primary_entity = primary_window.single().ok();
-
-    for event in close_events.read() {
-        // Only handle close requests for the primary window
-        if Some(event.window) != primary_entity {
-            continue;
-        }
-
-        // Check if any maps have unsaved changes
-        if open_maps.has_any_unsaved(&dirty_state) {
-            // Show confirmation dialog instead of closing
-            dialog.show_close_confirmation = true;
-        } else {
-            // Despawn the primary window so the OS can release it (prevents macOS hang)
-            if let Some(entity) = primary_entity {
-                commands.entity(entity).despawn();
-            }
-            exit_events.write(AppExit::Success);
-        }
-    }
 }
 
 /// Modal dialog shown while save/load operations are in progress
@@ -480,6 +310,7 @@ fn describe_disk_version(conflict: &SaveConflict) -> String {
 pub fn save_conflict_dialog_ui(
     mut contexts: EguiContexts,
     mut dialog: ResMut<SaveConflictDialog>,
+    mut prompt: ResMut<UnsavedChangesPrompt>,
     mut save_events: MessageWriter<SaveMapRequest>,
     mut load_events: MessageWriter<LoadMapRequest>,
 ) -> Result {
@@ -539,6 +370,8 @@ pub fn save_conflict_dialog_ui(
                     load_events.write(LoadMapRequest {
                         path: conflict.path.clone(),
                     });
+                    // Reloading replaces the map, so whatever waited for this save is off
+                    prompt.after_save = None;
                     close = true;
                 }
 
@@ -565,6 +398,7 @@ pub fn save_conflict_dialog_ui(
                 }
 
                 if ui.button("Cancel").clicked() {
+                    prompt.after_save = None;
                     close = true;
                 }
             });

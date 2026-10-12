@@ -14,6 +14,7 @@ use crate::assets::{
 use crate::config::{AppConfig, SetDefaultLibraryRequest};
 use crate::editor::{CurrentTool, EditorTool};
 use crate::map::SwitchMapRequest;
+use crate::ui::map_actions::MapFileAction;
 use crate::ui::panel_layout::DockedPanel;
 
 use super::dialogs::{
@@ -22,8 +23,7 @@ use super::dialogs::{
     render_set_default_dialog, render_success_dialog,
 };
 use super::helpers::{
-    MapTreeRow, discover_folders, extension_color, indented, map_tree, sanitize_map_name,
-    scan_maps_directory,
+    MapTreeRow, discover_folders, extension_color, indented, map_tree, scan_maps_directory,
 };
 use super::library_ops::{export_library_to_zip, import_library_from_zip};
 use super::state::{AssetBrowserState, DialogStates, MapResources};
@@ -307,7 +307,7 @@ fn render_library_section(
         render_library_buttons(ui, library, browser_state);
         render_export_import_buttons(ui, library, browser_state);
         ui.add_space(10.0);
-        render_maps_section(ui, library, browser_state, dialogs, map_res);
+        render_maps_section(ui, library, browser_state, map_res);
         ui.add_space(10.0);
         render_assets_buttons(ui, library, dialogs);
         ui.add_space(6.0);
@@ -421,7 +421,6 @@ fn render_maps_section(
     ui: &mut egui::Ui,
     library: &AssetLibrary,
     browser_state: &mut AssetBrowserState,
-    dialogs: &mut DialogStates,
     map_res: &mut MapResources,
 ) {
     ui.label(egui::RichText::new("Maps").size(13.0).strong());
@@ -527,38 +526,17 @@ fn render_maps_section(
     ui.horizontal(|ui| {
         if ui
             .add_sized([45.0, 24.0], egui::Button::new("New"))
+            .on_hover_text("New map (Ctrl+N)")
             .clicked()
         {
-            dialogs.menu_state.show_new_confirmation = true;
+            map_res.file_actions.write(MapFileAction::New);
         }
         if ui
             .add_sized([45.0, 24.0], egui::Button::new("Save"))
+            .on_hover_text("Save map (Ctrl+S)")
             .clicked()
         {
-            // Only prompt for name if map is untitled; otherwise save directly
-            let active_map = map_res
-                .open_maps
-                .maps
-                .get(&map_res.open_maps.active_map_id.unwrap_or(0));
-            if let Some(active) = active_map {
-                if active.name == "Untitled Map" {
-                    dialogs.menu_state.save_filename = active.name.clone();
-                    dialogs.menu_state.show_save_name_dialog = true;
-                } else if let Some(ref existing_path) = active.path {
-                    // Map has been saved before, save to same path
-                    map_res
-                        .save_events
-                        .write(crate::map::SaveMapRequest::new(existing_path.clone()));
-                } else {
-                    // Map has a name but no path yet - save to maps directory
-                    let maps_dir = library.library_path.join("maps");
-                    let filename = sanitize_map_name(&active.name);
-                    let path = maps_dir.join(format!("{}.json", filename));
-                    map_res
-                        .save_events
-                        .write(crate::map::SaveMapRequest::new(path));
-                }
-            }
+            map_res.file_actions.write(MapFileAction::Save);
         }
         if ui
             .add_sized([55.0, 24.0], egui::Button::new("Rename"))
@@ -691,8 +669,8 @@ fn render_map_row(
             && !is_current
         {
             map_res
-                .load_events
-                .write(crate::map::LoadMapRequest { path: path.clone() });
+                .file_actions
+                .write(MapFileAction::Open(path.clone()));
         }
     });
 }
