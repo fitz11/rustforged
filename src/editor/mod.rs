@@ -80,6 +80,7 @@ impl Plugin for EditorPlugin {
                     annotations::configure_annotation_gizmos,
                     fog::configure_fog_gizmos,
                     selection::configure_selection_gizmos,
+                    placement::spawn_placement_ghost,
                 ),
             )
             .add_systems(
@@ -91,8 +92,12 @@ impl Plugin for EditorPlugin {
                     grid::draw_grid,
                     tools::handle_tool_shortcuts.run_if(no_dialog_open),
                     tools::update_cursor_icon,
+                    // After handle_selection: a placement can switch to Select,
+                    // and the placing click mustn't also land as a Select click
                     placement::handle_placement
-                        .run_if(tool_is(EditorTool::Place).and_then(no_dialog_open)),
+                        .run_if(tool_is(EditorTool::Place).and_then(no_dialog_open))
+                        .after(selection::handle_selection),
+                    placement::update_placement_ghost,
                     brush::handle_brush
                         .run_if(tool_is(EditorTool::Brush).and_then(no_dialog_open)),
                     update_layer_visibility.run_if(resource_changed::<MapData>),

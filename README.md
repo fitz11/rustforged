@@ -13,7 +13,7 @@ A D&D 5E Virtual Tabletop (VTT) map editor built with Bevy 0.20 and bevy_egui 0.
 - **Drawing tools** - Freehand drawing and straight line annotations
 - **Undo/redo** - Full command history for placement, movement, deletion, and annotations
 - **Fog of War** - Reveal/hide map areas for players
-- **Grid system** - 70px grid with snap-to-grid placement (hold Shift for free placement)
+- **Grid system** - 70px grid with snap-to-grid placement (hold Ctrl for free placement)
 - **Live session mode** - Display player view on a secondary monitor with configurable viewport
 - **Map persistence** - Save and load maps as JSON files
 
@@ -76,7 +76,7 @@ If the binary fails to start with a missing-library error (`error while loading 
 | Key | Tool |
 |-----|------|
 | V / S | Select - Click to select, drag to move |
-| P | Place - Single-click asset placement |
+| P | Place - Click to place the selected asset, then return to Select (Shift+Click keeps placing, Ctrl+Click skips grid snap) |
 | B | Brush - Continuous placement while dragging |
 | D | Draw - Freehand annotation paths |
 | L | Line - Straight line annotations |

@@ -141,6 +141,17 @@ pub fn tool_settings_ui(
                                 .color(egui::Color32::GRAY)
                                 .size(11.0),
                         );
+
+                        if current_tool.tool == EditorTool::Place {
+                            ui.add_space(12.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "Shift+Click: Keep placing  ·  Ctrl+Click: Free placement",
+                                )
+                                .color(egui::Color32::GRAY)
+                                .size(11.0),
+                            );
+                        }
                     }
                     EditorTool::Draw | EditorTool::Line | EditorTool::Text => {
                         // Annotation tool settings

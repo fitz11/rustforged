@@ -62,6 +62,16 @@ impl BrushState {
     }
 }
 
+/// Uniform scale that fits an image of `image_size` inside one grid cell
+pub(super) fn fit_to_cell_scale(image_size: Vec2, grid_size: f32) -> Vec3 {
+    if image_size.x > 0.0 && image_size.y > 0.0 {
+        let uniform_scale = (grid_size / image_size.x).min(grid_size / image_size.y);
+        Vec3::new(uniform_scale, uniform_scale, 1.0)
+    } else {
+        Vec3::ONE
+    }
+}
+
 /// Handle brush tool input for continuous asset placement
 #[allow(clippy::too_many_arguments)]
 pub fn handle_brush(
@@ -128,14 +138,7 @@ pub fn handle_brush(
 
     // Calculate the scale that will be applied
     let scale = if shift_held {
-        if img_width > 0.0 && img_height > 0.0 {
-            let scale_x = grid_size / img_width;
-            let scale_y = grid_size / img_height;
-            let uniform_scale = scale_x.min(scale_y);
-            Vec3::new(uniform_scale, uniform_scale, 1.0)
-        } else {
-            Vec3::ONE
-        }
+        fit_to_cell_scale(Vec2::new(img_width, img_height), grid_size)
     } else {
         Vec3::ONE
     };
@@ -200,6 +203,17 @@ pub fn handle_brush(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_fit_to_cell_scale_uses_longer_side() {
+        let scale = fit_to_cell_scale(Vec2::new(140.0, 280.0), 70.0);
+        assert_eq!(scale, Vec3::new(0.25, 0.25, 1.0));
+    }
+
+    #[test]
+    fn test_fit_to_cell_scale_degenerate_image() {
+        assert_eq!(fit_to_cell_scale(Vec2::new(0.0, 70.0), 70.0), Vec3::ONE);
+    }
 
     #[test]
     fn test_brush_state_default() {
