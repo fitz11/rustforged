@@ -49,5 +49,5 @@ pub fn handle_undo_redo(
     } else {
         history.push_undo(inverse);
     }
-    dirty_state.is_dirty = true;
+    dirty_state.mark_dirty();
 }

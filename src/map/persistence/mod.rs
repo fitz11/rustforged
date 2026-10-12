@@ -48,7 +48,8 @@ mod tests;
 
 // Re-exports - Messages
 pub use messages::{
-    LoadMapRequest, MapReplaced, MapSaveFinished, NewMapRequest, SaveMapRequest, SwitchMapRequest,
+    LoadMapRequest, MapReplaced, MapSaveFinished, NewMapRequest, SaveMapRequest, SaveOutcome,
+    SwitchMapRequest,
 };
 
 // Re-exports - Resources

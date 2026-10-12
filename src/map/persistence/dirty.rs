@@ -24,7 +24,7 @@ pub fn detect_item_additions(
         return;
     }
 
-    dirty_state.is_dirty = true;
+    dirty_state.mark_dirty();
 }
 
 /// System that detects when items are removed from the map
@@ -46,7 +46,7 @@ pub fn detect_item_removals(
         return;
     }
 
-    dirty_state.is_dirty = true;
+    dirty_state.mark_dirty();
 }
 
 /// System that detects when items or annotations change in place: moved, rotated, scaled,
@@ -75,7 +75,7 @@ pub fn detect_item_transforms(
     }
 
     if !changed.is_empty() {
-        dirty_state.is_dirty = true;
+        dirty_state.mark_dirty();
     }
 }
 

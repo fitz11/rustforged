@@ -461,3 +461,105 @@ fn test_background_map_unsaved_uses_stashed_flag() {
     assert!(open_maps.is_unsaved(background, &dirty));
     assert!(open_maps.has_any_unsaved(&dirty));
 }
+
+/// Runs poll_save_tasks on a save of `map` that has already finished writing.
+fn finish_save(
+    map: u64,
+    generation: u64,
+    setup: impl FnOnce(&mut World),
+) -> (App, Vec<super::messages::MapSaveFinished>) {
+    use super::messages::MapSaveFinished;
+    use super::resources::{
+        AsyncMapOperation, CurrentMapFile, MapChangedOnDisk, MapDirtyState, MapSaveError, OpenMaps,
+        SaveConflictDialog, SaveMapTask,
+    };
+    use super::results::SaveResult;
+    use bevy::tasks::{IoTaskPool, TaskPool};
+
+    let mut app = App::new();
+    app.init_resource::<AsyncMapOperation>()
+        .init_resource::<CurrentMapFile>()
+        .init_resource::<MapDirtyState>()
+        .init_resource::<OpenMaps>()
+        .init_resource::<MapSaveError>()
+        .init_resource::<crate::assets::AssetLibrary>()
+        .init_resource::<SaveConflictDialog>()
+        .init_resource::<MapChangedOnDisk>()
+        .add_message::<crate::config::UpdateLastMapPathRequest>()
+        .add_message::<MapSaveFinished>()
+        .add_systems(Update, super::save::poll_save_tasks);
+    setup(app.world_mut());
+
+    let task = IoTaskPool::get_or_init(TaskPool::new).spawn(async {
+        SaveResult {
+            path: std::path::PathBuf::from("maps/cave.json"),
+            success: true,
+            error: None,
+            conflict: None,
+            disk_hash: Some("hash".to_string()),
+            map_id: "id".to_string(),
+            asset_fingerprints: Default::default(),
+            computed: Default::default(),
+        }
+    });
+    app.world_mut().spawn(SaveMapTask {
+        task,
+        map,
+        generation,
+        ticket: 7,
+    });
+    for _ in 0..100 {
+        app.update();
+        if app
+            .world_mut()
+            .query::<&SaveMapTask>()
+            .iter(app.world())
+            .next()
+            .is_none()
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let finished = app
+        .world_mut()
+        .resource_mut::<Messages<MapSaveFinished>>()
+        .drain()
+        .collect();
+    (app, finished)
+}
+
+#[test]
+fn test_edits_made_during_a_save_stay_unsaved() {
+    use super::resources::MapDirtyState;
+
+    // The save started at edit 1; another edit came in while it was writing
+    let (app, finished) = finish_save(0, 1, |world| {
+        let mut dirty = world.resource_mut::<MapDirtyState>();
+        dirty.mark_dirty();
+        dirty.mark_dirty();
+    });
+    assert!(app.world().resource::<MapDirtyState>().is_dirty);
+    assert_eq!(finished.len(), 1);
+    assert_eq!(finished[0].ticket, 7);
+}
+
+#[test]
+fn test_save_result_goes_to_the_map_that_was_saved() {
+    use super::resources::{CurrentMapFile, MapDirtyState, OpenMaps};
+
+    // Map 0 was saved, but a new map (id 5) replaced it before the save finished
+    let (app, _) = finish_save(0, 0, |world| {
+        let mut open_maps = world.resource_mut::<OpenMaps>();
+        let mut fresh = open_maps.maps.remove(&0).unwrap();
+        fresh.id = 5;
+        open_maps.maps.insert(5, fresh);
+        open_maps.active_map_id = Some(5);
+        world.resource_mut::<MapDirtyState>().mark_dirty();
+    });
+
+    let open_maps = app.world().resource::<OpenMaps>();
+    assert_eq!(open_maps.maps[&5].path, None);
+    assert!(app.world().resource::<CurrentMapFile>().path.is_none());
+    assert!(app.world().resource::<MapDirtyState>().is_dirty);
+}

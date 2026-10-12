@@ -57,7 +57,9 @@ pub fn file_menu_ui(
                 ui.horizontal(|ui| {
                     if ui.add_enabled(name_ok, egui::Button::new("Save")).clicked() {
                         let path = maps_dir.join(format!("{}.json", filename));
-                        save_events.write(SaveMapRequest::new(path));
+                        let request = SaveMapRequest::new(path);
+                        prompt.wait_for(&request);
+                        save_events.write(request);
                         menu_state.show_save_name_dialog = false;
                     }
                     if ui.button("Cancel").clicked() {
@@ -386,10 +388,9 @@ pub fn save_conflict_dialog_ui(
                     "Overwrite"
                 };
                 if ui.button(overwrite_label).clicked() {
-                    save_events.write(SaveMapRequest {
-                        path: conflict.path.clone(),
-                        overwrite: true,
-                    });
+                    let request = SaveMapRequest::overwrite(conflict.path.clone());
+                    prompt.wait_for(&request);
+                    save_events.write(request);
                     close = true;
                 }
 
@@ -398,7 +399,9 @@ pub fn save_conflict_dialog_ui(
                     .on_hover_text(format!("Save your version as \"{}\"", copy_name))
                     .clicked()
                 {
-                    save_events.write(SaveMapRequest::new(copy.clone()));
+                    let request = SaveMapRequest::new(copy.clone());
+                    prompt.wait_for(&request);
+                    save_events.write(request);
                     close = true;
                 }
 

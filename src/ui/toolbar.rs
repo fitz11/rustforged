@@ -51,7 +51,7 @@ pub fn toolbar_ui(
                 let mut grid_visible = map_data.grid_visible;
                 if ui.checkbox(&mut grid_visible, "Grid").changed() {
                     map_data.grid_visible = grid_visible;
-                    dirty_state.is_dirty = true;
+                    dirty_state.mark_dirty();
                 }
 
                 // Right-aligned session controls

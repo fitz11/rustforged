@@ -2,13 +2,16 @@
 
 use bevy::prelude::*;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Message)]
+#[derive(Message, Clone)]
 pub struct SaveMapRequest {
     pub path: PathBuf,
     /// Write even if the file changed on disk since it was opened (the user chose to
     /// overwrite after a save conflict)
     pub overwrite: bool,
+    /// Identifies this request in the [`MapSaveFinished`] sent when it's done
+    pub ticket: u64,
 }
 
 impl SaveMapRequest {
@@ -17,13 +20,35 @@ impl SaveMapRequest {
         Self {
             path,
             overwrite: false,
+            ticket: next_ticket(),
+        }
+    }
+
+    /// A save that writes even though the file changed on disk.
+    pub fn overwrite(path: PathBuf) -> Self {
+        Self {
+            overwrite: true,
+            ..Self::new(path)
         }
     }
 }
 
+fn next_ticket() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 /// Sent when a [`SaveMapRequest`] is done, whether or not the map was written.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MapSaveFinished {
+pub struct MapSaveFinished {
+    /// The request's [`SaveMapRequest::ticket`]
+    pub ticket: u64,
+    pub outcome: SaveOutcome,
+}
+
+/// How a save ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveOutcome {
     /// The map was written to disk
     Saved,
     /// The file changed on disk; the save conflict dialog is asking what to do
@@ -32,7 +57,7 @@ pub enum MapSaveFinished {
     Failed,
 }
 
-#[derive(Message)]
+#[derive(Message, Clone)]
 pub struct LoadMapRequest {
     pub path: PathBuf,
 }

@@ -60,11 +60,11 @@ pub fn layers_panel_ui(
             );
             if layers_changed || fog_change.map {
                 map_data.set_changed();
-                dirty_state.is_dirty = true;
+                dirty_state.mark_dirty();
             }
             if fog_change.fog {
                 fog_data.set_changed();
-                dirty_state.is_dirty = true;
+                dirty_state.mark_dirty();
             }
 
             // Properties section

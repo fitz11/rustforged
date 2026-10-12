@@ -331,7 +331,7 @@ fn rename_active_map(map_res: &mut MapResources, new_name: &str) -> Result<(), S
         map_res.map_data.name = new_name.to_string();
     }
     // The name inside the file changed
-    map_res.dirty_state.is_dirty = true;
+    map_res.dirty_state.mark_dirty();
     Ok(())
 }
 

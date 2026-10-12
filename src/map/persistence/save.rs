@@ -13,7 +13,7 @@ use crate::map::{FogOfWarData, MapData, PlacedItem, SavedMap};
 
 use super::helpers::saved_by_of;
 use super::map_state::capture_current_map_state;
-use super::messages::{MapSaveFinished, SaveMapRequest};
+use super::messages::{MapSaveFinished, SaveMapRequest, SaveOutcome};
 use super::resources::{
     AsyncMapOperation, CurrentMapFile, MapChangedOnDisk, MapDirtyState, MapSaveError, OpenMaps,
     SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapTask,
@@ -34,16 +34,17 @@ pub fn save_map_system(
     mut async_op: ResMut<AsyncMapOperation>,
     asset_library: Res<AssetLibrary>,
     open_maps: Res<OpenMaps>,
-    mut finished: MessageWriter<MapSaveFinished>,
+    dirty_state: Res<MapDirtyState>,
+    mut waiting: Local<Option<SaveMapRequest>>,
 ) {
+    // A request made while another save or load runs waits for it (the latest one wins)
     for event in events.read() {
-        // Don't start a new save if one is already in progress
-        if async_op.is_busy() {
-            warn!("Save operation already in progress");
-            finished.write(MapSaveFinished::Failed);
-            continue;
-        }
-
+        *waiting = Some(event.clone());
+    }
+    if async_op.is_busy() {
+        return;
+    }
+    if let Some(event) = waiting.take() {
         // Placed items already hold library-relative paths, which is what map files store
         let mut saved_map =
             capture_current_map_state(&map_data, &fog_data, &placed_items, &paths, &lines, &texts);
@@ -112,7 +113,12 @@ pub fn save_map_system(
             }
         });
 
-        commands.spawn(SaveMapTask(task));
+        commands.spawn(SaveMapTask {
+            task,
+            map: active.map(|m| m.id).unwrap_or_default(),
+            generation: dirty_state.generation,
+            ticket: event.ticket,
+        });
     }
 }
 
@@ -209,7 +215,7 @@ pub fn poll_save_tasks(
     mut finished: MessageWriter<MapSaveFinished>,
 ) {
     for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = future::block_on(future::poll_once(&mut task.0)) {
+        if let Some(result) = future::block_on(future::poll_once(&mut task.task)) {
             // Clear async state
             async_op.is_saving = false;
             async_op.operation_description = None;
@@ -223,43 +229,55 @@ pub fn poll_save_tasks(
                 // Clear any previous save error
                 save_error.message = None;
 
-                // Update current map file and config
-                current_map_file.path = Some(result.path.clone());
                 config_events.write(UpdateLastMapPathRequest {
                     path: result.path.clone(),
                 });
 
-                // Clear dirty state
-                dirty_state.is_dirty = false;
-
-                // Update open maps
-                if let Some(active_map) = open_maps.active_map_mut() {
-                    active_map.asset_fingerprints = result.asset_fingerprints;
-                    active_map.map_id = Some(result.map_id);
-                    active_map.disk_hash = result.disk_hash;
-                    active_map.path = Some(result.path.clone());
-                    active_map.name = result
+                // The map that was saved, which may no longer be the active one (or open)
+                let is_active = open_maps.active_map_id == Some(task.map);
+                if let Some(saved) = open_maps.maps.get_mut(&task.map) {
+                    saved.asset_fingerprints = result.asset_fingerprints;
+                    saved.map_id = Some(result.map_id);
+                    saved.disk_hash = result.disk_hash;
+                    saved.path = Some(result.path.clone());
+                    saved.name = result
                         .path
                         .file_stem()
                         .and_then(|n| n.to_str())
                         .unwrap_or("Unknown")
                         .to_string();
                 }
-                finished.write(MapSaveFinished::Saved);
+                if is_active {
+                    current_map_file.path = Some(result.path.clone());
+                    // Edits made while the file was being written aren't in it
+                    if dirty_state.generation == task.generation {
+                        dirty_state.is_dirty = false;
+                    }
+                }
+                finished.write(MapSaveFinished {
+                    ticket: task.ticket,
+                    outcome: SaveOutcome::Saved,
+                });
             } else if let Some(conflict) = result.conflict {
                 warn!(
                     "Not saving {:?}: {:?} on disk since it was opened",
                     conflict.path, conflict.kind
                 );
                 conflict_dialog.conflict = Some(conflict);
-                finished.write(MapSaveFinished::Conflict);
+                finished.write(MapSaveFinished {
+                    ticket: task.ticket,
+                    outcome: SaveOutcome::Conflict,
+                });
             } else {
                 if let Some(error) = result.error {
                     error!("{}", error);
                     // Store error for display to user
                     save_error.message = Some(error);
                 }
-                finished.write(MapSaveFinished::Failed);
+                finished.write(MapSaveFinished {
+                    ticket: task.ticket,
+                    outcome: SaveOutcome::Failed,
+                });
             }
 
             commands.entity(entity).despawn();

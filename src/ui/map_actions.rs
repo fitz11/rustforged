@@ -17,6 +17,7 @@ use crate::assets::AssetLibrary;
 use crate::input::command_key_just_pressed;
 use crate::map::{
     LoadMapRequest, MapDirtyState, MapSaveFinished, NewMapRequest, OpenMaps, SaveMapRequest,
+    SaveOutcome,
 };
 
 use super::file_menu::FileMenuState;
@@ -53,7 +54,24 @@ pub struct UnsavedChangesPrompt {
     /// Waiting for the user to choose Save, Don't Save or Cancel
     pub pending: Option<ReplacingAction>,
     /// The user chose Save: run this once the save succeeds
-    pub after_save: Option<ReplacingAction>,
+    pub after_save: Option<AfterSave>,
+}
+
+/// An action waiting for a save to finish.
+pub struct AfterSave {
+    pub action: ReplacingAction,
+    /// The save it waits for; none yet while the Save Map dialog asks for a name
+    pub ticket: Option<u64>,
+}
+
+impl UnsavedChangesPrompt {
+    /// If an action waits for a save, it now waits for `request` (the save from the name
+    /// dialog, or the one chosen after a conflict).
+    pub fn wait_for(&mut self, request: &SaveMapRequest) {
+        if let Some(after) = self.after_save.as_mut() {
+            after.ticket = Some(request.ticket);
+        }
+    }
 }
 
 /// The file picker opened with Ctrl+O, while it's open.
@@ -178,29 +196,29 @@ pub fn sanitize_map_name(name: &str) -> String {
 }
 
 /// Save the active map where it was last saved, or ask for a name if it never was.
+/// Returns the request's ticket if it was sent right away.
 fn request_save(
     open_maps: &OpenMaps,
     maps_dir: &Path,
     menu_state: &mut FileMenuState,
     save_events: &mut MessageWriter<SaveMapRequest>,
-) {
-    let Some(active) = open_maps.active_map() else {
-        return;
-    };
-    if let Some(path) = &active.path {
-        save_events.write(SaveMapRequest::new(path.clone()));
-        return;
-    }
+) -> Option<u64> {
+    let active = open_maps.active_map()?;
     let filename = sanitize_map_name(&active.name);
-    if active.name != UNTITLED_MAP_NAME && !filename.is_empty() {
+    let path = if let Some(path) = &active.path {
+        path.clone()
+    } else if active.name != UNTITLED_MAP_NAME && filename.chars().any(char::is_alphanumeric) {
         // Named (e.g. renamed with F3) but never saved; a file with that name already
         // there stops the save and asks
-        save_events.write(SaveMapRequest::new(
-            maps_dir.join(format!("{}.json", filename)),
-        ));
+        maps_dir.join(format!("{}.json", filename))
     } else {
         open_save_as(open_maps, menu_state);
-    }
+        return None;
+    };
+    let request = SaveMapRequest::new(path);
+    let ticket = request.ticket;
+    save_events.write(request);
+    Some(ticket)
 }
 
 fn open_save_as(open_maps: &OpenMaps, menu_state: &mut FileMenuState) {
@@ -237,6 +255,8 @@ pub fn handle_map_file_actions(
     for action in actions.read().cloned().chain(quit_requests) {
         let replacing = match action {
             MapFileAction::Save => {
+                // A plain save: nothing waits for it
+                prompt.after_save = None;
                 request_save(&open_maps, &maps_dir, &mut menu_state, &mut save_events);
                 continue;
             }
@@ -265,15 +285,23 @@ pub fn run_action_after_save(
     mut runner: ActionRunner,
 ) {
     for result in finished.read() {
-        match result {
-            MapSaveFinished::Saved => {
-                if let Some(action) = prompt.after_save.take() {
-                    runner.run(action);
+        // Only the save the action waits for (an earlier one can finish first)
+        let waits_for_this = prompt
+            .after_save
+            .as_ref()
+            .is_some_and(|after| after.ticket == Some(result.ticket));
+        if !waits_for_this {
+            continue;
+        }
+        match result.outcome {
+            SaveOutcome::Saved => {
+                if let Some(after) = prompt.after_save.take() {
+                    runner.run(after.action);
                 }
             }
             // The save conflict dialog decides; Overwrite or Save as Copy save again
-            MapSaveFinished::Conflict => {}
-            MapSaveFinished::Failed => prompt.after_save = None,
+            SaveOutcome::Conflict => {}
+            SaveOutcome::Failed => prompt.after_save = None,
         }
     }
 }
@@ -344,9 +372,9 @@ pub fn unsaved_changes_dialog_ui(
     match choice {
         Some(Choice::Save) => {
             prompt.pending = None;
-            prompt.after_save = Some(action);
             let maps_dir = library.library_path.join("maps");
-            request_save(&open_maps, &maps_dir, &mut menu_state, &mut save_events);
+            let ticket = request_save(&open_maps, &maps_dir, &mut menu_state, &mut save_events);
+            prompt.after_save = Some(AfterSave { action, ticket });
         }
         Some(Choice::Discard) => {
             prompt.pending = None;

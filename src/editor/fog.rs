@@ -159,7 +159,7 @@ pub fn handle_fog(
         }
 
         if changed {
-            dirty_state.is_dirty = true;
+            dirty_state.mark_dirty();
         }
     }
 }

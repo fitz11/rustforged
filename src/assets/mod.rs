@@ -149,7 +149,7 @@ fn retarget_asset_system(
         // The map files still name the old path until saved (they'd find the asset again
         // by fingerprint anyway), so changed maps count as unsaved.
         if count > 0 {
-            dirty_state.is_dirty = true;
+            dirty_state.mark_dirty();
         }
 
         // Maps open in the background keep their items in a snapshot, not as entities

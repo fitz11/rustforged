@@ -25,14 +25,16 @@ pub fn load_map_system(
     mut events: MessageReader<LoadMapRequest>,
     mut async_op: ResMut<AsyncMapOperation>,
     asset_library: Res<AssetLibrary>,
+    mut waiting: Local<Option<LoadMapRequest>>,
 ) {
+    // A request made while another save or load runs waits for it (the latest one wins)
     for event in events.read() {
-        // Don't start a new load if one is already in progress
-        if async_op.is_busy() {
-            warn!("Load operation already in progress");
-            continue;
-        }
-
+        *waiting = Some(event.clone());
+    }
+    if async_op.is_busy() {
+        return;
+    }
+    if let Some(event) = waiting.take() {
         let path = event.path.clone();
         let map_name = path
             .file_name()

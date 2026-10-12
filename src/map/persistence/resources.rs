@@ -108,7 +108,16 @@ impl AsyncMapOperation {
 
 /// Component for save task
 #[derive(Component)]
-pub struct SaveMapTask(pub Task<SaveResult>);
+pub struct SaveMapTask {
+    pub task: Task<SaveResult>,
+    /// The open map being saved; the result applies to it even if another map is active
+    /// by the time the save finishes
+    pub map: u64,
+    /// The edit count when the save started (see [`MapDirtyState::generation`])
+    pub generation: u64,
+    /// The request's ticket, for its MapSaveFinished
+    pub ticket: u64,
+}
 
 /// Component for load task
 #[derive(Component)]
@@ -125,6 +134,9 @@ pub struct CurrentMapFile {
 #[derive(Resource, Default)]
 pub struct MapDirtyState {
     pub is_dirty: bool,
+    /// Counts edits, so a save that finishes can tell whether the map changed while it was
+    /// being written (those changes aren't in the file, so the map stays unsaved)
+    pub generation: u64,
     /// Number of frames for which change detection should be ignored. Set after
     /// a load/new/switch despawns+respawns entities so the resulting Added/
     /// Removed/Changed wave doesn't immediately re-mark a clean map as dirty.
@@ -132,6 +144,12 @@ pub struct MapDirtyState {
 }
 
 impl MapDirtyState {
+    /// Records an edit: the map has unsaved changes.
+    pub fn mark_dirty(&mut self) {
+        self.is_dirty = true;
+        self.generation += 1;
+    }
+
     /// Suppress change detection for the next couple of frames. Used after
     /// programmatic entity churn (load/new/switch) so the spawn/despawn wave
     /// isn't mistaken for user edits. Two frames covers either ordering of the

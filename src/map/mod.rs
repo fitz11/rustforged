@@ -13,7 +13,8 @@ pub use map_data::{
 pub use persistence::{
     AsyncMapOperation, CurrentMapFile, LoadMapRequest, MapAssetReport, MapChangedOnDisk,
     MapDirtyState, MapLoadError, MapReplaced, MapSaveError, MapSaveFinished, NewMapRequest,
-    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest, SwitchMapRequest,
+    OpenMaps, SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest, SaveOutcome,
+    SwitchMapRequest,
 };
 pub use placed_item::{ItemId, MissingAsset, PlacedItem, Selected, StackTops, Stacker};
 
@@ -43,8 +44,9 @@ impl Plugin for MapPlugin {
             .add_systems(
                 Update,
                 (
-                    persistence::save_map_system.run_if(on_message::<SaveMapRequest>),
-                    persistence::load_map_system.run_if(on_message::<LoadMapRequest>),
+                    // Every frame: a request made during another save or load waits
+                    persistence::save_map_system,
+                    persistence::load_map_system,
                     persistence::new_map_system.run_if(on_message::<NewMapRequest>),
                     persistence::switch_map_system.run_if(on_message::<SwitchMapRequest>),
                     persistence::poll_save_tasks,
