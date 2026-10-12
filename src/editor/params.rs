@@ -43,6 +43,12 @@ impl CameraParams<'_, '_> {
         let cursor_pos = window.cursor_position()?;
         camera.viewport_to_world_2d(transform, cursor_pos).ok()
     }
+
+    /// Where the editor camera is looking (the middle of the view)
+    pub fn camera_world_pos(&self) -> Option<Vec2> {
+        let (_, transform) = self.camera.single().ok()?;
+        Some(transform.translation().truncate())
+    }
 }
 
 /// Bundled camera queries including projection (for zoom-aware operations)

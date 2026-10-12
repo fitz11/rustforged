@@ -1,5 +1,6 @@
 mod asset_browser;
 pub mod asset_import;
+mod file_drop;
 mod layers_panel;
 pub mod map_actions;
 pub mod map_dialogs;
@@ -75,6 +76,7 @@ impl Plugin for UiPlugin {
             .init_resource::<map_dialogs::SaveAsDialogState>()
             .init_resource::<map_actions::UnsavedChangesPrompt>()
             .init_resource::<map_actions::OpenMapPicker>()
+            .init_resource::<file_drop::DroppedImages>()
             .add_message::<map_actions::MapFileAction>()
             .init_resource::<layers_panel::HelpWindowState>()
             .init_resource::<settings_dialog::SettingsDialogState>()
@@ -126,6 +128,8 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     map_actions::handle_file_shortcuts.run_if(crate::editor::shortcuts_enabled),
+                    file_drop::handle_file_drops.run_if(crate::editor::no_dialog_open),
+                    file_drop::place_dropped_images,
                     map_actions::poll_open_map_picker,
                     map_actions::handle_map_file_actions,
                     map_actions::run_action_after_save,
