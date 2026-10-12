@@ -3,12 +3,12 @@
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
-use crate::map::{Layer, MapData};
+use crate::map::MapData;
 
-use super::super::history::{EditorCommand, LineData, RecordEditorCommand};
+use super::super::history::{EditorCommand, MapObject, RecordEditorCommand};
 use super::super::params::{CameraParams, is_cursor_over_ui};
 use super::super::tools::{CurrentTool, EditorTool};
-use super::components::{AnnotationMarker, DrawnLine};
+use super::components::DrawnLine;
 use super::layer_helpers::is_annotation_layer_locked;
 use super::state::{AnnotationSettings, LineDrawState};
 
@@ -23,6 +23,7 @@ pub fn handle_line(
     camera: CameraParams,
     mut contexts: EguiContexts,
     mut history_writer: MessageWriter<RecordEditorCommand>,
+    asset_server: Res<AssetServer>,
 ) {
     if current_tool.tool != EditorTool::Line {
         line_state.start_point = None;
@@ -45,32 +46,15 @@ pub fn handle_line(
     if mouse_button.just_pressed(MouseButton::Left) {
         if let Some(start) = line_state.start_point {
             // Second click - create line
-            let z = Layer::Annotation.z_base();
-            let color = settings.stroke_color;
-            let stroke_width = settings.stroke_width;
-            let entity = commands
-                .spawn((
-                    Transform::from_translation(Vec3::new(0.0, 0.0, z)),
-                    DrawnLine {
-                        start,
-                        end: world_pos,
-                        color,
-                        stroke_width,
-                    },
-                    AnnotationMarker,
-                ))
-                .id();
-
+            let object = MapObject::new_line(DrawnLine {
+                start,
+                end: world_pos,
+                color: settings.stroke_color,
+                stroke_width: settings.stroke_width,
+            });
+            object.spawn(&mut commands, &asset_server);
             history_writer.write(RecordEditorCommand {
-                command: EditorCommand::CreateLine {
-                    entity,
-                    line: LineData {
-                        start,
-                        end: world_pos,
-                        color,
-                        stroke_width,
-                    },
-                },
+                command: EditorCommand::Add(vec![object]),
             });
             line_state.start_point = None;
         } else {

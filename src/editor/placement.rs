@@ -21,7 +21,7 @@ use crate::ui::DialogState;
 use super::GridSettings;
 use super::brush::{BrushState, fit_to_cell_scale};
 use super::grid::snap_to_grid;
-use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
+use super::history::{EditorCommand, MapObject, RecordEditorCommand};
 use super::params::{CameraParams, is_cursor_over_ui};
 use super::tools::{CurrentTool, EditorTool, SelectedLayer};
 
@@ -180,25 +180,17 @@ pub fn handle_placement(
     let final_pos = placement_position(world_pos, &keyboard, &grid_settings, map_data.grid_size);
 
     // Use the selected layer instead of deriving from asset category
-    let layer = selected_layer.layer;
-    let item = PlacedItem {
-        asset_path: asset.path.clone(),
-        layer,
-        z_index: 0,
-    };
-    let transform = Transform::from_translation(final_pos.extend(item.depth()));
-    let entity = commands.spawn(item.bundle(&asset_server, transform)).id();
-
-    history_writer.write(RecordEditorCommand {
-        command: EditorCommand::PlaceItems {
-            items: vec![PlacedItemData {
-                entity,
-                asset_path: asset.path.clone(),
-                layer,
-                z_index: 0,
-                transform: TransformData::from(&transform),
-            }],
+    let object = MapObject::new_item(
+        PlacedItem {
+            asset_path: asset.path.clone(),
+            layer: selected_layer.layer,
+            z_index: 0,
         },
+        Transform::from_translation(final_pos.extend(0.0)),
+    );
+    let entity = object.spawn(&mut commands, &asset_server);
+    history_writer.write(RecordEditorCommand {
+        command: EditorCommand::Add(vec![object]),
     });
 
     // Shift keeps the Place tool for another placement; otherwise hand off to

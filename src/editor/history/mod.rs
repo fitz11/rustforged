@@ -11,25 +11,26 @@
 //!
 //! ## Supported Operations
 //!
-//! - Item placement and deletion
-//! - Item movement (transform changes)
-//! - Annotation creation and deletion (paths, lines, text)
+//! - Adding things to the map: placing, painting, pasting, drawing
+//! - Removing them: deleting
+//! - Changing them in place: moving, resizing, rotating
+//!
+//! Commands find things by their [`ItemId`](crate::map::ItemId), not by entity, so a step
+//! still applies after an earlier undo respawned what it refers to.
 //!
 //! ## Module Structure
 //!
 //! - [`commands`] - EditorCommand enum defining all reversible operations
-//! - [`data_types`] - Serializable data types for undo/redo state
+//! - [`data_types`] - MapObject, what the history remembers about a thing on the map
 //! - [`command_history`] - CommandHistory resource for tracking state
 //! - [`systems`] - Bevy systems for keyboard shortcuts
-//! - [`execute`] - Execute functions for undo/redo operations
-//! - [`spawn_helpers`] - Helper functions for spawning entities
+//! - [`execute`] - Carrying out undo and redo
 
 mod command_history;
 mod commands;
 mod data_types;
 mod execute;
 mod recording;
-mod spawn_helpers;
 mod systems;
 
 #[cfg(test)]
@@ -38,9 +39,9 @@ mod tests;
 // Re-exports
 pub use command_history::CommandHistory;
 pub use commands::EditorCommand;
-pub use data_types::{LineData, PathData, PlacedItemData, TextData, TransformData};
+pub use data_types::MapObject;
 pub use recording::{RecordEditorCommand, record_commands};
-pub use systems::{handle_redo, handle_undo};
+pub use systems::handle_undo_redo;
 
 /// Maximum number of commands to keep in history
 pub(crate) const MAX_HISTORY_SIZE: usize = 100;

@@ -154,8 +154,7 @@ impl Plugin for EditorPlugin {
                         .run_if(command_key(KeyCode::KeyX).and_then(shortcuts_enabled)),
                     clipboard::handle_paste
                         .run_if(command_key(KeyCode::KeyV).and_then(shortcuts_enabled)),
-                    history::handle_undo.run_if(shortcuts_enabled),
-                    history::handle_redo.run_if(shortcuts_enabled),
+                    history::handle_undo_redo.run_if(shortcuts_enabled),
                     history::record_commands,
                 ),
             )

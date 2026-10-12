@@ -73,11 +73,9 @@ impl CommandHistory {
     /// so undoing a delete doesn't respawn an item from a path that no longer exists.
     pub fn retarget_asset(&mut self, old_path: &str, new_path: &str) {
         for command in self.undo_stack.iter_mut().chain(self.redo_stack.iter_mut()) {
-            if let EditorCommand::PlaceItems { items } | EditorCommand::DeleteItems { items } =
-                command
-            {
-                for item in items.iter_mut().filter(|i| i.asset_path == old_path) {
-                    item.asset_path = new_path.to_string();
+            for path in command.objects_mut().filter_map(|o| o.asset_path_mut()) {
+                if path == old_path {
+                    *path = new_path.to_string();
                 }
             }
         }

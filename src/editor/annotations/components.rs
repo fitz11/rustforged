@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::map::Layer;
+use crate::map::{ItemId, Layer};
 
 /// Annotations are drawn at the Annotation layer's depth; paths and lines keep their
 /// points in world space, so their transform stays at the origin.
@@ -11,14 +11,14 @@ fn annotation_transform(position: Vec2) -> Transform {
     Transform::from_translation(position.extend(Layer::Annotation.z_base()))
 }
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrawnPath {
     pub points: Vec<Vec2>,
     pub color: Color,
     pub stroke_width: f32,
 }
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrawnLine {
     pub start: Vec2,
     pub end: Vec2,
@@ -26,7 +26,7 @@ pub struct DrawnLine {
     pub stroke_width: f32,
 }
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextAnnotation {
     pub content: String,
     pub font_size: f32,
@@ -34,6 +34,7 @@ pub struct TextAnnotation {
 }
 
 #[derive(Component)]
+#[require(ItemId = ItemId::new())]
 pub struct AnnotationMarker;
 
 impl DrawnPath {

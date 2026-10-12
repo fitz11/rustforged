@@ -2,231 +2,129 @@
 
 use bevy::prelude::*;
 
-use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use crate::editor::history::{
-    EditorCommand, LineData, PathData, PlacedItemData, RecordEditorCommand, TextData, TransformData,
-};
+use crate::editor::brush::fit_to_cell_scale;
+use crate::editor::grid::snap_to_grid;
+use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
+use crate::editor::params::SelectedObjects;
 use crate::input::shift_held;
-use crate::map::{MapData, PlacedItem, Selected};
+use crate::map::{ItemId, MapData, PlacedItem, Selected};
 
 use super::hit_detection::get_sprite_half_size;
 
+/// Selected placed items, for the transform shortcuts
+type SelectedItems<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static ItemId,
+        &'static PlacedItem,
+        &'static mut Transform,
+        &'static Sprite,
+    ),
+    With<Selected>,
+>;
+
+/// Applies `edit` to every selected placed item and records the result as one undo step.
+fn edit_selected_items(
+    selected: &mut SelectedItems,
+    history_writer: &mut MessageWriter<RecordEditorCommand>,
+    mut edit: impl FnMut(&Sprite, &mut Transform),
+) {
+    let mut pairs = Vec::new();
+    for (id, item, mut transform, sprite) in selected.iter_mut() {
+        let before = MapObject::item(*id, item.clone(), *transform);
+        edit(sprite, &mut transform);
+        pairs.push((before, MapObject::item(*id, item.clone(), *transform)));
+    }
+    if let Some(command) = EditorCommand::change(pairs) {
+        history_writer.write(RecordEditorCommand { command });
+    }
+}
+
+/// Scale selected items to fit one grid cell when G is pressed
 pub fn handle_fit_to_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<(Entity, &mut Transform, &Sprite), With<Selected>>,
+    mut selected: SelectedItems,
     map_data: Res<MapData>,
     images: Res<Assets<Image>>,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
     // G = fit to grid (but not Shift+G, which is center to grid)
-    let shift_held = shift_held(&keyboard);
-    if !keyboard.just_pressed(KeyCode::KeyG) || shift_held {
+    if shift_held(&keyboard) {
         return;
     }
-
-    let mut moves = Vec::new();
-    for (entity, mut transform, sprite) in selected_query.iter_mut() {
+    let grid_size = map_data.grid_size;
+    edit_selected_items(&mut selected, &mut history_writer, |sprite, transform| {
         let original_size = get_sprite_half_size(sprite, &images) * 2.0;
-
         if original_size.x > 0.0 && original_size.y > 0.0 {
-            let old = TransformData::from(&*transform);
-            // Calculate scale to fit into one grid cell
-            let grid_size = map_data.grid_size;
-            let scale_x = grid_size / original_size.x;
-            let scale_y = grid_size / original_size.y;
-
-            // Use uniform scaling (the smaller of the two to fit within the cell)
-            let uniform_scale = scale_x.min(scale_y);
-            transform.scale = Vec3::new(uniform_scale, uniform_scale, 1.0);
-            moves.push((entity, old, TransformData::from(&*transform)));
+            transform.scale = fit_to_cell_scale(original_size, grid_size);
         }
-    }
-
-    record_moves(&mut history_writer, moves);
+    });
 }
 
 /// Center selected items to the nearest grid cell center when Shift+G is pressed
 pub fn handle_center_to_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
+    mut selected: SelectedItems,
     map_data: Res<MapData>,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // Shift+G = center to grid
-    let shift_held = shift_held(&keyboard);
-    if !keyboard.just_pressed(KeyCode::KeyG) || !shift_held {
+    if !shift_held(&keyboard) {
         return;
     }
-
     let grid_size = map_data.grid_size;
-    let half = grid_size / 2.0;
-
-    let mut moves = Vec::new();
-    for (entity, mut transform, has_placed) in selected_query.iter_mut() {
-        let old = TransformData::from(&*transform);
-        let pos = transform.translation.truncate();
-        // Snap to nearest grid cell center
-        let snapped = Vec2::new(
-            (pos.x / grid_size).floor() * grid_size + half,
-            (pos.y / grid_size).floor() * grid_size + half,
-        );
+    edit_selected_items(&mut selected, &mut history_writer, |_, transform| {
+        let snapped = snap_to_grid(transform.translation.truncate(), grid_size, true);
         transform.translation.x = snapped.x;
         transform.translation.y = snapped.y;
-        if has_placed {
-            moves.push((entity, old, TransformData::from(&*transform)));
-        }
-    }
-
-    record_moves(&mut history_writer, moves);
+    });
 }
 
 /// Restore selected items to their original aspect ratio when A is pressed
 /// Uses the larger of the two scale values to preserve the largest dimension
 pub fn handle_restore_aspect_ratio(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
+    mut selected: SelectedItems,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    // A = restore aspect ratio
-    if !keyboard.just_pressed(KeyCode::KeyA) {
-        return;
-    }
-
-    let mut moves = Vec::new();
-    for (entity, mut transform, has_placed) in selected_query.iter_mut() {
-        let old = TransformData::from(&*transform);
-        // Restore original aspect ratio by making scale uniform
-        // Use the larger scale value to preserve the largest dimension
+    edit_selected_items(&mut selected, &mut history_writer, |_, transform| {
         let uniform_scale = transform.scale.x.abs().max(transform.scale.y.abs());
         transform.scale.x = uniform_scale;
         transform.scale.y = uniform_scale;
-        if has_placed {
-            moves.push((entity, old, TransformData::from(&*transform)));
-        }
-    }
-
-    record_moves(&mut history_writer, moves);
+    });
 }
 
 /// Rotate selected items by 90 degrees when R is pressed (clockwise) or Shift+R (counter-clockwise)
 pub fn handle_rotate_90(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut selected_query: Query<(Entity, &mut Transform, Has<PlacedItem>), With<Selected>>,
+    mut selected: SelectedItems,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    let shift_held = shift_held(&keyboard);
-
     // Rotate 90 degrees: clockwise (negative) or counter-clockwise (positive) with Shift
-    let angle = if shift_held { 90.0_f32 } else { -90.0_f32 };
+    let angle = if shift_held(&keyboard) {
+        90.0_f32
+    } else {
+        -90.0_f32
+    };
     let rotation_delta = Quat::from_rotation_z(angle.to_radians());
-
-    let mut moves = Vec::new();
-    for (entity, mut transform, has_placed) in selected_query.iter_mut() {
-        let old = TransformData::from(&*transform);
+    edit_selected_items(&mut selected, &mut history_writer, |_, transform| {
         transform.rotation *= rotation_delta;
-        if has_placed {
-            moves.push((entity, old, TransformData::from(&*transform)));
-        }
-    }
-
-    record_moves(&mut history_writer, moves);
+    });
 }
 
-/// Emit a MoveItems command for any entries whose transform actually changed.
-fn record_moves(
-    history_writer: &mut MessageWriter<RecordEditorCommand>,
-    transforms: Vec<(Entity, TransformData, TransformData)>,
-) {
-    let changed: Vec<_> = transforms
-        .into_iter()
-        .filter(|(_, old, new)| {
-            old.translation != new.translation
-                || old.rotation != new.rotation
-                || old.scale != new.scale
-        })
-        .collect();
-
-    if !changed.is_empty() {
-        history_writer.write(RecordEditorCommand {
-            command: EditorCommand::MoveItems {
-                transforms: changed,
-            },
-        });
-    }
-}
-
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// Delete the selection (Delete or Backspace) as one undo step
 pub fn handle_deletion(
     mut commands: Commands,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    selected_query: Query<Entity, With<Selected>>,
-    selected_items: Query<(Entity, &Transform, &PlacedItem), With<Selected>>,
-    selected_paths: Query<(Entity, &DrawnPath), (With<Selected>, With<AnnotationMarker>)>,
-    selected_lines: Query<(Entity, &DrawnLine), (With<Selected>, With<AnnotationMarker>)>,
-    selected_texts: Query<
-        (Entity, &Transform, &TextAnnotation),
-        (With<Selected>, With<AnnotationMarker>),
-    >,
+    selected: SelectedObjects,
     mut history_writer: MessageWriter<RecordEditorCommand>,
 ) {
-    let should_delete =
-        keyboard.just_pressed(KeyCode::Delete) || keyboard.just_pressed(KeyCode::Backspace);
-
-    if !should_delete {
+    let (entities, objects): (Vec<_>, Vec<_>) = selected.collect().into_iter().unzip();
+    if objects.is_empty() {
         return;
     }
-
-    // Record before despawning. Placed items become a single DeleteItems command;
-    // each annotation becomes its own Delete* command.
-    let deleted_items: Vec<PlacedItemData> = selected_items
-        .iter()
-        .map(|(entity, transform, item)| PlacedItemData {
-            entity,
-            asset_path: item.asset_path.clone(),
-            layer: item.layer,
-            z_index: item.z_index,
-            transform: TransformData::from(transform),
-        })
-        .collect();
-
-    if !deleted_items.is_empty() {
-        history_writer.write(RecordEditorCommand {
-            command: EditorCommand::DeleteItems {
-                items: deleted_items,
-            },
-        });
-    }
-
-    for (_, path) in selected_paths.iter() {
-        history_writer.write(RecordEditorCommand {
-            command: EditorCommand::DeletePath {
-                path: PathData::from(path),
-            },
-        });
-    }
-
-    for (_, line) in selected_lines.iter() {
-        history_writer.write(RecordEditorCommand {
-            command: EditorCommand::DeleteLine {
-                line: LineData::from(line),
-            },
-        });
-    }
-
-    for (_, transform, text) in selected_texts.iter() {
-        history_writer.write(RecordEditorCommand {
-            command: EditorCommand::DeleteText {
-                text: TextData {
-                    text: text.content.clone(),
-                    position: transform.translation.truncate(),
-                    color: text.color,
-                    font_size: text.font_size,
-                },
-            },
-        });
-    }
-
-    for entity in selected_query.iter() {
+    history_writer.write(RecordEditorCommand {
+        command: EditorCommand::Remove(objects),
+    });
+    for entity in entities {
         commands.entity(entity).despawn();
     }
 }

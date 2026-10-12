@@ -1,32 +1,37 @@
 //! Editor command enum for undo/redo operations.
 
-use bevy::prelude::*;
+use super::data_types::MapObject;
 
-use super::data_types::{LineData, PathData, PlacedItemData, TextData, TransformData};
-
-/// A reversible command in the editor
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
+/// A reversible change to the map. Each user action is one command, so one Ctrl+Z
+/// undoes all of it.
+#[derive(Clone, Debug, PartialEq)]
 pub enum EditorCommand {
-    /// Item(s) were placed on the map
-    PlaceItems { items: Vec<PlacedItemData> },
-    /// Item(s) were deleted from the map
-    DeleteItems { items: Vec<PlacedItemData> },
-    /// Item(s) were moved/transformed
-    MoveItems {
-        /// Entity ID, old transform, new transform
-        transforms: Vec<(Entity, TransformData, TransformData)>,
-    },
-    /// A freehand path was created
-    CreatePath { entity: Entity, path: PathData },
-    /// A freehand path was deleted
-    DeletePath { path: PathData },
-    /// A line was created
-    CreateLine { entity: Entity, line: LineData },
-    /// A line was deleted
-    DeleteLine { line: LineData },
-    /// A text annotation was created
-    CreateText { entity: Entity, text: TextData },
-    /// A text annotation was deleted
-    DeleteText { text: TextData },
+    /// Things were added to the map: placed, painted, pasted or drawn
+    Add(Vec<MapObject>),
+    /// Things were removed from the map: deleted or cut
+    Remove(Vec<MapObject>),
+    /// Things changed in place, as (before, after): moved, resized, rotated, or edited
+    /// in the Properties panel
+    Change(Vec<(MapObject, MapObject)>),
+}
+
+impl EditorCommand {
+    /// A `Change` of the pairs that actually differ, or `None` if nothing changed.
+    pub fn change(pairs: impl IntoIterator<Item = (MapObject, MapObject)>) -> Option<Self> {
+        let pairs: Vec<_> = pairs
+            .into_iter()
+            .filter(|(before, after)| before != after)
+            .collect();
+        (!pairs.is_empty()).then_some(Self::Change(pairs))
+    }
+
+    /// Every object the command remembers, mutably.
+    pub fn objects_mut(&mut self) -> Box<dyn Iterator<Item = &mut MapObject> + '_> {
+        match self {
+            Self::Add(objects) | Self::Remove(objects) => Box::new(objects.iter_mut()),
+            Self::Change(pairs) => {
+                Box::new(pairs.iter_mut().flat_map(|(before, after)| [before, after]))
+            }
+        }
+    }
 }

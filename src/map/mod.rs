@@ -15,7 +15,7 @@ pub use persistence::{
     MapDirtyState, MapLoadError, MapSaveError, MapSaveFinished, NewMapRequest, OpenMaps,
     SaveConflict, SaveConflictDialog, SaveConflictKind, SaveMapRequest, SwitchMapRequest,
 };
-pub use placed_item::{MissingAsset, PlacedItem, Selected};
+pub use placed_item::{ItemId, MissingAsset, PlacedItem, Selected};
 
 use bevy::prelude::*;
 

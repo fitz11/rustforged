@@ -3,79 +3,45 @@
 use bevy::prelude::*;
 
 use crate::input::{command_held, shift_held};
-use crate::map::PlacedItem;
+use crate::map::{ItemId, MapDirtyState};
 
-use super::super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
 use super::command_history::CommandHistory;
-use super::execute::{execute_redo, execute_undo};
+use super::execute::execute;
 
-/// System to handle undo keyboard shortcut (Ctrl+Z)
-#[allow(clippy::too_many_arguments)]
-pub fn handle_undo(
+/// Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes (Cmd on macOS).
+pub fn handle_undo_redo(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut history: ResMut<CommandHistory>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    items_query: Query<(Entity, &Transform, &PlacedItem)>,
-    paths_query: Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
-    lines_query: Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
-    texts_query: Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
+    ids: Query<(Entity, &ItemId)>,
+    mut dirty_state: ResMut<MapDirtyState>,
 ) {
-    let ctrl = command_held(&keyboard);
-    let shift = shift_held(&keyboard);
-
-    // Ctrl+Z (without shift) = undo
-    if ctrl
-        && !shift
-        && keyboard.just_pressed(KeyCode::KeyZ)
-        && let Some(command) = history.pop_undo()
-    {
-        let reverse_command = execute_undo(
-            &command,
-            &mut commands,
-            &asset_server,
-            &items_query,
-            &paths_query,
-            &lines_query,
-            &texts_query,
-        );
-        if let Some(reverse) = reverse_command {
-            history.push_redo(reverse);
-        }
+    if !command_held(&keyboard) {
+        return;
     }
-}
-
-/// System to handle redo keyboard shortcut (Ctrl+Y or Ctrl+Shift+Z)
-#[allow(clippy::too_many_arguments)]
-pub fn handle_redo(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut history: ResMut<CommandHistory>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    items_query: Query<(Entity, &Transform, &PlacedItem)>,
-    paths_query: Query<(Entity, &DrawnPath), With<AnnotationMarker>>,
-    lines_query: Query<(Entity, &DrawnLine), With<AnnotationMarker>>,
-    texts_query: Query<(Entity, &Transform, &TextAnnotation), With<AnnotationMarker>>,
-) {
-    let ctrl = command_held(&keyboard);
-    let shift = shift_held(&keyboard);
-
-    // Ctrl+Y or Ctrl+Shift+Z = redo
-    let redo_pressed = (ctrl && keyboard.just_pressed(KeyCode::KeyY))
-        || (ctrl && shift && keyboard.just_pressed(KeyCode::KeyZ));
-
-    if redo_pressed && let Some(command) = history.pop_redo() {
-        let reverse_command = execute_redo(
-            &command,
-            &mut commands,
-            &asset_server,
-            &items_query,
-            &paths_query,
-            &lines_query,
-            &texts_query,
-        );
-        if let Some(reverse) = reverse_command {
-            history.push_undo(reverse);
-        }
+    let z = keyboard.just_pressed(KeyCode::KeyZ);
+    let undo = z && !shift_held(&keyboard);
+    let redo = keyboard.just_pressed(KeyCode::KeyY) || (z && shift_held(&keyboard));
+    if !undo && !redo {
+        return;
     }
+
+    let command = if undo {
+        history.pop_undo()
+    } else {
+        history.pop_redo()
+    };
+    let Some(command) = command else {
+        return;
+    };
+
+    let entities = ids.iter().map(|(entity, id)| (*id, entity)).collect();
+    let inverse = execute(&command, &mut commands, &asset_server, &entities);
+    if undo {
+        history.push_redo(inverse);
+    } else {
+        history.push_undo(inverse);
+    }
+    dirty_state.is_dirty = true;
 }

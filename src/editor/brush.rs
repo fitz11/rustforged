@@ -17,7 +17,7 @@ use crate::input::shift_held;
 use crate::map::{MapData, PlacedItem};
 
 use super::grid::snap_to_grid;
-use super::history::{EditorCommand, PlacedItemData, RecordEditorCommand, TransformData};
+use super::history::{EditorCommand, MapObject, RecordEditorCommand};
 use super::params::{CameraParams, is_cursor_over_ui};
 use super::tools::SelectedLayer;
 
@@ -46,7 +46,7 @@ pub struct BrushState {
     pub last_placed_bounds: Option<PlacedBounds>,
     /// Items placed during the current brush stroke, accumulated so the whole
     /// stroke is recorded as a single undo step on release.
-    pub stroke_items: Vec<PlacedItemData>,
+    pub stroke_items: Vec<MapObject>,
 }
 
 impl BrushState {
@@ -54,9 +54,7 @@ impl BrushState {
     fn flush_stroke(&mut self, history_writer: &mut MessageWriter<RecordEditorCommand>) {
         if !self.stroke_items.is_empty() {
             history_writer.write(RecordEditorCommand {
-                command: EditorCommand::PlaceItems {
-                    items: std::mem::take(&mut self.stroke_items),
-                },
+                command: EditorCommand::Add(std::mem::take(&mut self.stroke_items)),
             });
         }
     }
@@ -162,27 +160,22 @@ pub fn handle_brush(
         half_size: placed_size / 2.0,
     });
 
-    let layer = selected_layer.layer;
-    let item = PlacedItem {
-        asset_path: asset.path.clone(),
-        layer,
-        z_index: 0,
-    };
-    let transform = Transform {
-        translation: final_pos.extend(item.depth()),
-        scale,
-        ..default()
-    };
-    let entity = commands.spawn(item.bundle(&asset_server, transform)).id();
+    let object = MapObject::new_item(
+        PlacedItem {
+            asset_path: asset.path.clone(),
+            layer: selected_layer.layer,
+            z_index: 0,
+        },
+        Transform {
+            translation: final_pos.extend(0.0),
+            scale,
+            ..default()
+        },
+    );
+    object.spawn(&mut commands, &asset_server);
 
     // Accumulate for the current stroke; recorded as one undo step on release.
-    brush_state.stroke_items.push(PlacedItemData {
-        entity,
-        asset_path: asset.path.clone(),
-        layer,
-        z_index: 0,
-        transform: TransformData::from(&transform),
-    });
+    brush_state.stroke_items.push(object);
 }
 
 #[cfg(test)]

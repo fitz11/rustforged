@@ -10,7 +10,7 @@
 //! - [`CameraParams`]: Basic camera and window access for cursor-to-world conversion
 //! - [`CameraWithProjection`]: Extended camera access including zoom scale
 //! - [`AnnotationQueries`]: Read-only access to all annotation types (paths, lines, text)
-//! - [`SelectedAnnotationQueries`]: Access to selected annotations only
+//! - [`SelectedObjects`]: The selected items and annotations, for delete, cut and copy
 //!
 //! ## Helper Functions
 //!
@@ -21,11 +21,12 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
-use crate::map::Selected;
+use crate::map::{ItemId, PlacedItem, Selected};
 use crate::ui::panel_layout::is_pointer_over_ui;
 
 use super::EditorCamera;
 use super::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
+use super::history::MapObject;
 
 /// Bundled camera and window queries for cursor-to-world calculations
 #[derive(SystemParam)]
@@ -96,6 +97,85 @@ pub struct AnnotationQueries<'w, 's> {
         (Entity, &'static Transform, &'static TextAnnotation),
         With<AnnotationMarker>,
     >,
+}
+
+/// The selected placed items and annotations, captured as the undo history remembers them
+/// (used to delete, cut and copy the selection)
+#[derive(SystemParam)]
+#[allow(clippy::type_complexity)]
+pub struct SelectedObjects<'w, 's> {
+    items: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static ItemId,
+            &'static PlacedItem,
+            &'static Transform,
+        ),
+        With<Selected>,
+    >,
+    paths: Query<
+        'w,
+        's,
+        (Entity, &'static ItemId, &'static DrawnPath),
+        (With<Selected>, With<AnnotationMarker>),
+    >,
+    lines: Query<
+        'w,
+        's,
+        (Entity, &'static ItemId, &'static DrawnLine),
+        (With<Selected>, With<AnnotationMarker>),
+    >,
+    texts: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static ItemId,
+            &'static TextAnnotation,
+            &'static Transform,
+        ),
+        (With<Selected>, With<AnnotationMarker>),
+    >,
+}
+
+impl SelectedObjects<'_, '_> {
+    /// Every selected thing on the map, with its entity.
+    pub fn collect(&self) -> Vec<(Entity, MapObject)> {
+        let items = self.items.iter().map(|(entity, id, item, transform)| {
+            (entity, MapObject::item(*id, item.clone(), *transform))
+        });
+        let paths = self.paths.iter().map(|(entity, id, path)| {
+            (
+                entity,
+                MapObject::Path {
+                    id: *id,
+                    path: path.clone(),
+                },
+            )
+        });
+        let lines = self.lines.iter().map(|(entity, id, line)| {
+            (
+                entity,
+                MapObject::Line {
+                    id: *id,
+                    line: line.clone(),
+                },
+            )
+        });
+        let texts = self.texts.iter().map(|(entity, id, text, transform)| {
+            (
+                entity,
+                MapObject::Text {
+                    id: *id,
+                    text: text.clone(),
+                    position: transform.translation.truncate(),
+                },
+            )
+        });
+        items.chain(paths).chain(lines).chain(texts).collect()
+    }
 }
 
 /// Bundled queries for selected annotations (used in clipboard operations)

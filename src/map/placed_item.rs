@@ -1,11 +1,26 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::assets::library_asset_path;
 
 use super::Layer;
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+/// Identifies a placed item or annotation for the undo history. Undoing a delete spawns
+/// a new entity, so the history can't hold on to entities; it finds things by this id.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ItemId(u64);
+
+impl ItemId {
+    /// A fresh id, different from every other in this run of the app.
+    pub fn new() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[require(ItemId = ItemId::new())]
 pub struct PlacedItem {
     pub asset_path: String,
     pub layer: Layer,

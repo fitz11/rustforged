@@ -4,11 +4,11 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::editor::annotations::{AnnotationMarker, DrawnLine, DrawnPath, TextAnnotation};
-use crate::editor::history::{EditorCommand, RecordEditorCommand, TransformData};
+use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
 use crate::editor::params::{CameraParams, is_cursor_over_ui};
 use crate::editor::tools::{CurrentTool, EditorTool};
 use crate::input::shift_held;
-use crate::map::{MapData, PlacedItem};
+use crate::map::{ItemId, MapData, PlacedItem};
 
 use super::{AnnotationDragData, DragState, ROTATION_SNAP_INCREMENT, SelectionDragMode};
 
@@ -18,7 +18,7 @@ pub fn handle_drag(
     keyboard: Res<ButtonInput<KeyCode>>,
     current_tool: Res<CurrentTool>,
     camera: CameraParams,
-    mut items_query: Query<&mut Transform, With<PlacedItem>>,
+    mut items_query: Query<(&ItemId, &PlacedItem, &mut Transform)>,
     mut drag_state: ResMut<DragState>,
     map_data: Res<MapData>,
     mut contexts: EguiContexts,
@@ -42,29 +42,21 @@ pub fn handle_drag(
         return;
     }
 
-    // Stop dragging on mouse release, recording the net transform change of any
-    // placed items as a single MoveItems command (covers move/resize/rotate).
+    // Stop dragging on mouse release, recording the net change to the placed items as one
+    // undo step (covers move/resize/rotate)
     if mouse_button.just_released(MouseButton::Left) {
-        let mut transforms = Vec::new();
-        for (entity, start) in &drag_state.entity_start_transforms {
-            if let Ok(current) = items_query.get(*entity) {
-                // Only record entities that actually changed.
-                if current.translation != start.translation
-                    || current.rotation != start.rotation
-                    || current.scale != start.scale
-                {
-                    transforms.push((
-                        *entity,
-                        TransformData::from(start),
-                        TransformData::from(current),
-                    ));
-                }
-            }
-        }
-        if !transforms.is_empty() {
-            history_writer.write(RecordEditorCommand {
-                command: EditorCommand::MoveItems { transforms },
+        let pairs = drag_state
+            .entity_start_transforms
+            .iter()
+            .filter_map(|(entity, start)| {
+                let (id, item, current) = items_query.get(*entity).ok()?;
+                Some((
+                    MapObject::item(*id, item.clone(), *start),
+                    MapObject::item(*id, item.clone(), *current),
+                ))
             });
+        if let Some(command) = EditorCommand::change(pairs) {
+            history_writer.write(RecordEditorCommand { command });
         }
 
         drag_state.is_dragging = false;
@@ -101,7 +93,7 @@ pub fn handle_drag(
         SelectionDragMode::Move => {
             // Apply offset to each placed item, maintaining relative positions
             for (entity, start_pos) in &drag_state.entity_start_positions {
-                if let Ok(mut transform) = items_query.get_mut(*entity) {
+                if let Ok((_, _, mut transform)) = items_query.get_mut(*entity) {
                     let new_pos = *start_pos + drag_offset;
                     transform.translation.x = new_pos.x;
                     transform.translation.y = new_pos.y;
@@ -284,7 +276,7 @@ pub fn handle_drag(
                     new_center_local.x * sin_a + new_center_local.y * cos_a,
                 );
 
-                if let Ok(mut transform) = items_query.get_mut(*entity) {
+                if let Ok((_, _, mut transform)) = items_query.get_mut(*entity) {
                     // Apply new position (original position + rotated center offset)
                     let new_pos = *orig_pos + world_center_offset;
                     transform.translation.x = new_pos.x;
@@ -315,7 +307,7 @@ pub fn handle_drag(
 
             // Apply rotation to each entity around its own center
             for (entity, original_rotation) in &drag_state.entity_start_rotations {
-                if let Ok(mut transform) = items_query.get_mut(*entity) {
+                if let Ok((_, _, mut transform)) = items_query.get_mut(*entity) {
                     transform.rotation = *original_rotation * Quat::from_rotation_z(angle_delta);
                 }
             }
