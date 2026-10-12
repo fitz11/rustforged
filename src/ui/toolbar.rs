@@ -49,8 +49,24 @@ pub fn toolbar_ui(
 
                 // Grid toggle
                 let mut grid_visible = map_data.grid_visible;
-                if ui.checkbox(&mut grid_visible, "Grid").changed() {
+                if ui
+                    .checkbox(&mut grid_visible, "Grid")
+                    .on_hover_text("Grid lines in the editor")
+                    .changed()
+                {
                     map_data.grid_visible = grid_visible;
+                    dirty_state.mark_dirty();
+                }
+                let mut player_grid = map_data.player_grid_visible;
+                if ui
+                    .checkbox(&mut player_grid, "Players' grid")
+                    .on_hover_text(
+                        "Grid lines on the player screen. Turn off for battlemaps that have \
+                         a grid drawn in.",
+                    )
+                    .changed()
+                {
+                    map_data.player_grid_visible = player_grid;
                     dirty_state.mark_dirty();
                 }
 

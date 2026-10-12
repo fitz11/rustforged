@@ -92,7 +92,7 @@ pub fn draw_grid(mut gizmos: Gizmos, map_data: Res<MapData>, camera: CameraWithP
 /// Draw the grid in the player view, over the area the players can see
 pub fn draw_player_grid(mut gizmos: Gizmos<PlayerGridGizmoGroup>, player_view: PlayerMapView) {
     let map_data = player_view.map_data();
-    if !map_data.grid_visible {
+    if !map_data.player_grid_visible {
         return;
     }
 

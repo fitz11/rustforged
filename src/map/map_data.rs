@@ -11,8 +11,17 @@ use super::{Layer, PlacedItem, SavedFogOfWar};
 pub struct MapData {
     pub name: String,
     pub grid_size: f32,
+    /// Grid lines in the editor
     pub grid_visible: bool,
+    /// Grid lines in the player view. Separate from the editor's, because battlemaps
+    /// often have a grid drawn in already
+    #[serde(default = "default_true")]
+    pub player_grid_visible: bool,
     pub layers: Vec<LayerData>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for MapData {
@@ -21,6 +30,7 @@ impl Default for MapData {
             name: "Untitled Map".to_string(),
             grid_size: DEFAULT_GRID_SIZE,
             grid_visible: true,
+            player_grid_visible: true,
             layers: Layer::all()
                 .iter()
                 .map(|layer| LayerData {
