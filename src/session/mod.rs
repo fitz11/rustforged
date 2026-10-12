@@ -16,6 +16,12 @@ use crate::editor::session_is_active;
 
 pub struct LiveSessionPlugin;
 
+/// Systems that settle what players see this frame: the frozen snapshot and the player
+/// camera. Anything drawn for players (fog, grid) runs after them, so it covers the area
+/// the camera shows this frame rather than last frame's.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlayerViewSync;
+
 impl Plugin for LiveSessionPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveSessionState>()
@@ -40,8 +46,13 @@ impl Plugin for LiveSessionPlugin {
                         .run_if(resource_changed::<LiveSessionState>),
                     player_window::setup_player_camera,
                     // No run_if here - needs to run to unfreeze after session ends
-                    freeze::sync_freeze.before(player_window::sync_player_camera),
-                    player_window::sync_player_camera.run_if(session_is_active),
+                    freeze::sync_freeze
+                        .before(player_window::sync_player_camera)
+                        .after(viewport::handle_viewport_interaction)
+                        .in_set(PlayerViewSync),
+                    player_window::sync_player_camera
+                        .run_if(session_is_active)
+                        .in_set(PlayerViewSync),
                     // No run_if here - needs to run to clean up after session ends
                     player_window::handle_player_window_close,
                     player_window::handle_player_window_close_request,

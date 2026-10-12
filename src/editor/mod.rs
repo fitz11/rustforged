@@ -104,7 +104,9 @@ impl Plugin for EditorPlugin {
                     camera::camera_zoom.run_if(on_message::<MouseWheel>),
                     camera::apply_camera_zoom,
                     grid::draw_grid,
-                    grid::draw_player_grid.run_if(session_is_active),
+                    grid::draw_player_grid
+                        .run_if(session_is_active)
+                        .after(crate::session::PlayerViewSync),
                     tools::handle_tool_shortcuts.run_if(shortcuts_enabled),
                     tools::update_cursor_icon,
                     // After handle_selection: a placement can switch to Select,
@@ -188,7 +190,7 @@ impl Plugin for EditorPlugin {
                     fog::handle_fog.run_if(tool_is(EditorTool::Fog).and_then(no_dialog_open))
                         .in_set(ToolInput),
                     fog::render_fog_editor,
-                    fog::render_fog_player,
+                    fog::render_fog_player.after(crate::session::PlayerViewSync),
                     fog::render_fog_brush_preview.run_if(tool_is(EditorTool::Fog)),
                 ),
             )
