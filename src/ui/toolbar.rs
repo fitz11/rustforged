@@ -267,6 +267,15 @@ pub fn tool_settings_ui(
                             egui::RichText::new("Fog Settings:").color(egui::Color32::LIGHT_GRAY),
                         );
 
+                        if !map_data.is_layer_visible(Layer::FogOfWar) {
+                            ui.add_space(8.0);
+                            ui.colored_label(
+                                egui::Color32::from_rgb(230, 170, 60),
+                                "Fog is off: players see the whole map",
+                            )
+                            .on_hover_text("Turn on Enable Fog of War in the Layers panel");
+                        }
+
                         ui.add_space(8.0);
 
                         // Brush size slider

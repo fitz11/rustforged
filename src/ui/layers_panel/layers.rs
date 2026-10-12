@@ -6,7 +6,15 @@ use crate::map::{Layer, MapData};
 
 /// Renders the layers section with visibility checkboxes and lock buttons. Returns true if
 /// a layer's visibility or lock changed.
-pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData) -> bool {
+///
+/// The Fog of War row's checkbox is `show_fog_in_editor`, only the GM's view: whether
+/// players see fog is "Enable Fog of War" in the fog controls. (The two used to be the
+/// same switch, so hiding the fog to look at the map also took it off the player screen.)
+pub fn render_layers(
+    ui: &mut egui::Ui,
+    map_data: &mut MapData,
+    show_fog_in_editor: &mut bool,
+) -> bool {
     let mut changed = false;
     ui.add_space(4.0);
     ui.label(egui::RichText::new("Layers").heading().size(18.0));
@@ -23,7 +31,12 @@ pub fn render_layers(ui: &mut egui::Ui, map_data: &mut MapData) -> bool {
 
                     ui.add_enabled_ui(is_available, |ui| {
                         ui.horizontal(|ui| {
-                            if ui.checkbox(&mut layer_data.visible, "").changed() {
+                            if *layer == Layer::FogOfWar {
+                                ui.checkbox(show_fog_in_editor, "").on_hover_text(
+                                    "Show the fog here in the editor. Players' fog is \
+                                     Enable Fog of War below.",
+                                );
+                            } else if ui.checkbox(&mut layer_data.visible, "").changed() {
                                 changed = true;
                             }
                             ui.label(egui::RichText::new(layer.display_name()).size(14.0));

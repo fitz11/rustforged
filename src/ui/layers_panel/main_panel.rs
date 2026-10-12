@@ -6,6 +6,7 @@ use bevy_egui::{EguiContexts, egui};
 use crate::assets::{RetargetAssetRequest, SelectedAsset};
 use crate::config::AppConfig;
 use crate::editor::SelectionEdit;
+use crate::editor::fog::FogState;
 use crate::editor::history::{EditorCommand, MapObject, RecordEditorCommand};
 use crate::map::{FogOfWarData, MapData, MapDirtyState, MissingAsset, Selected};
 use crate::session::LiveSessionState;
@@ -39,6 +40,7 @@ pub fn layers_panel_ui(
     ),
     mut unfinished_edit: Local<Option<MapObject>>,
     stack: OtherItemsStack,
+    mut fog_state: ResMut<FogState>,
 ) -> Result {
     let missing: Vec<Entity> = missing_query.iter().collect();
     let library_selection = selected_asset.asset.as_ref().map(|a| a.path.as_str());
@@ -50,7 +52,11 @@ pub fn layers_panel_ui(
             // Edit through bypass_change_detection so these resources only count as changed
             // (for change detection, e.g. layer visibility) when the user changed something.
             // Layers section
-            let layers_changed = render_layers(ui, map_data.bypass_change_detection());
+            let layers_changed = render_layers(
+                ui,
+                map_data.bypass_change_detection(),
+                &mut fog_state.show_in_editor,
+            );
 
             // Fog of War controls
             let fog_change = render_fog_controls(

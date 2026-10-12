@@ -80,6 +80,9 @@ pub struct FogState {
     pub is_erasing: bool,
     /// Editor fog opacity (0.0 = invisible, 1.0 = fully opaque)
     pub editor_opacity: f32,
+    /// Show the fog in the editor. Only the GM's view: players' fog is the Fog of War
+    /// layer's visibility ("Enable Fog of War").
+    pub show_in_editor: bool,
 }
 
 impl Default for FogState {
@@ -88,6 +91,7 @@ impl Default for FogState {
             brush_size: 2.0,
             is_erasing: false,
             editor_opacity: 0.6,
+            show_in_editor: true,
         }
     }
 }
@@ -180,7 +184,7 @@ pub fn render_fog_editor(
     map_data: Res<MapData>,
     camera: CameraWithProjection,
 ) {
-    if !is_fog_layer_visible(&map_data) {
+    if !is_fog_layer_visible(&map_data) || !fog_state.show_in_editor {
         return;
     }
 
