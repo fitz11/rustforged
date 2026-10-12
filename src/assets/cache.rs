@@ -262,6 +262,30 @@ mod tests {
     }
 
     #[test]
+    fn test_thumbnail_goes_stale_when_file_stamp_changes() {
+        let mut thumbnails = super::super::ThumbnailCache::default();
+        let mut asset = LibraryAsset {
+            name: "orc".into(),
+            path: "orc.png".into(),
+            folder_path: String::new(),
+            extension: "png".into(),
+            full_path: PathBuf::from("/lib/orc.png"),
+            stamp: FileStamp {
+                size: 10,
+                modified_ns: Some(1),
+            },
+        };
+        assert!(!thumbnails.is_stale(&asset));
+        thumbnails
+            .stamps
+            .insert(asset.full_path.clone(), asset.stamp);
+        assert!(!thumbnails.is_stale(&asset));
+
+        asset.stamp.modified_ns = Some(2);
+        assert!(thumbnails.is_stale(&asset));
+    }
+
+    #[test]
     fn test_prune_thumbnails_keeps_only_current() {
         let cache = tempfile::tempdir().unwrap();
         let thumbs = cache.path().join(THUMBNAILS_DIR);

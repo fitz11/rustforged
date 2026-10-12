@@ -2,8 +2,9 @@
 //! a sync client, edits in an image editor, renames in a file manager.
 //!
 //! Changes are debounced, then:
-//! - asset changes rescan the library (which also restores placeholders whose file arrived)
-//!   and reload changed images, so placed items and thumbnails update live;
+//! - asset changes rescan the library (which also restores placeholders whose file arrived
+//!   and refreshes thumbnails of changed files) and reload changed images, so placed items
+//!   update live;
 //! - map changes are announced with [`MapFilesChanged`] so the map list and open maps can
 //!   react;
 //! - a changed library manifest reloads the library name.
@@ -12,7 +13,6 @@
 //! the library still works and the user refreshes by hand.
 
 use bevy::prelude::*;
-use bevy_egui::EguiUserTextures;
 use notify_debouncer_full::notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use std::collections::BTreeSet;
@@ -22,7 +22,7 @@ use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
 use super::manifest::{LIBRARY_MANIFEST_FILE, load_library_metadata};
-use super::{AssetLibrary, RefreshAssetLibrary, ThumbnailCache, library_asset_path};
+use super::{AssetLibrary, RefreshAssetLibrary, library_asset_path};
 
 /// How long a path must be quiet before its change is reported. Sync clients often write
 /// a file in several steps.
@@ -185,8 +185,6 @@ pub fn process_library_changes(
     watcher: Res<LibraryWatcher>,
     mut library: ResMut<AssetLibrary>,
     asset_server: Res<AssetServer>,
-    mut thumbnails: ResMut<ThumbnailCache>,
-    mut egui_textures: ResMut<EguiUserTextures>,
     mut refresh_events: MessageWriter<RefreshAssetLibrary>,
     mut map_events: MessageWriter<MapFilesChanged>,
 ) {
@@ -203,10 +201,10 @@ pub fn process_library_changes(
 
     if !changes.assets.is_empty() {
         debug!("Library assets changed on disk: {:?}", changes.assets);
+        // Reloads only what's loaded, so placed items pick up edited images. Thumbnails
+        // notice the new file stamps after the rescan.
         for path in &changes.assets {
-            // Reloads only what's loaded, so placed items pick up edited images
             asset_server.reload(library_asset_path(path));
-            thumbnails.invalidate(&library.library_path.join(path), &mut egui_textures);
         }
         refresh_events.write(RefreshAssetLibrary);
     }

@@ -16,6 +16,18 @@ pub fn load_and_register_thumbnails(
     mut images: ResMut<Assets<Image>>,
     mut egui_textures: ResMut<EguiUserTextures>,
 ) {
+    // Files that changed on disk since their thumbnail was made (an edit, or a sync client
+    // finishing a download) get a fresh one
+    let stale: Vec<PathBuf> = library
+        .assets
+        .iter()
+        .filter(|a| thumbnail_cache.is_stale(a))
+        .map(|a| a.full_path.clone())
+        .collect();
+    for path in stale {
+        thumbnail_cache.invalidate(&path, &mut egui_textures);
+    }
+
     // Load a limited number of new thumbnails per frame to avoid stuttering
     let assets_to_load: Vec<&LibraryAsset> = library
         .assets
@@ -30,6 +42,7 @@ pub fn load_and_register_thumbnails(
     // Cached thumbnails avoid decoding (and, for online-only files, downloading) the image
     for asset in assets_to_load {
         let path = asset.full_path.clone();
+        thumbnail_cache.stamps.insert(path.clone(), asset.stamp);
         if let Some(thumb_image) = load_thumbnail(asset, library_cache.dir.as_deref()) {
             let handle = images.add(thumb_image);
             thumbnail_cache.thumbnails.insert(path, handle);

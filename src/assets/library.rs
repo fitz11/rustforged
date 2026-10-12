@@ -322,8 +322,10 @@ pub struct ThumbnailCache {
     pub thumbnails: HashMap<PathBuf, Handle<Image>>,
     /// Maps asset full_path to the egui texture ID (set after registration)
     pub texture_ids: HashMap<PathBuf, bevy_egui::egui::TextureId>,
-    /// Tracks paths that failed to load (so we don't retry)
+    /// Tracks paths that failed to load (so we don't retry until the file changes)
     pub failed: HashMap<PathBuf, ()>,
+    /// Size and modification time of the file each thumbnail (or failure) came from
+    pub stamps: HashMap<PathBuf, FileStamp>,
 }
 
 impl ThumbnailCache {
@@ -344,6 +346,14 @@ impl ThumbnailCache {
         }
         self.texture_ids.remove(path);
         self.failed.remove(path);
+        self.stamps.remove(path);
+    }
+
+    /// Returns true if this asset's file changed since its thumbnail (or failure) was made.
+    pub fn is_stale(&self, asset: &LibraryAsset) -> bool {
+        self.stamps
+            .get(&asset.full_path)
+            .is_some_and(|stamp| *stamp != asset.stamp)
     }
 
     /// Clear the cache (call when switching libraries)
@@ -351,6 +361,7 @@ impl ThumbnailCache {
         self.thumbnails.clear();
         self.texture_ids.clear();
         self.failed.clear();
+        self.stamps.clear();
     }
 }
 
